@@ -81,6 +81,15 @@ class EngineConfig:
 class CaptionMsg:
     """JSON payload sent to the audience over SSE. id = Last-Event-ID.
 
+    type:
+      - "append": ``text`` is added to the end of segment ``seg``;
+      - "set": ``text`` is the WHOLE text of the open segment ``seg`` so far
+        and replaces it (the glossary engine's source, rewritten by each
+        transcribe-live interim); "" removes it (not speech after all). Only
+        the track's open segment is ever set;
+      - "close": segment ``seg`` is finished;
+      - "talk" / "status": ``data`` (the talk now on, the room's state).
+
     ts: wall-clock time the message was published, as epoch seconds (set by
     CaptionBus.publish). Lets the audience view show an HH:MM margin next to
     replayed history; None only for messages built by hand (e.g. in tests)
@@ -88,7 +97,7 @@ class CaptionMsg:
     """
 
     id: int
-    type: Literal["append", "close", "talk", "status"]
+    type: Literal["append", "set", "close", "talk", "status"]
     seg: int | None = None
     text: str | None = None
     data: dict | None = None

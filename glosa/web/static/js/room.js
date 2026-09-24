@@ -2,6 +2,8 @@
 
    Captions arrive over SSE from /api/stream/{slug}/{lang} as CaptionMsg JSON:
      {"id", "type": "append", "seg", "text"}   text is added to the end of phrase `seg`
+     {"id", "type": "set", "seg", "text"}      the whole text of the open phrase `seg` so far
+                                               (it replaces what the phrase shows; "" removes it)
      {"type": "close", "seg"}                   phrase `seg` is finished
      {"type": "talk", "data": {"talk_id", "title", "speakers", "language"}}
      {"type": "status", "data": {"state": "green|yellow|red|idle", ...}}
@@ -12,6 +14,8 @@
    rewritten (only appended); the open phrase is dimmer and "settles" by colour
    only; about three closed phrases move from the live block to the history as
    one paragraph; scrolling up pauses auto-scroll and shows "Back to live".
+   The one exception to "never rewritten": the open phrase of a "set" stream
+   (the glossary engine's transcription rewrites it while the speaker talks).
 
    Bilingual mode shows two "facing pages" (original on the left, translation
    on the right), each fed by its own stream: segments of different languages
@@ -208,6 +212,30 @@
       if (visible) span.append(visible);
     }
 
+    /** `text` is the whole open phrase `seg` so far: it replaces what the
+        phrase shows (a new seg starts one, as append does). An empty text
+        removes the phrase: it was not speech after all. */
+    set(seg, text, stamp) {
+      const span = this.phrases.get(seg);
+      if (!span) {
+        this.append(seg, text, stamp);
+        return;
+      }
+      const full = text.replace(/^\s+/, "");
+      const visible = full.replace(/\s+$/, "");
+      this.trailing.set(seg, full.slice(visible.length));
+      if (visible) {
+        span.replaceChildren(visible);
+        return;
+      }
+      const before = span.previousSibling;   // the space that separates it from the phrase before
+      if (before && before.nodeType === 3 && !before.textContent.trim()) before.remove();
+      span.remove();
+      this.phrases.delete(seg);
+      this.trailing.delete(seg);
+      if (this.open === span) this.open = null;
+    }
+
     close(seg) {
       const span = this.phrases.get(seg);
       if (span && span === this.open) this.settle(span);   // only the last phrase is ever open
@@ -328,6 +356,12 @@
         case "append":
           if (typeof msg.text === "string" && msg.seg !== null && msg.seg !== undefined) {
             this.page.append(msg.seg, msg.text, stamp);
+            hideStageNote();
+          }
+          break;
+        case "set":
+          if (typeof msg.text === "string" && msg.seg !== null && msg.seg !== undefined) {
+            this.page.set(msg.seg, msg.text, stamp);
             hideStageNote();
           }
           break;

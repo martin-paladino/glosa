@@ -64,12 +64,21 @@ class CaptionBus:
         Registration happens before the buffer snapshot is read, and both
         steps run without an `await` in between, so no publish() (itself
         synchronous) can land in the gap and be missed or duplicated.
+
+        A last_event_id greater than the track's newest id is treated the
+        same as None (full replay), not as "already caught up": ids restart
+        at 1 on every process restart, so a browser reconnecting with a
+        Last-Event-ID from before a restart can hold a value higher than
+        anything the fresh track has published, which would otherwise
+        silently filter out every message that should have been replayed.
         """
         track = self._track(room_id, lang)
         queue: asyncio.Queue[CaptionMsg] = asyncio.Queue()
         track.subscribers.add(queue)
         try:
-            threshold = last_event_id if last_event_id is not None else 0
+            newest_id = track.next_id - 1
+            stale = last_event_id is not None and last_event_id > newest_id
+            threshold = 0 if (last_event_id is None or stale) else last_event_id
             backlog = [msg for msg, _talk_id in track.buffer if msg.id > threshold]
             for msg in backlog:
                 yield msg

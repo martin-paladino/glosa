@@ -89,6 +89,25 @@ async def test_circular_buffer_discards_oldest_messages() -> None:
     assert [m.id for m in replayed] == [3, 4, 5]
 
 
+async def test_subscribe_with_stale_last_event_id_replays_whole_buffer() -> None:
+    # Regression for controller Ruling 26 / Task 6 integration bug: after a
+    # server restart, ids for a (room, lang) track start over at 1. A
+    # browser reconnecting with a Last-Event-ID from before the restart can
+    # send an id higher than anything this (fresh) track has ever
+    # published. That must not be treated as "already caught up" (which
+    # would silently filter out every message) — it must fall back to a
+    # full replay of the buffer, same as last_event_id=None.
+    bus = CaptionBus()
+    for i in range(1, 6):
+        bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
+
+    replayed = await asyncio.wait_for(
+        _take(bus.subscribe("room1", "es", last_event_id=999), n=5), timeout=1.0
+    )
+
+    assert [m.id for m in replayed] == [1, 2, 3, 4, 5]
+
+
 async def test_history_returns_messages_for_a_given_talk() -> None:
     bus = CaptionBus()
     bus.publish("room1", "es", "talk", data={"talk_id": "talk-a"})

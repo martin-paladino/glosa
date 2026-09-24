@@ -51,6 +51,10 @@ class RoomCfg(BaseModel):
     # Language spoken in the room's "free session" (the synthetic talk a room
     # with a source runs when there is no agenda). Targets: default_targets.
     language: str = "en"
+    # Names this room goes by in an external agenda (e.g. Nerdearla's room
+    # slug "gran-sala"). An agenda import maps them, the room's id and its
+    # name to this room.
+    agenda_names: list[str] = Field(default_factory=list)
 
 
 class Prices(BaseModel):
@@ -110,6 +114,9 @@ class Settings(BaseSettings):
     vad: VadCfg = Field(default_factory=VadCfg)
     segmenter: SegmenterCfg = Field(default_factory=SegmenterCfg)
     default_export_shift_s: float = 2.4
+    # Engine an imported English talk gets when the agenda does not say
+    # (Spanish talks get "glossary": verbatim transcription).
+    default_engine_en: Literal["fast", "glossary"] = "fast"
     # "live": Gemini Live Translate. "fake": FakeEngine replaying a recorded
     # session (fake_fixture, by default samples/fixtures/lt_en.jsonl), so a
     # demo or a load test runs without spending API credit.

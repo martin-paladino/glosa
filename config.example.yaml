@@ -17,9 +17,12 @@ audience_mode: all
 # Each room with a source opens a "free session" at startup: the audio is
 # captioned in `language` (default en) and translated to the first of
 # `default_targets` that differs from it.
+# An agenda import maps a talk to a room by the room's id, its name, or any
+# of its `agenda_names` (e.g. the room slug Nerdearla's sessions API uses).
 rooms:
   - id: main
     name: Main Stage
+    agenda_names: [gran-sala]
     source_type: youtube
     source_url: "https://www.youtube.com/watch?v=REPLACE_ME"
     language: es
@@ -36,6 +39,10 @@ rooms:
 # demo or a load test costs nothing.
 engine_mode: live
 # fake_fixture: samples/fixtures/lt_en.jsonl
+
+# Engine for an imported English talk whose agenda row leaves it blank
+# ("fast": Live Translate; Spanish talks default to "glossary").
+default_engine_en: fast
 
 # SQLite database (agenda, captions, events, costs).
 db_path: data/glosa.db

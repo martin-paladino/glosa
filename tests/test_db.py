@@ -205,3 +205,28 @@ async def test_data_survives_reopening(tmp_path: Path) -> None:
         assert [s.text for s in await second.get_segments("t1", "es", "live")] == ["Hola."]
     finally:
         second.close()
+
+
+async def test_upsert_agenda_updates_scheduled_talks_and_leaves_live_and_done_alone(db) -> None:
+    scheduled, live, done = _talk("s"), _talk("l", start_h=10), _talk("d", start_h=8)
+    await db.insert_talks([scheduled, live, done])
+    began = datetime(2026, 9, 25, 13, 0, tzinfo=timezone.utc)
+    ended = datetime(2026, 9, 25, 11, 45, tzinfo=timezone.utc)
+    await db.update_talk("l", status="live", actual_start=began)
+    await db.update_talk("d", status="done", actual_start=ended - timedelta(minutes=45), actual_end=ended)
+
+    again = [_talk("s"), _talk("l", start_h=10), _talk("d", start_h=8), _talk("new", start_h=18)]
+    for talk in again:
+        talk.title = "Renamed on re-import"
+    unchanged = await db.upsert_agenda(again)
+
+    assert unchanged == {"l": "live", "d": "done"}
+    got = {t.id: t for t in await db.get_talks("r1", date(2026, 9, 25))}
+    assert got["s"].title == "Renamed on re-import" and got["s"].status == "scheduled"
+    assert got["new"].title == "Renamed on re-import"
+    assert (got["l"].title, got["l"].status, got["l"].actual_start) == (live.title, "live", began)
+    assert (got["d"].title, got["d"].status, got["d"].actual_end) == (done.title, "done", ended)
+
+
+async def test_upsert_agenda_with_nothing_to_write(db) -> None:
+    assert await db.upsert_agenda([]) == {}

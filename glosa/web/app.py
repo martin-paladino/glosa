@@ -8,7 +8,10 @@ database, registers every room of config.yaml, starts a free session in
 each room that has a source, and stops them all on shutdown.
 
 ``app.state``:
-  - ``settings``, ``bus`` (CaptionBus), ``db`` (Database, once started);
+  - ``settings``, ``clock``, ``bus`` (CaptionBus), ``db`` (Database, once
+    started);
+  - ``admin_events``: the admin panel's in-process broadcaster
+    (glosa/web/admin_events.py);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
   - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
     admin session cookies;
@@ -60,6 +63,7 @@ from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room
 from glosa.room import IngestFactory, RoomWorker
 from glosa.web import admin_api, pages, public_api
+from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
 
 log = logging.getLogger(__name__)
@@ -112,6 +116,7 @@ def create_app(
 ) -> FastAPI:
     clock = clock if clock is not None else RealClock()
     bus = CaptionBus(clock=clock)
+    admin_events = AdminEvents()
     factory = engine_factory if engine_factory is not None else make_engine_factory(settings, clock)
     workers: dict[str, RoomWorker] = {}
 
@@ -150,7 +155,9 @@ def create_app(
 
     app = FastAPI(title="Glosa", lifespan=lifespan)
     app.state.settings = settings
+    app.state.clock = clock
     app.state.bus = bus
+    app.state.admin_events = admin_events
     app.state.workers = workers
     # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
     # invalidates every outstanding admin session cookie.

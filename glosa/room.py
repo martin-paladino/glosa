@@ -95,6 +95,7 @@ LEVEL_WINDOW_CHUNKS = 50  # health uses the loudest chunk of the last 5 s
 RECENT_RECONNECT_S = 60.0
 CONSUMER_GRACE_S = 10.0
 FREE_SESSION_TITLE = "Sesión libre"
+FREE_SESSION_PREFIX = "free-"  # free session ids: free-<room id>-<YYYYmmddTHHMMSS>
 FREE_SESSION_HOURS = 12
 MIN_LEVEL_DB = -96.0
 SILENCE = bytes(CHUNK_BYTES)
@@ -109,6 +110,12 @@ class Ingest(Protocol):
 
 
 IngestFactory = Callable[[str, str, bool, Clock], Ingest]
+
+
+def is_free_talk(talk_id: str) -> bool:
+    """Whether ``talk_id`` is a free session's (``RoomWorker.free_talk()``),
+    not an agenda talk: the agenda and the autopilot ignore those."""
+    return talk_id.startswith(FREE_SESSION_PREFIX)
 
 
 def target_lang(language: str, targets: list[str]) -> str:
@@ -322,7 +329,7 @@ class RoomWorker:
     def free_talk(self) -> Talk:
         """A new free session (Ruling 27: one id per run)."""
         now = self._clock.wall().astimezone(self._tz)
-        base = f"free-{self.room.id}-{now:%Y%m%dT%H%M%S}"
+        base = f"{FREE_SESSION_PREFIX}{self.room.id}-{now:%Y%m%dT%H%M%S}"
         talk_id, n = base, 2
         while talk_id in self._free_ids:  # two runs within one second
             talk_id, n = f"{base}-{n}", n + 1

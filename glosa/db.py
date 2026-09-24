@@ -217,6 +217,41 @@ class Database:
 
         await self._run(write)
 
+    async def upsert_agenda(self, talks: list[Talk]) -> dict[str, str]:
+        """An agenda import: insert new talks and refresh the agenda fields of
+        stored talks that are still ``scheduled``. A talk that is ``live`` or
+        ``done`` is left exactly as it is (its fields and its ``actual_*``).
+        Returns those left unchanged, id -> status. One transaction."""
+        if not talks:
+            return {}
+        cols = ", ".join(_q(c) for c in _TALK_COLUMNS)
+        marks = ", ".join("?" * len(_TALK_COLUMNS))
+        updates = ", ".join(f"{_q(c)} = excluded.{_q(c)}" for c in _AGENDA_COLUMNS)
+        sql = (
+            f"INSERT INTO talks ({cols}) VALUES ({marks}) "
+            f"ON CONFLICT (id) DO UPDATE SET {updates} WHERE talks.status = 'scheduled'"
+        )
+        rows = [[_talk_row(t)[c] for c in _TALK_COLUMNS] for t in talks]
+        ids = [t.id for t in talks]
+
+        def write(con: sqlite3.Connection) -> dict[str, str]:
+            con.execute("BEGIN")
+            try:
+                held: dict[str, str] = {}
+                for i in range(0, len(ids), 500):  # below SQLite's host-parameter limit
+                    chunk = ids[i : i + 500]
+                    marks = ", ".join("?" * len(chunk))
+                    query = f"SELECT id, status FROM talks WHERE status != 'scheduled' AND id IN ({marks})"
+                    held |= {row["id"]: row["status"] for row in con.execute(query, chunk)}
+                con.executemany(sql, rows)
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+            return held
+
+        return await self._run(write)
+
     async def get_talk(self, talk_id: str) -> Talk | None:
         row = await self._run(lambda con: con.execute("SELECT * FROM talks WHERE id = ?", (talk_id,)).fetchone())
         return _talk_from_row(row) if row is not None else None

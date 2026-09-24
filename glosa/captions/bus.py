@@ -9,6 +9,7 @@ import asyncio
 from collections import deque
 from typing import AsyncIterator
 
+from glosa.clock import Clock, RealClock
 from glosa.models import CaptionMsg
 
 
@@ -26,11 +27,14 @@ class CaptionBus:
     """In-memory pub/sub bus for caption messages.
 
     One CaptionBus is shared across all rooms/languages for the process;
-    state is partitioned internally by (room_id, lang).
+    state is partitioned internally by (room_id, lang). clock is injectable
+    (defaults to RealClock()) so tests can control the wall-clock ts stamped
+    on each published CaptionMsg.
     """
 
-    def __init__(self, buffer_size: int = 2000) -> None:
+    def __init__(self, buffer_size: int = 2000, *, clock: Clock | None = None) -> None:
         self._buffer_size = buffer_size
+        self._clock: Clock = clock if clock is not None else RealClock()
         self._tracks: dict[tuple[str, str], _TrackState] = {}
 
     def _track(self, room_id: str, lang: str) -> _TrackState:
@@ -44,7 +48,8 @@ class CaptionBus:
     def publish(self, room_id: str, lang: str, type: str, **payload) -> CaptionMsg:
         """Create, buffer, and fan out a CaptionMsg for (room_id, lang)."""
         track = self._track(room_id, lang)
-        msg = CaptionMsg(id=track.next_id, type=type, **payload)
+        ts = self._clock.wall().timestamp()
+        msg = CaptionMsg(id=track.next_id, type=type, ts=ts, **payload)
         track.next_id += 1
 
         if type == "talk":

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glosa: sala de control con las clases de glosa.css</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&amp;family=B612:wght@400;700&amp;family=Martian+Mono:wdth,wght@75,400&amp;display=swap">
+<link rel="stylesheet" href="../../glosa/web/static/css/glosa.css">
+<!--
+  La maqueta aprobada (admin.html) armada solo con las clases de producción de
+  glosa.css, sin estilos propios. Es la referencia de markup para la Tarea 12.
+  Los datos son fijos. #sala-3 abre el cajón; #calma muestra "Todo en orden".
+-->
+</head>
+<body>
+<div class="admin">
+
+  <header class="masthead">
+    <div class="masthead__cell">
+      <span class="wordmark" aria-label="Glosa">glosa</span>
+      <div class="masthead__event"><b>Nerdearla 2026</b><span>Día 2, Ciudad Cultural Konex</span></div>
+    </div>
+    <div class="masthead__cell tally" aria-label="Estado de las salas">
+      <span class="tally__item"><i class="led led--live"></i><strong>2</strong>en vivo</span>
+      <span class="tally__item"><i class="led led--degraded"></i><strong>1</strong>degradada</span>
+      <span class="tally__item"><i class="led led--down"></i><strong>1</strong>caída</span>
+      <span class="tally__item"><i class="led led--idle"></i><strong>1</strong>inactiva</span>
+    </div>
+    <div class="masthead__cell budget" style="--spent: 0.348" aria-label="Gasto contra presupuesto">
+      <span class="budget__label">Gasto de hoy</span><strong class="budget__value">US$ 41,80</strong><span class="budget__of">de 120,00</span>
+      <span class="budget__bar" role="meter" aria-valuemin="0" aria-valuemax="120" aria-valuenow="41.8" aria-valuetext="US$ 41,80 de 120" title="Avisa al 80 % (US$ 96)"></span>
+    </div>
+    <div class="masthead__cell masthead__push operators" aria-label="Operadores conectados">
+      3 operadores
+      <ul class="operators__list"><li title="Martina Paz">MP</li><li title="Lucho García">LG</li><li title="Vero Ríos">VR</li></ul>
+    </div>
+    <div class="masthead__cell"><time class="clock clock--big" data-clock="hms">15:17:42</time></div>
+  </header>
+
+  <section class="attn" id="attn" aria-label="Atención">
+    <div class="attn__head"><b>Atención</b><span data-attn-count>2 salas</span></div>
+    <ol class="attn__list">
+      <li class="attn__row attn__row--down">
+        <i class="led led--down"></i><b class="attn__room">Sala Comunidad</b>
+        <span class="attn__what">Fuente caída: ffmpeg terminó 5 veces y la sala pasó a manual. <em>No llega audio.</em></span>
+        <time class="attn__age tc">hace 38 s</time>
+        <button class="btn btn--compact btn--down" type="button">Reconectar</button>
+      </li>
+      <li class="attn__row attn__row--degraded">
+        <i class="led led--degraded"></i><b class="attn__room">Sala Abasto</b>
+        <span class="attn__what">Retraso de 6,1 s; el tope es 4 s. <em>Los subtítulos siguen saliendo.</em></span>
+        <time class="attn__age tc">hace 21 s</time>
+        <button class="btn btn--compact btn--degraded" type="button">Reconectar</button>
+      </li>
+    </ol>
+    <p class="attn__ok"><i class="led led--live"></i>Todo en orden. Las 5 salas están dentro de los márgenes.</p>
+  </section>
+
+  <main class="wall" aria-label="Salas">
+    <article class="monitor monitor--live" tabindex="0" aria-label="Gran sala, en vivo. Abrir detalle con 1">
+      <header class="monitor__head"><i class="led led--live"></i><h3 class="monitor__name">Gran sala</h3><span class="monitor__tc tc">00:27:42</span><kbd>1</kbd></header>
+      <div class="monitor__cc"><p>Fíjense en marzo: ese pico no fue tráfico, fue una prueba de carga que nadie apagó. El control plane de Kubernetes costó esto, solo en marzo: casi cuatro mil dólares. <span class="phrase phrase--open">Y eso sin contar el tráfico entre zonas,</span></p></div>
+    </article>
+
+    <article class="monitor monitor--live" tabindex="0" aria-label="Auditorio, en vivo. Abrir detalle con 2">
+      <header class="monitor__head"><i class="led led--live"></i><h3 class="monitor__name">Auditorio</h3><span class="monitor__tc tc">00:17:42</span><kbd>2</kbd></header>
+      <div class="monitor__cc" lang="en"><p>Before that, every team shipped its own agent and its own dashboards. So we moved every service to OpenTelemetry in six weeks. <span class="phrase phrase--open">The collector runs as a sidecar, and we do</span></p></div>
+    </article>
+
+    <article class="monitor monitor--degraded" tabindex="0" aria-label="Sala Abasto, degradada. Abrir detalle con 3" data-room="3">
+      <header class="monitor__head"><i class="led led--degraded"></i><h3 class="monitor__name">Sala Abasto</h3><em class="monitor__state">Degradada</em><span class="monitor__tc tc">00:12:42</span><kbd>3</kbd></header>
+      <div class="monitor__cc"><p>Dos años después, la pregunta ya no es si Rust entra al kernel. Hoy ya se pueden escribir drivers nuevos en Rust dentro del kernel. <span class="phrase phrase--open">Pero el borrow checker no sabe nada</span></p></div>
+      <footer class="monitor__issue"><span><b>Retraso 6,1 s.</b> El tope es 4 s.</span><button class="btn btn--compact btn--degraded" type="button">Reconectar</button></footer>
+    </article>
+
+    <article class="monitor monitor--idle" tabindex="0" aria-label="Sala Talleres, inactiva hasta las 15:29. Abrir detalle con 4">
+      <header class="monitor__head"><i class="led led--idle"></i><h3 class="monitor__name">Sala Talleres</h3><em class="monitor__state">Abre a las 15:29</em><kbd>4</kbd></header>
+      <div class="monitor__wait">
+        <span class="monitor__count tc">en 11:18</span>
+        <b>Taller: tu primer operador de Kubernetes con Go</b>
+        <span>Diego Ledesma. El piloto abre la sala solo.</span>
+      </div>
+    </article>
+
+    <article class="monitor monitor--down" tabindex="0" aria-label="Sala Comunidad, caída. Abrir detalle con 5">
+      <header class="monitor__head"><i class="led led--down"></i><h3 class="monitor__name">Sala Comunidad</h3><em class="monitor__state">Caída</em><span class="monitor__tc tc">00:05:58</span><kbd>5</kbd></header>
+      <div class="monitor__cc monitor__cc--frozen" lang="en"><p>…and that is how the first meetup in Rosario started, with twelve people and one projector.</p><small class="tc">Último subtítulo 15:15:58</small></div>
+      <footer class="monitor__issue"><span><b>Fuente caída.</b> Pasó a manual.</span><button class="btn btn--compact btn--down" type="button">Reconectar</button></footer>
+    </article>
+
+    <section class="panel panel--sunk" aria-label="Registro de eventos">
+      <header class="panel__head">
+        <h2 class="panel__title">Registro</h2>
+        <div class="segmented" role="group" aria-label="Filtro">
+          <button type="button" aria-pressed="true">Alertas 4</button><button type="button" aria-pressed="false">Todo 14</button>
+        </div>
+      </header>
+      <ol class="log">
+        <li class="log__item" tabindex="0"><i class="led led--degraded"></i><time class="log__time tc">15:17:21</time><p class="log__text"><b>Sala Abasto</b>Retraso mediano de 6,1 s.</p></li>
+        <li class="log__item" tabindex="0"><i class="led led--down"></i><time class="log__time tc">15:17:04</time><p class="log__text"><b>Sala Comunidad</b>Fuente caída: ffmpeg terminó 5 veces. Pasó a manual.</p></li>
+        <li class="log__item log__item--info" tabindex="0"><i class="led led--info"></i><time class="log__time tc">15:16:52</time><p class="log__text"><b>Auditorio</b>Reintento correcto.</p></li>
+        <li class="log__item" tabindex="0"><i class="led led--idle"></i><time class="log__time tc">15:16:48</time><p class="log__text"><b>Auditorio</b>Error 429, reintento en 4 s. <em>Resuelto.</em></p></li>
+        <li class="log__item" tabindex="0"><i class="led led--degraded"></i><time class="log__time tc">15:16:31</time><p class="log__text"><b>Sala Comunidad</b>Sin audio hace 30 s.</p></li>
+      </ol>
+      <button class="btn btn--link log__more" type="button">Mostrar también los 10 informativos</button>
+    </section>
+  </main>
+
+  <section class="panel schedule" aria-label="Agenda de hoy">
+    <header class="schedule__head">
+      <h2 class="panel__title">Agenda</h2>
+      <p class="schedule__next">Próximo cambio automático: <b>15:29, abre Sala Talleres</b> <span class="tc">en 11:18</span></p>
+      <div class="legend"><span><i class="swatch swatch--manual"></i>Manual: el piloto no actúa</span><span><i class="swatch swatch--now"></i>Ahora</span></div>
+    </header>
+    <div class="timeline" style="--span: 270; --t: 107.7">
+      <div class="timeline__axis tc" aria-hidden="true">
+        <span style="--m:0">13:30</span><span style="--m:30">14:00</span><span style="--m:60">14:30</span><span style="--m:90">15:00</span><span style="--m:120">15:30</span><span style="--m:150">16:00</span><span style="--m:180">16:30</span><span style="--m:210">17:00</span><span style="--m:240">17:30</span><span style="--m:270">18:00</span>
+      </div>
+      <div class="timeline__row">
+        <div class="timeline__room"><kbd>1</kbd><i class="led led--live"></i>Gran sala</div>
+        <div class="timeline__track">
+          <div class="timeline__talk timeline__talk--past" style="--s:10;--d:50"><span>Keynote: software libre en el Estado</span></div>
+          <div class="timeline__talk timeline__talk--now" style="--s:80;--d:50"><span>What the Kubernetes bill doesn't tell you</span></div>
+          <div class="timeline__talk timeline__talk--next" style="--s:140;--d:50"><span class="tc">15:50</span><span>Platform engineering sin humo</span></div>
+          <div class="timeline__talk" style="--s:200;--d:50"><span>Lightning talks de cierre</span></div>
+        </div>
+      </div>
+      <div class="timeline__row">
+        <div class="timeline__room"><kbd>2</kbd><i class="led led--live"></i>Auditorio</div>
+        <div class="timeline__track">
+          <div class="timeline__talk timeline__talk--past" style="--s:30;--d:45"><span>eBPF para mortales</span></div>
+          <div class="timeline__talk timeline__talk--now" style="--s:90;--d:45"><span>Observabilidad sin vendor lock-in</span></div>
+          <div class="timeline__talk timeline__talk--next" style="--s:150;--d:45"><span class="tc">16:00</span><span>Postgres a escala</span></div>
+          <div class="timeline__talk" style="--s:210;--d:45"><span>Supply chain: firmá tus builds</span></div>
+        </div>
+      </div>
+      <div class="timeline__row">
+        <div class="timeline__room"><kbd>3</kbd><i class="led led--degraded"></i>Sala Abasto</div>
+        <div class="timeline__track">
+          <div class="timeline__talk timeline__talk--past" style="--s:30;--d:50"><span>Testing de contratos con Pact</span></div>
+          <div class="timeline__talk timeline__talk--now" style="--s:95;--d:45"><span>Rust in the kernel: two years later</span></div>
+          <div class="timeline__talk timeline__talk--next" style="--s:155;--d:45"><span class="tc">16:05</span><span>WebAssembly fuera del navegador</span></div>
+          <div class="timeline__talk" style="--s:215;--d:45"><span>Design systems que sobreviven</span></div>
+        </div>
+      </div>
+      <div class="timeline__row">
+        <div class="timeline__room"><kbd>4</kbd><i class="led led--idle"></i>Sala Talleres</div>
+        <div class="timeline__track">
+          <div class="timeline__talk timeline__talk--past" style="--s:0;--d:90"><span>Taller: Terraform desde cero</span></div>
+          <div class="timeline__talk timeline__talk--next" style="--s:119;--d:91"><span class="tc">15:29</span><span>Taller: tu primer operador de Kubernetes con Go</span><em class="tc">en 11:18</em></div>
+          <div class="timeline__talk" style="--s:225;--d:45"><span>Taller: CI con GitHub Actions</span></div>
+        </div>
+      </div>
+      <div class="timeline__row">
+        <div class="timeline__room"><kbd>5</kbd><i class="led led--down"></i>Sala Comunidad</div>
+        <div class="timeline__track">
+          <div class="timeline__talk timeline__talk--past" style="--s:30;--d:40"><span>Cómo armar un meetup</span></div>
+          <div class="timeline__talk timeline__talk--now" style="--s:100;--d:40"><span>Comunidades open source en Latinoamérica</span></div>
+          <div class="timeline__talk timeline__talk--next timeline__talk--manual" style="--s:150;--d:40"><span class="tc">16:00</span><span>Mentorías abiertas</span></div>
+          <div class="timeline__talk timeline__talk--manual" style="--s:200;--d:40"><span>Mesa: tu primera contribución</span></div>
+        </div>
+      </div>
+      <div class="timeline__now" aria-hidden="true"><span class="tc">Ahora 15:17</span></div>
+    </div>
+  </section>
+
+  <div class="scrim" data-drawer-scrim></div>
+  <aside class="drawer" data-drawer aria-label="Detalle de sala">
+    <section class="drawer__sec">
+      <div class="drawer__head"><kbd>3</kbd><h2 class="drawer__title">Sala Abasto</h2>
+        <button class="drawer__close" type="button">Cerrar <kbd>Esc</kbd></button></div>
+      <p class="drawer__state"><i class="led led--degraded"></i><span>Degradada: el retraso está en 6,1 s y el tope es 4 s.</span></p>
+    </section>
+    <section class="drawer__sec">
+      <b class="drawer__talk">Rust in the kernel: two years later</b><span class="drawer__who">Tomasz Nowak</span>
+      <div class="drawer__meta"><span>EN ▸ ES</span><span>Glosario, 48 términos</span><span class="tc">15:05–15:50</span><span class="tc">TC 00:12:45:11</span></div>
+    </section>
+    <section class="drawer__sec">
+      <div class="drawer__mode">Modo <span class="segmented" role="group" aria-label="Modo"><button type="button" aria-pressed="true">Auto</button><button type="button" aria-pressed="false">Manual</button></span></div>
+      <div class="drawer__keys">
+        <button class="btn" type="button">Iniciar charla ▾</button><button class="btn" type="button">Terminar charla</button>
+        <button class="btn btn--degraded" type="button">Reconectar</button><button class="btn" type="button">Probar con audio</button>
+      </div>
+      <p class="drawer__hint">Reconectar reinicia la sesión de traducción sin cortar el audio. Suele bajar el retraso en menos de 10 s.</p>
+    </section>
+    <section class="drawer__sec">
+      <dl class="metrics">
+        <dt>Audio</dt><dd class="metrics__value">−12&nbsp;dB</dd><dd class="metrics__note"><span class="vu" style="--level: 0.8" role="meter" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-12" aria-valuetext="−12 dBFS"></span></dd>
+        <dt>Retraso</dt><dd class="metrics__value"><i class="led led--degraded"></i>6,1 s</dd><dd class="metrics__note">mediana de 5 min; tope 4 s</dd>
+        <dt>Calidad</dt><dd class="metrics__value">0,71</dd><dd class="metrics__note">mínimo 0,60</dd>
+        <dt>Costo</dt><dd class="metrics__value">US$ 10,85</dd><dd class="metrics__note">hoy</dd>
+      </dl>
+    </section>
+    <section class="drawer__sec">
+      <div class="drawer__cc" aria-label="Subtítulos"><p>Hoy ya se pueden escribir drivers nuevos en Rust dentro del kernel. <span class="phrase phrase--open">Pero el borrow checker no sabe nada</span></p></div>
+    </section>
+    <section class="drawer__sec">
+      <h3 class="drawer__h">Historial de la sala</h3>
+      <ol class="log log--all log--compact">
+        <li class="log__item"><i class="led led--degraded"></i><time class="log__time tc">15:17:21</time><p class="log__text">Retraso mediano de 6,1 s.</p></li>
+        <li class="log__item log__item--info"><i class="led led--info"></i><time class="log__time tc">15:05:00</time><p class="log__text">El piloto inició «Rust in the kernel: two years later».</p></li>
+        <li class="log__item log__item--info"><i class="led led--info"></i><time class="log__time tc">15:04:58</time><p class="log__text">Glosario cargado: 48 términos.</p></li>
+        <li class="log__item log__item--info"><i class="led led--info"></i><time class="log__time tc">14:50:01</time><p class="log__text">El piloto terminó «Testing de contratos con Pact».</p></li>
+      </ol>
+    </section>
+  </aside>
+</div>
+<script>
+  /* Solo para la maqueta: #sala-3 abre el cajón, #calma muestra "Todo en orden". */
+  if (location.hash === "#sala-3") {
+    document.querySelector("[data-drawer]").classList.add("drawer--open");
+    document.querySelector("[data-drawer-scrim]").classList.add("scrim--open");
+    document.querySelector('[data-room="3"]').setAttribute("aria-expanded", "true");
+  }
+  if (location.hash === "#calma") {
+    document.getElementById("attn").classList.add("attn--calm");
+    document.querySelector("[data-attn-count]").textContent = "nada pendiente";
+  }
+</script>
+</body>
+</html>

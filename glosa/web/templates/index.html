@@ -2,15 +2,11 @@
 
 {% block title %}{{ tr("index_title").format(event=event_name) }} | Glosa{% endblock %}
 
-{% block styles %}
-  <link rel="stylesheet" href="/static/css/room.css">
-{%- endblock %}
-
 {% block body %}
 <div class="index">
   <header class="index__head">
     <div class="index__brand">
-      <a class="wordmark" href="/{{ lang_suffix }}" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
+      <a class="wordmark" href="/{{ lang_suffix }}" aria-label="Glosa">glosa</a>
       {%- if logo_url %}
       <img class="event-logo" src="{{ logo_url }}" alt="{{ event_name }}">
       {%- endif %}

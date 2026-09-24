@@ -8,7 +8,7 @@
    On connect the server replays recent history; EventSource reconnects on its
    own and resumes with Last-Event-ID.
 
-   Rules from docs/design/README.md §4: text already on screen is never
+   Rules from docs/design/README.md §5: text already on screen is never
    rewritten (only appended); the open phrase is dimmer and "settles" by colour
    only; about three closed phrases move from the live block to the history as
    one paragraph; scrolling up pauses auto-scroll and shows "Back to live".
@@ -184,6 +184,7 @@
       this.liveTime.textContent = "";
       this.liveTime.removeAttribute("datetime");
       this.reset();
+      autoTop = 0;   // the content just shrank: until the next jump, no clamp is the reader's
     }
 
     append(seg, text, stamp) {
@@ -200,7 +201,7 @@
         this.phrases.set(seg, span);
         this.open = span;
       }
-      // Trailing spaces wait for the next word, so the nib never wraps alone
+      // Trailing spaces wait for the next word, so the cursor never wraps alone
       // onto a new line. Each chunk is a new text node: nothing is rewritten.
       const full = (this.trailing.get(seg) || "") + text;
       const visible = full.replace(/\s+$/, "");
@@ -490,32 +491,45 @@
   // ---- following the live text --------------------------------------------------------
 
   let scrollQueued = false;
+  let autoTop = 0;   // where the code last put the stage, after clamping
+
+  function toBottom() {
+    stage.scrollTop = stage.scrollHeight;
+    autoTop = stage.scrollTop;
+  }
 
   function scheduleScroll() {
     if (scrollQueued || !state.following) return;
     scrollQueued = true;
     requestAnimationFrame(() => {
       scrollQueued = false;
-      if (state.following) stage.scrollTop = stage.scrollHeight;
+      if (state.following) toBottom();
     });
   }
+
+  // The scroll event for our own jump arrives a frame later, and a replay burst
+  // may have grown the content by then. Only a move *up* from where the code
+  // put the stage (or from the new bottom, if the content shrank or the stage
+  // grew) is the reader's.
+  stage.addEventListener("scroll", () => {
+    const bottom = stage.scrollHeight - stage.clientHeight;
+    if (state.following) {
+      if (stage.scrollTop < Math.min(autoTop, bottom) - FOLLOW_SLACK_PX) setFollowing(false);
+    } else if (bottom - stage.scrollTop <= FOLLOW_SLACK_PX) {
+      setFollowing(true);
+    }
+  }, { passive: true });
+
+  toLive.addEventListener("click", () => {
+    setFollowing(true);
+    toBottom();
+  });
 
   function setFollowing(value) {
     state.following = value;
     toLive.hidden = value;
     if (value) scheduleScroll();
   }
-
-  stage.addEventListener("scroll", () => {
-    const distance = stage.scrollHeight - stage.scrollTop - stage.clientHeight;
-    const following = distance <= FOLLOW_SLACK_PX;
-    if (following !== state.following) setFollowing(following);
-  }, { passive: true });
-
-  toLive.addEventListener("click", () => {
-    setFollowing(true);
-    stage.scrollTop = stage.scrollHeight;
-  });
 
   // Rotating the phone or resizing the text must not lose the live line.
   new ResizeObserver(() => scheduleScroll()).observe(stage);

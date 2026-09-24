@@ -263,16 +263,16 @@ def test_room_page_loads_the_design_system_and_room_js(client: TestClient) -> No
     assert client.get("/static/js/room.js").status_code == 200
 
 
-def test_audience_pages_add_their_own_stylesheet_after_the_design_system(
-    client: TestClient,
-) -> None:
-    # Audience-only styles live in room.css so a re-skin can swap CSS files
-    # without touching glosa.css; it must load after glosa.css to extend it.
-    for path in ("/", "/s/r1"):
+def test_audience_pages_link_only_assets_that_exist(client: TestClient) -> None:
+    # The v2 design system is one stylesheet (glosa.css, room.css was folded
+    # into it). Every local stylesheet and script a page links must be served.
+    for path in ("/", "/s/r1", "/s/r2", "/s/nope"):
         html = client.get(path, headers=SPANISH).text
-        assert 'href="/static/css/room.css"' in html
-        assert html.index("/static/css/glosa.css") < html.index("/static/css/room.css")
-    assert client.get("/static/css/room.css").status_code == 200
+        assert 'href="/static/css/glosa.css"' in html
+        refs = re.findall(r'(?:href|src)="(/static/[^"]+)"', html)
+        assert refs
+        for ref in refs:
+            assert client.get(ref).status_code == 200, f"{path} links a missing {ref}"
 
 
 def test_room_lists_every_room_on_the_side(client: TestClient) -> None:
@@ -299,6 +299,7 @@ def test_room_labels_the_language_selector_and_controls(client: TestClient) -> N
     assert t("larger", "en") in html
     assert t("smaller", "en") in html
     assert t("fullscreen", "en") in html
+    assert f'<span class="control__word">{t("theme_button", "en")}</span>' in html
 
 
 def test_unknown_room_is_a_404_page(client: TestClient) -> None:

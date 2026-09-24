@@ -1,0 +1,116 @@
+/* Solo para las maquetas de docs/design: marcos de celular, fondo a cuadros
+   y notas al margen. La app no usa este archivo. */
+
+.mock {
+  margin: 0;
+  min-block-size: 100dvh;
+  background: color-mix(in oklab, var(--bg) 88%, var(--text));
+  color: var(--text);
+  font-family: var(--font-text);
+}
+
+.mock__head {
+  display: grid;
+  gap: var(--space-2);
+  max-inline-size: 72rem;
+  margin-inline: auto;
+  padding: var(--space-6) var(--space-5) var(--space-5);
+}
+.mock__head h1 { font-size: var(--step-4); }
+.mock__head p { max-inline-size: 44rem; color: var(--text-2); }
+.mock__head code, .mock-notes code {
+  font-size: 0.9em;
+  padding: 0.05em 0.3em;
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.mock__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--space-7) var(--space-6);
+  padding: var(--space-4) var(--space-5) var(--space-8);
+}
+
+.mock__figure { display: grid; gap: var(--space-3); justify-items: center; }
+.mock__figure figcaption {
+  font-family: var(--font-gloss);
+  font-style: italic;
+  font-size: var(--step-1);
+  color: var(--text-2);
+  text-align: center;
+  max-inline-size: 390px;
+}
+
+/* Celular de 390 × 844 (iPhone 14/15). */
+.device {
+  --room-h: 100%;
+  position: relative;
+  inline-size: calc(390px + 24px);
+  block-size: calc(844px + 24px);
+  padding: 12px;
+  border-radius: 56px;
+  background: #07081C;
+  box-shadow: 0 30px 60px -30px rgb(5 6 26 / 0.55), inset 0 0 0 2px #2A2D52;
+}
+.device__screen {
+  container: glosa / inline-size;   /* la sala se acomoda a 390 px, no a la ventana */
+  block-size: 100%;
+  border-radius: 44px;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.mock-notes {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: 22rem;
+  padding-block-start: var(--space-4);
+  font-size: var(--step--1);
+  color: var(--text-2);
+}
+.mock-notes h2 { font-size: var(--step-2); color: var(--text); }
+.mock-notes dt { font-weight: 700; color: var(--text); }
+.mock-notes dd { margin: 0 0 var(--space-2); }
+
+/* Transparencia simulada para el overlay. */
+.checker {
+  background: repeating-conic-gradient(#C7CAD8 0 25%, #EDEFF5 0 50%) 0 0 / 32px 32px;
+}
+.stage-16x9 {
+  container-type: inline-size;
+  position: relative;
+  inline-size: min(100%, 72rem);
+  aspect-ratio: 16 / 9;
+  margin-inline: auto;
+  display: grid;
+  place-items: end center;
+  padding: 0 5cqw 5.5cqw;
+  outline: 1px solid color-mix(in oklab, var(--text) 25%, transparent);
+}
+/* 48 px en un lienzo de 1920 px, a escala de la maqueta. */
+.stage-16x9 .overlay { --overlay-size: calc(48 / 1920 * 100cqw); }
+.stage-16x9--small .overlay { --overlay-size: calc(36 / 1920 * 100cqw); --overlay-lines: 2; }
+.stage__tag {
+  position: absolute;
+  inset-block-start: 1.2cqw;
+  inset-inline-start: 1.2cqw;
+  padding: 0.2em 0.6em;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.9);
+  color: #15173D;
+  font: 600 13px/1.4 var(--font-text);
+}
+
+/* En un celular de verdad, la maqueta es la pantalla. */
+@media (max-width: 480px) {
+  .mock__head, .mock-notes { display: none; }
+  .mock__row { padding: 0; gap: 0; }
+  .mock__figure { gap: 0; }
+  .mock__figure figcaption { padding: var(--space-3) var(--space-4); }
+  .device { inline-size: 100vw; block-size: 100dvh; padding: 0; border-radius: 0; box-shadow: none; background: none; }
+  .device__screen { border-radius: 0; }
+}

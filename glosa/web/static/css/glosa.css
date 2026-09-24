@@ -1,0 +1,1374 @@
+/* ==========================================================================
+   Glosa: sistema visual
+   Subtítulos y traducción en vivo para cada sala.
+
+   CSS puro, sin build. Las fuentes se cargan con <link> en el HTML:
+   https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..800;1,400..800&family=Atkinson+Hyperlegible+Next:wght@400..800&display=swap
+
+   Reglas, escala y razones: docs/design/README.md
+
+   Capas: las páginas pueden sumar su CSS sin capa y siempre le gana a esto.
+   ========================================================================== */
+
+@layer glosa.reset, glosa.tokens, glosa.base, glosa.components, glosa.views;
+
+
+/* --------------------------------------------------------------------------
+   Reset mínimo
+   -------------------------------------------------------------------------- */
+@layer glosa.reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  body, h1, h2, h3, h4, p, ol, ul, dl, dd, figure, blockquote { margin: 0; }
+  ol[class], ul[class] { list-style: none; padding: 0; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  img { display: block; max-inline-size: 100%; }
+  table { border-collapse: collapse; }
+  cite { font-style: inherit; }
+}
+
+
+/* --------------------------------------------------------------------------
+   Tokens
+   Colores base con nombre de pigmento; roles que se resuelven por tema
+   con light-dark(). El alto contraste pisa los roles uno por uno.
+   -------------------------------------------------------------------------- */
+@layer glosa.tokens {
+  :root {
+    color-scheme: light dark;
+
+    /* Marca del evento: la configuración pisa estas cuatro. */
+    --brand-primary: #3445D6;      /* lapislázuli: franja superior, botones, links */
+    --brand-accent: #F0B429;       /* oropimente: la pluma y la barra del vivo */
+    --brand-on-primary: #FFFFFF;   /* texto sobre --brand-primary */
+    --brand-on-accent: #1C1400;    /* texto sobre --brand-accent */
+
+    /* Pigmentos */
+    --tinta: #121335;              /* tinta ferrogálica: fondo oscuro */
+    --tinta-2: #1A1C47;
+    --tinta-3: #262A61;
+    --papel: #F6F7FB;              /* papel: fondo claro, frío, nunca crema */
+    --papel-2: #EAECF5;
+    --luz: #F2F0E9;                /* texto sobre tinta, apenas cálido */
+
+    /* Roles */
+    --bg:          light-dark(var(--papel), var(--tinta));
+    --surface:     light-dark(#FFFFFF, var(--tinta-2));
+    --surface-2:   light-dark(var(--papel-2), var(--tinta-3));
+    --text:        light-dark(#15173D, var(--luz));
+    --text-2:      light-dark(#464970, #B9BBD8);
+    --text-open:   light-dark(#6A6D95, #9396C2);   /* frase en curso */
+    --rule:        light-dark(#D5D8E8, #30346B);
+    --rule-strong: light-dark(#8387AC, #6B71BA);
+    --primary:     light-dark(var(--brand-primary), color-mix(in oklab, var(--brand-primary) 48%, white));
+    --accent:      light-dark(color-mix(in oklab, var(--brand-accent) 68%, #3A2400), var(--brand-accent));
+    --live-mark:   var(--accent);
+    --focus:       light-dark(var(--brand-primary), var(--brand-accent));
+
+    /* Estados (siempre con forma y palabra, nunca solo color) */
+    --ok:   light-dark(#1D8249, #4FD08F);   /* en vivo */
+    --warn: light-dark(#B25400, #FF9446);   /* degradado */
+    --fail: light-dark(#C22A36, #FF6F78);   /* caído */
+    --idle: light-dark(#737798, #8C90B8);   /* inactiva */
+    --meter: light-dark(#4D5BD0, #8F9AF0);  /* relleno neutro de medidores */
+
+    /* Overlay de TV: no depende del tema, va sobre video. */
+    --overlay-bg: color-mix(in srgb, var(--tinta) 86%, transparent);
+    --overlay-text: #FFFFFF;
+    --overlay-open: #C3C6EC;
+
+    /* Tipografía */
+    --font-text: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-gloss: "Alegreya", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+
+    /* Escala clásica (Bringhurst): 12 14 16 18 21 24 36 48 60 72 */
+    --step--2: 0.75rem;
+    --step--1: 0.875rem;
+    --step-0: 1rem;
+    --step-1: 1.125rem;
+    --step-2: 1.3125rem;
+    --step-3: 1.5rem;
+    --step-4: 2.25rem;
+    --step-5: 3rem;
+    --step-6: 3.75rem;
+    --step-7: 4.5rem;
+
+    --leading-tight: 1.12;
+    --leading-ui: 1.35;
+    --leading-body: 1.5;
+    --leading-caption: 1.42;
+
+    /* Subtítulos: eje propio, fuera de la escala. A−/A+ cambian --caption-scale. */
+    --caption-scale: 1;              /* 0.8 · 0.9 · 1 · 1.15 · 1.3 · 1.5 · 1.75 */
+    --caption-base: 1.625rem;        /* 26 px en celular: ~26 caracteres por línea */
+    --history-base: 1.125rem;        /* 18 px */
+    --caption-weight: 500;
+
+    /* Espacio (base 4 px) */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+    --space-8: 4rem;
+
+    --gutter: 1rem;                  /* 16 px de costado en celular */
+    --margin-w: 3rem;                /* el margen de la glosa */
+    --margin-gap: 0.875rem;          /* del filete al texto */
+    --rule-w: 1px;
+    --live-bar-w: 4px;
+    --border-w: 1px;
+    --tap: 44px;
+
+    /* Radios por jerarquía, no uno para todo */
+    --radius-s: 4px;                 /* chips, campos */
+    --radius-m: 10px;                /* teclas de control, flotantes */
+    --radius-pill: 999px;            /* "volver al vivo" */
+
+    --shadow-float:
+      0 12px 28px -14px color-mix(in srgb, #05061A 70%, transparent),
+      0 2px 6px -2px color-mix(in srgb, #05061A 35%, transparent);
+
+    /* Movimiento */
+    --dur-ui: 140ms;
+    --dur-settle: 480ms;             /* frase en curso → cerrada */
+    --ease-settle: cubic-bezier(0.2, 0.7, 0.1, 1);
+  }
+
+  [data-theme="light"] { color-scheme: light; }
+  [data-theme="dark"]  { color-scheme: dark; }
+
+  /* Alto contraste real: negro, blanco y amarillo. Sin transparencias. */
+  [data-theme="contrast"] {
+    color-scheme: dark;
+    --bg: #000000;
+    --surface: #000000;
+    --surface-2: #000000;
+    --text: #FFFFFF;
+    --text-2: #FFFFFF;
+    --text-open: #FFE14A;            /* la frase en curso cambia de tono, no se apaga */
+    --rule: #FFFFFF;
+    --rule-strong: #FFFFFF;
+    --primary: #FFFFFF;
+    --accent: #FFE14A;
+    --live-mark: #FFE14A;
+    --focus: #FFE14A;
+    --ok: #4DFF9A;
+    --warn: #FFB547;
+    --fail: #FF7A7A;
+    --idle: #FFFFFF;
+    --meter: #FFFFFF;
+    --rule-w: 2px;
+    --live-bar-w: 6px;
+    --border-w: 2px;
+    --caption-weight: 600;
+  }
+
+  @media (prefers-contrast: more) {
+    :root:not([data-theme]) {
+      color-scheme: dark;
+      --bg: #000000;
+      --surface: #000000;
+      --surface-2: #000000;
+      --text: #FFFFFF;
+      --text-2: #FFFFFF;
+      --text-open: #FFE14A;
+      --rule: #FFFFFF;
+      --rule-strong: #FFFFFF;
+      --primary: #FFFFFF;
+      --accent: #FFE14A;
+      --live-mark: #FFE14A;
+      --focus: #FFE14A;
+      --ok: #4DFF9A;
+      --warn: #FFB547;
+      --fail: #FF7A7A;
+      --idle: #FFFFFF;
+      --meter: #FFFFFF;
+      --rule-w: 2px;
+      --live-bar-w: 6px;
+      --border-w: 2px;
+      --caption-weight: 600;
+    }
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   Base
+   -------------------------------------------------------------------------- */
+@layer glosa.base {
+  html {
+    font-family: var(--font-text);
+    font-size: 100%;
+    line-height: var(--leading-body);
+    color: var(--text);
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* Las vistas se acomodan al ancho de su contenedor "glosa", no de la ventana:
+     así una sala se puede mostrar dentro de un marco (maquetas, vista previa en el panel). */
+  body {
+    min-block-size: 100dvh;
+    background: var(--bg);
+    color: var(--text);
+    container: glosa / inline-size;
+  }
+
+  /* Un tema se puede aplicar a una parte de la página (útil en maquetas y en el panel). */
+  [data-theme] { background-color: var(--bg); color: var(--text); }
+
+  h1, h2, h3 {
+    font-family: var(--font-gloss);
+    font-weight: 700;
+    line-height: var(--leading-tight);
+    text-wrap: balance;
+  }
+
+  a { color: var(--primary); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+  a:hover { text-decoration-thickness: 0.14em; }
+
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+  [data-theme="contrast"] :focus-visible { outline-width: 4px; outline-offset: 3px; }
+
+  ::selection { background: color-mix(in oklab, var(--brand-accent) 50%, transparent); }
+
+  kbd, .kbd {
+    font-family: var(--font-text);
+    font-size: 0.85em;
+    font-weight: 700;
+    display: inline-block;
+    min-inline-size: 1.7em;
+    padding: 0.05em 0.4em;
+    text-align: center;
+    border: var(--border-w) solid var(--rule-strong);
+    border-block-end-width: calc(var(--border-w) + 2px);
+    border-radius: var(--radius-s);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .visually-hidden {
+    position: absolute !important;
+    inline-size: 1px; block-size: 1px;
+    margin: -1px; padding: 0; border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .num { font-variant-numeric: tabular-nums lining-nums; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   Componentes
+   -------------------------------------------------------------------------- */
+@layer glosa.components {
+
+  /* ---- Marca ---------------------------------------------------------- */
+
+  /* La pluma: la marca de Glosa y el cursor del texto que se está escribiendo. */
+  .nib,
+  .phrase--open::after {
+    content: "";
+    display: inline-block;
+    inline-size: 0.22em;
+    block-size: 0.64em;
+    margin-inline-start: 0.12em;
+    vertical-align: 0;
+    background: var(--live-mark);
+    border-radius: 1px 1px 0 0;
+    transform: skewX(-10deg);
+  }
+
+  .wordmark {
+    display: inline-flex;
+    align-items: baseline;
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-weight: 800;
+    font-size: var(--step-2);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .wordmark .nib { background: var(--accent); }
+
+  .event-logo { block-size: 1.75rem; inline-size: auto; }
+
+  .event-name {
+    font-family: var(--font-gloss);
+    font-weight: 700;
+    font-size: var(--step-1);
+    line-height: 1;
+    color: var(--text);
+  }
+
+  /* Títulos de charla: van en cursiva, como todo título de obra. */
+  .talk-title {
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text);
+  }
+
+  .talk-meta {
+    font-size: var(--step--1);
+    line-height: var(--leading-ui);
+    color: var(--text-2);
+  }
+
+  /* ---- Dirección de traducción: EN → ES ------------------------------- */
+  .direction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0.15em 0.5em;
+    border-radius: var(--radius-s);
+    background: var(--surface-2);
+    border: var(--border-w) solid transparent;
+    font-size: var(--step--1);
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .direction abbr { text-decoration: none; }
+  .direction svg { inline-size: 0.95em; block-size: 0.95em; flex: none; }
+  [data-theme="contrast"] .direction { border-color: var(--rule); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    padding: 0.1em 0.5em;
+    border: var(--border-w) solid var(--rule-strong);
+    border-radius: var(--radius-s);
+    font-size: var(--step--2);
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+
+  /* ---- Estado: lámpara con forma + palabra ---------------------------- */
+  /* En vivo ●  Degradado ▲  Caído ■  Inactiva ○ */
+  .status {
+    --status-color: var(--idle);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    font-size: var(--step--1);
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .status::before {
+    content: "";
+    flex: none;
+    inline-size: 0.72em;
+    block-size: 0.72em;
+    background: var(--status-color);
+  }
+  .status--live     { --status-color: var(--ok); }
+  .status--live::before { border-radius: 50%; }
+  .status--degraded { --status-color: var(--warn); }
+  .status--degraded::before {
+    inline-size: 0.82em; block-size: 0.74em;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  }
+  .status--down     { --status-color: var(--fail); }
+  .status--down::before { border-radius: 1px; }
+  .status--idle     { --status-color: var(--idle); color: var(--text-2); }
+  .status--idle::before {
+    background: transparent;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 2px var(--status-color);
+  }
+
+  /* ---- Encabezado de sala --------------------------------------------- */
+  .room-head {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--gutter) var(--space-4);
+    background: var(--surface);
+    border-block-start: 4px solid var(--brand-primary);
+    border-block-end: var(--rule-w) solid var(--rule);
+  }
+  .room-head__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-block-end: var(--space-3);
+  }
+  .room-head__brand {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-inline-size: 0;
+  }
+  .room-head__rooms {
+    font-size: var(--step--1);
+    font-weight: 600;
+  }
+  .room-head__event { display: none; }
+  .room-head__name {
+    font-family: var(--font-gloss);
+    font-weight: 800;
+    font-size: var(--step-3);
+    line-height: var(--leading-tight);
+    letter-spacing: -0.005em;
+  }
+  .room-head__talk {
+    font-size: var(--step-1);
+  }
+  .room-head__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    margin-block-start: var(--space-1);
+  }
+
+  /* ---- Transcripción: margen de glosa + texto ------------------------- */
+  /* Cada renglón es una grilla: [margen con la hora][columna(s) de texto].
+     El filete de la izquierda es continuo en el historial y se engrosa en el vivo. */
+  .transcript {
+    --text-cols: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .transcript--bilingual { --text-cols: 2; }
+
+  .history { display: flex; flex-direction: column; }
+
+  .line {
+    display: grid;
+    grid-template-columns: var(--margin-w) repeat(var(--text-cols), minmax(0, 1fr));
+    align-items: first baseline;
+  }
+
+  .line__time {
+    grid-column: 1;
+    padding-inline-end: var(--space-3);
+    text-align: end;
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-size: var(--step--1);
+    line-height: 1.2;
+    font-variant-numeric: lining-nums tabular-nums;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+
+  .line__text:first-child { grid-column-start: 2; }   /* renglón sin hora */
+  .line__text {
+    padding-block: 0.3em;
+    padding-inline: calc(var(--margin-gap) - var(--rule-w)) var(--space-3);
+    border-inline-start: var(--rule-w) solid var(--rule);
+    font-size: calc(var(--history-base) * var(--caption-scale));
+    line-height: var(--leading-caption);
+    color: var(--text-2);
+    overflow-wrap: break-word;
+    hyphens: manual;
+    text-wrap: pretty;               /* solo en historial: ya no cambia */
+  }
+
+  /* Bloque en vivo: letra grande, barra de oropimente, texto que solo crece al final. */
+  .line--live .line__time { color: var(--text); }
+  .line--live .line__text {
+    padding-block: 0.55em 0.25em;
+    padding-inline-start: calc(var(--margin-gap) - var(--live-bar-w));
+    border-inline-start: var(--live-bar-w) solid var(--live-mark);
+    font-size: calc(var(--caption-base) * var(--caption-scale));
+    font-weight: var(--caption-weight);
+    line-height: var(--leading-caption);
+    letter-spacing: 0.003em;
+    color: var(--text);
+    text-wrap: wrap;                 /* nunca balance ni pretty: re-acomodan lo ya leído */
+  }
+
+  /* Encabezado de columnas en bilingüe */
+  .line--head {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    background: var(--bg);
+    border-block-end: var(--rule-w) solid var(--rule);
+  }
+  .line__label {
+    padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--margin-gap) - var(--rule-w));
+    border-inline-start: var(--rule-w) solid var(--rule);
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-size: var(--step-0);
+    color: var(--text-2);
+  }
+  .line__label b { font-style: normal; font-weight: 700; color: var(--text); }
+
+  /* Bilingüe en pantallas angostas: interlineal, como las glosas.
+     El original va arriba, chico y en segundo plano; la traducción, abajo, a tamaño completo. */
+  @container glosa (max-width: 40rem) {
+    .transcript--bilingual { --text-cols: 1; }
+    .transcript--bilingual .line--head { display: none; }
+    .transcript--bilingual .line__text { grid-column: 2; }
+    .transcript--bilingual .line__text:not(:last-child) {
+      padding-block-end: 0;
+      font-size: calc(var(--history-base) * var(--caption-scale) * 0.85);
+      font-weight: 400;
+      color: var(--text-2);
+    }
+    .transcript--bilingual .line--live .line__text:not(:last-child) {
+      font-size: calc(var(--caption-base) * var(--caption-scale) * 0.62);
+    }
+  }
+
+  /* ---- Frases: en curso (tenue) y cerrada (sólida) -------------------- */
+  /* El cambio es solo de color: el ancho de las letras no cambia, nada se mueve. */
+  .phrase {
+    color: inherit;
+    transition: color var(--dur-settle) var(--ease-settle);
+  }
+  .phrase--open { color: var(--text-open); }
+  .phrase--open::after {
+    animation: glosa-nib 1.6s ease-in-out infinite alternate;
+  }
+  @keyframes glosa-nib {
+    from { opacity: 1; }
+    to   { opacity: 0.3; }
+  }
+
+  /* ---- Volver al vivo ------------------------------------------------- */
+  .to-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    min-block-size: var(--tap);
+    padding: 0.55em 1.1em 0.55em 0.9em;
+    border: var(--border-w) solid transparent;
+    border-radius: var(--radius-pill);
+    background: var(--brand-accent);
+    color: var(--brand-on-accent);
+    font-size: var(--step-0);
+    font-weight: 700;
+    line-height: 1.1;
+    box-shadow: var(--shadow-float);
+    white-space: nowrap;
+  }
+  .to-live svg { inline-size: 1.1em; block-size: 1.1em; flex: none; }
+  .to-live[hidden] { display: none; }
+  [data-theme="contrast"] .to-live { background: #FFE14A; color: #000; border-color: #000; box-shadow: 0 0 0 2px #FFE14A; }
+
+  /* ---- Barra de controles -------------------------------------------- */
+  .controls {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--gutter) calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+    background: var(--surface);
+    border-block-start: var(--rule-w) solid var(--rule);
+  }
+  .controls__to-live {
+    position: absolute;
+    inset-block-end: calc(100% + var(--space-3));
+    inset-inline-start: 50%;
+    translate: -50% 0;
+  }
+
+  .control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35em;
+    min-inline-size: var(--tap);
+    block-size: var(--tap);
+    padding-inline: var(--space-3);
+    border: var(--border-w) solid transparent;
+    border-radius: var(--radius-m);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: var(--step-0);
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    transition: background-color var(--dur-ui);
+  }
+  .control:hover { background: color-mix(in oklab, var(--surface-2) 82%, var(--text)); }
+  .control[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+  .control svg { inline-size: 1.25em; block-size: 1.25em; flex: none; }
+  .control--push { margin-inline-start: auto; }
+  [data-theme="contrast"] .control { border-color: var(--rule); }
+
+  /* A− / A+: la A cambia de tamaño, el signo aclara. */
+  .control__a { font-family: var(--font-gloss); font-weight: 700; }
+  .control__a--small { font-size: 0.85em; }
+  .control__a--big { font-size: 1.2em; }
+
+  .control-group { display: inline-flex; gap: 2px; }
+  .control-group > .control { gap: 0.1em; }
+  .control-group > .control:not(:first-child) { border-start-start-radius: 0; border-end-start-radius: 0; }
+  .control-group > .control:not(:last-child)  { border-start-end-radius: 0; border-end-end-radius: 0; }
+
+  /* Selector de idioma: un <select> nativo vestido como tecla. */
+  .control--select {
+    position: relative;
+    justify-content: flex-start;
+    padding: 0;
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    max-inline-size: 13rem;
+  }
+  .control--select select {
+    appearance: none;
+    inline-size: 100%;
+    block-size: 100%;
+    padding-inline: var(--space-3) var(--space-6);
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    font-weight: 700;
+    color: inherit;
+    cursor: pointer;
+  }
+  .control--select::after {
+    content: "";
+    position: absolute;
+    inset-inline-end: var(--space-4);
+    inset-block-start: 50%;
+    inline-size: 0.45em;
+    block-size: 0.45em;
+    border-inline-end: 2px solid currentColor;
+    border-block-end: 2px solid currentColor;
+    translate: 0 -70%;
+    rotate: 45deg;
+    pointer-events: none;
+  }
+  .control--select option { background: var(--surface); color: var(--text); }
+
+  /* ---- Lista de salas en el costado (escritorio) ---------------------- */
+  .room-nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-block: var(--space-5);
+    background: var(--surface);
+    border-inline-end: var(--rule-w) solid var(--rule);
+    overflow-y: auto;
+  }
+  .room-nav__title {
+    padding-inline: var(--gutter);
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-weight: 500;
+    font-size: var(--step-1);
+    color: var(--text-2);
+  }
+  .room-nav__list { display: flex; flex-direction: column; }
+  .room-nav__item {
+    display: grid;
+    gap: 0.2rem;
+    padding: var(--space-3) var(--gutter) var(--space-3) calc(var(--gutter) - 4px);
+    border-inline-start: 4px solid transparent;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .room-nav__item:hover { background: var(--surface-2); }
+  .room-nav__item[aria-current="page"] {
+    border-inline-start-color: var(--primary);
+    background: var(--surface-2);
+  }
+  .room-nav__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+  .room-nav__name {
+    font-family: var(--font-gloss);
+    font-weight: 700;
+    font-size: var(--step-2);
+    line-height: 1.15;
+  }
+  .room-nav__talk { font-size: var(--step-0); }
+  .room-nav__foot {
+    margin-block-start: auto;
+    padding: var(--space-4) var(--gutter) 0;
+    display: grid;
+    gap: var(--space-2);
+    font-size: var(--step--1);
+    color: var(--text-2);
+  }
+
+  /* ---- Tarjeta de sala (lista pública) -------------------------------- */
+  .room-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+    column-gap: var(--space-7);
+  }
+  .room-card {
+    --margin-w: 5.5rem;
+    position: relative;
+    display: grid;
+    gap: var(--space-4);
+    padding-block: var(--space-5) var(--space-6);
+    border-block-start: var(--rule-w) solid var(--rule-strong);
+  }
+  .room-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .room-card__name {
+    font-family: var(--font-gloss);
+    font-weight: 800;
+    font-size: var(--step-4);
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .room-card__link { color: var(--text); text-decoration: none; }
+  .room-card__link::after { content: ""; position: absolute; inset: 0; }   /* toda la tarjeta es el link */
+  .room-card__link:focus-visible { outline: none; }
+  .room-card:has(.room-card__link:focus-visible) { outline: 3px solid var(--focus); outline-offset: 4px; }
+  .room-card:hover .room-card__name { text-decoration: underline; text-decoration-thickness: 0.06em; text-underline-offset: 0.12em; }
+
+  .agenda { display: grid; gap: var(--space-3); }
+  .slot {
+    display: grid;
+    grid-template-columns: var(--margin-w) minmax(0, 1fr);
+    align-items: first baseline;
+  }
+  .slot__when {
+    padding-inline-end: var(--space-3);
+    text-align: end;
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-size: var(--step-0);
+    line-height: 1.25;
+    color: var(--text-2);
+  }
+  .slot__when time { display: block; font-size: var(--step--1); font-variant-numeric: lining-nums tabular-nums; }
+  .slot__what {
+    display: grid;
+    gap: var(--space-1);
+    padding-block: 0.15em 0.2em;
+    padding-inline-start: calc(var(--margin-gap) - var(--rule-w));
+    border-inline-start: var(--rule-w) solid var(--rule);
+  }
+  .slot__what .talk-title { font-size: var(--step-2); }
+  .slot--now .slot__when { color: var(--text); }
+  .room-card--live .slot--now .slot__what {
+    padding-inline-start: calc(var(--margin-gap) - var(--live-bar-w));
+    border-inline-start: var(--live-bar-w) solid var(--live-mark);
+  }
+  .slot__empty { font-size: var(--step-0); color: var(--text-2); }
+
+  /* ---- Botones -------------------------------------------------------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+    min-block-size: 2.5rem;
+    padding: 0.45em 0.9em;
+    border: var(--border-w) solid var(--rule-strong);
+    border-radius: var(--radius-s);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--step--1);
+    font-weight: 700;
+    line-height: 1.15;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color var(--dur-ui), border-color var(--dur-ui);
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn svg { inline-size: 1.1em; block-size: 1.1em; flex: none; }
+  .btn--primary {
+    background: var(--brand-primary);
+    color: var(--brand-on-primary);
+    border-color: color-mix(in oklab, var(--brand-primary) 70%, white);
+  }
+  .btn--primary:hover { background: color-mix(in oklab, var(--brand-primary) 88%, black); }
+  .btn--danger { color: var(--fail); border-color: color-mix(in oklab, var(--fail) 55%, transparent); }
+  .btn--danger:hover { background: color-mix(in oklab, var(--fail) 10%, var(--surface)); }
+  .btn--quiet { border-color: transparent; background: transparent; }
+  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+  [data-theme="contrast"] .btn--primary { background: #FFFFFF; color: #000000; border-color: #FFFFFF; }
+
+  /* Selector segmentado (Automático / Manual) */
+  .segmented {
+    display: inline-flex;
+    padding: 2px;
+    gap: 2px;
+    border: var(--border-w) solid var(--rule-strong);
+    border-radius: var(--radius-s);
+    background: var(--surface);
+  }
+  .segmented button {
+    padding: 0.2em 0.6em;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    font-size: var(--step--2);
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--text-2);
+  }
+  .segmented button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+
+  /* ---- Panel de producción: consola de salas -------------------------- */
+  /* Cada sala es un canal, como en una consola de sonido: franjas pegadas,
+     separadas por filetes, con la luz de estado arriba de todo. */
+  .console {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    gap: var(--rule-w);
+    background: var(--rule);
+    border: var(--rule-w) solid var(--rule);
+  }
+
+  .strip {
+    --status-color: var(--idle);
+    --strip-bg: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) var(--space-4);
+    background: var(--strip-bg);
+    min-inline-size: 0;
+  }
+  .strip::before {                              /* luz de estado */
+    content: "";
+    display: block;
+    block-size: 6px;
+    margin-inline: calc(-1 * var(--space-4));
+    background: var(--status-color);
+  }
+  .strip--live     { --status-color: var(--ok); }
+  .strip--degraded { --status-color: var(--warn); --strip-bg: color-mix(in oklab, var(--warn) 7%, var(--surface)); }
+  .strip--down     { --status-color: var(--fail); --strip-bg: color-mix(in oklab, var(--fail) 9%, var(--surface)); }
+  .strip--idle     { --status-color: var(--idle); }
+  .strip--idle::before {
+    background: repeating-linear-gradient(-45deg, var(--idle) 0 5px, transparent 5px 10px);
+  }
+
+  /* Nombre arriba; debajo, estado a la izquierda y modo a la derecha; debajo, el motivo. */
+  .strip__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    padding-block-start: var(--space-1);
+  }
+  .strip__name,
+  .strip__reason { grid-column: 1 / -1; }
+  .strip__name {
+    font-family: var(--font-gloss);
+    font-weight: 800;
+    font-size: var(--step-3);
+    line-height: 1.05;
+  }
+  .strip__reason { font-size: var(--step--1); line-height: var(--leading-ui); color: var(--text); text-wrap: pretty; }
+  .strip__talk { display: grid; gap: var(--space-1); min-block-size: 5.25rem; }
+  .strip__talk .talk-title { font-size: var(--step-1); }
+  .strip__tags { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+  .strip__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-block-start: auto;
+    padding-block-start: var(--space-2);
+  }
+  .strip__actions .btn { flex: 1 1 auto; }
+
+  /* Métricas: etiqueta a la izquierda, número tabular a la derecha. */
+  .metrics { display: grid; }
+  .metric {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-block: var(--space-2);
+    border-block-start: var(--rule-w) solid var(--rule);
+  }
+  .metric dt { font-size: var(--step--1); color: var(--text-2); }
+  .metric dt small { font-size: inherit; opacity: 0.85; }
+  .metric dd {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-size: var(--step-1);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 1.1;
+  }
+  .metric--warn dd::before,
+  .metric--fail dd::before {
+    content: "";
+    inline-size: 0.62em; block-size: 0.56em;
+    background: var(--warn);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  }
+  .metric--fail dd::before { background: var(--fail); clip-path: none; inline-size: 0.56em; border-radius: 1px; }
+
+  /* ---- Medidor de audio (VU) ----------------------------------------- */
+  /* --level y --peak van de 0 a 1 (0 = −60 dBFS, 1 = 0 dBFS). */
+  .vu {
+    --level: 0;
+    --peak: 0;
+    --hot: 0.9;                                 /* desde −6 dBFS */
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .vu__label { font-size: var(--step--1); color: var(--text-2); }
+  .vu__track {
+    position: relative;
+    block-size: 12px;
+    background: var(--surface-2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .vu__track::before {                          /* relleno */
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: calc(var(--level) * 100%);
+    background:
+      linear-gradient(to right, var(--meter) 0 calc(var(--hot) * 100%), var(--warn) 0)
+      0 0 / calc(100% / max(var(--level), 0.01)) 100% no-repeat;
+  }
+  .vu__track::after {                           /* segmentos tipo LED */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(to right, transparent 0 6px, var(--strip-bg, var(--surface)) 6px 8px);
+  }
+  .vu__peak {
+    position: absolute;
+    z-index: 1;
+    inset-block: 0;
+    inset-inline-start: calc(var(--peak) * 100% - 1px);
+    inline-size: 2px;
+    background: var(--text);
+  }
+  .vu__value {
+    min-inline-size: 5ch;
+    text-align: end;
+    font-size: var(--step--1);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  .vu__alarm {
+    grid-column: 1 / -1;
+    font-size: var(--step--1);
+    font-weight: 700;
+  }
+
+  /* ---- Chip de calidad (Jev) ----------------------------------------- */
+  /* --q de 0 a 1. La marca vertical es el umbral de alarma (0,5). */
+  .quality {
+    --q: 0;
+    --quality-color: var(--idle);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.2em 0.5em;
+    border-radius: var(--radius-s);
+    background: var(--surface-2);
+    border: var(--border-w) solid transparent;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 1.2;
+  }
+  .quality__bar {
+    position: relative;
+    inline-size: 2.75rem;
+    block-size: 6px;
+    border-radius: 3px;
+    background: color-mix(in oklab, var(--text) 16%, transparent);
+    overflow: hidden;
+  }
+  .quality__bar::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: calc(var(--q) * 100%);
+    background: var(--quality-color);
+  }
+  .quality__bar::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(50% - 1px);
+    inline-size: 2px;
+    background: var(--strip-bg, var(--surface));
+  }
+  .quality--good { --quality-color: var(--ok); }
+  .quality--fair { --quality-color: var(--warn); }
+  .quality--low  { --quality-color: var(--fail); }
+  .quality--none { color: var(--text-2); font-weight: 600; }
+  [data-theme="contrast"] .quality { border-color: var(--rule); }
+
+  /* ---- Costo contra presupuesto -------------------------------------- */
+  .budget {
+    --spent: 0;                                   /* 0 a 1 */
+    --warn-at: 0.8;
+    --budget-color: var(--meter);
+    display: grid;
+    gap: var(--space-3);
+  }
+  .budget--warn { --budget-color: var(--warn); }
+  .budget--over { --budget-color: var(--fail); }
+  .budget__figure {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--space-2);
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  .budget__spent { font-size: var(--step-4); font-weight: 700; line-height: 1; letter-spacing: -0.01em; }
+  .budget__of { font-size: var(--step-0); color: var(--text-2); }
+  .budget__bar {
+    position: relative;
+    block-size: 14px;
+    border-radius: 3px;
+    background: var(--surface-2);
+  }
+  .budget__bar::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: calc(min(var(--spent), 1) * 100%);
+    border-radius: 3px 0 0 3px;
+    background: var(--budget-color);
+  }
+  .budget__bar::after {                           /* aviso al 80 % */
+    content: "";
+    position: absolute;
+    inset-block: -5px;
+    inset-inline-start: calc(var(--warn-at) * 100% - 1px);
+    inline-size: 2px;
+    background: var(--warn);
+  }
+  .budget__scale {
+    position: relative;
+    block-size: 1.4em;
+    font-size: var(--step--2);
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+  .budget__scale > * { position: absolute; inset-block-start: 0; inset-inline-start: 0; white-space: nowrap; }
+  .budget__mark { inset-inline-start: calc(var(--warn-at) * 100%); translate: -50% 0; }
+  .budget__rooms { display: grid; }
+  [data-theme="contrast"] .budget__bar { outline: 2px solid #FFFFFF; }
+
+  /* ---- Registro de eventos ------------------------------------------ */
+  .log__table { inline-size: 100%; font-size: var(--step--1); line-height: var(--leading-ui); }
+  .log__table th {
+    padding: var(--space-2) var(--space-3);
+    text-align: start;
+    font-size: var(--step--2);
+    font-weight: 700;
+    color: var(--text-2);
+    border-block-end: var(--rule-w) solid var(--rule-strong);
+  }
+  .log__table td {
+    padding: var(--space-2) var(--space-3);
+    vertical-align: baseline;
+    border-block-end: var(--rule-w) solid var(--rule);
+  }
+  .log__table th:first-child, .log__table td:first-child { padding-inline-start: 0; }
+  .log__time { white-space: nowrap; color: var(--text-2); font-variant-numeric: tabular-nums lining-nums; }
+  .log__room { white-space: nowrap; font-weight: 700; }
+  .log__row--error td { background: color-mix(in oklab, var(--fail) 7%, transparent); }
+
+  .level {
+    --level-color: var(--idle);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .level::before {
+    content: "";
+    inline-size: 0.6em; block-size: 0.6em;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 2px var(--level-color);
+  }
+  .level--warn  { --level-color: var(--warn); }
+  .level--warn::before  { box-shadow: none; background: var(--level-color); clip-path: polygon(50% 0, 100% 100%, 0 100%); inline-size: 0.7em; border-radius: 0; }
+  .level--error { --level-color: var(--fail); }
+  .level--error::before { box-shadow: none; background: var(--level-color); border-radius: 1px; }
+
+  @container glosa (max-width: 40rem) {
+    .log__table thead { position: absolute; clip-path: inset(50%); inline-size: 1px; block-size: 1px; overflow: hidden; }
+    .log__table tr {
+      display: grid;
+      grid-template-columns: auto auto 1fr;
+      gap: var(--space-1) var(--space-3);
+      padding-block: var(--space-3);
+      border-block-end: var(--rule-w) solid var(--rule);
+    }
+    .log__table td { padding: 0; border: 0; background: none; }
+    .log__table td:last-child { grid-column: 1 / -1; }
+  }
+
+  /* ---- Overlay de TV (OBS / vMix) ------------------------------------ */
+  /* Ventana fija de N renglones anclada abajo: el texto sube como en los
+     subtítulos "roll-up" de la tele. La caja no cambia de tamaño al llegar texto. */
+  .overlay {
+    --overlay-size: 48px;
+    --overlay-lines: 2;
+    --overlay-measure: 19em;                      /* ≈ 42 caracteres de Atkinson a 600 */
+    inline-size: min(calc(var(--overlay-measure) + 1.2em), 100%);
+    padding: 0.32em 0.6em 0.38em 0.5em;
+    border-inline-start: 0.12em solid var(--brand-accent);
+    border-radius: 0.14em;
+    background: var(--overlay-bg);
+    color: var(--overlay-text);
+    font-family: var(--font-text);
+    font-size: var(--overlay-size);
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0.005em;
+  }
+  .overlay__window {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    block-size: calc(var(--overlay-lines) * 1.3em);
+    overflow: hidden;
+  }
+  .overlay__text { text-wrap: wrap; overflow-wrap: break-word; }
+  .overlay .phrase--open { color: var(--overlay-open); }
+  .overlay .phrase--open::after { background: var(--brand-accent); }
+
+  /* ---- Pie con la definición --------------------------------------- */
+  .colophon {
+    font-family: var(--font-gloss);
+    font-style: italic;
+    font-size: var(--step-0);
+    line-height: var(--leading-body);
+    color: var(--text-2);
+  }
+  .colophon b { font-style: normal; font-weight: 800; color: var(--text); }
+
+  /* ---- Alto contraste del sistema (Windows) ------------------------- */
+  @media (forced-colors: active) {
+    .status::before, .level::before, .nib, .phrase--open::after,
+    .vu__track::before, .budget__bar::before, .quality__bar::before, .strip::before {
+      forced-color-adjust: none;
+      background: CanvasText;
+    }
+    .status--idle::before, .level::before { background: transparent; box-shadow: inset 0 0 0 2px CanvasText; }
+    .line--live .line__text, .room-card--live .slot--now .slot__what { border-inline-start-color: Highlight; }
+    .phrase--open { color: GrayText; }
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   Vistas: cómo se arman las pantallas
+   -------------------------------------------------------------------------- */
+@layer glosa.views {
+
+  /* ---- Sala: celular primero ------------------------------------------ */
+  .room {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "head" "stage" "controls";
+    block-size: var(--room-h, 100dvh);
+    background: var(--bg);
+  }
+  .room > .room-head { grid-area: head; }
+  .room > .room-nav  { display: none; }
+  .room > .controls  { grid-area: controls; }
+
+  .room__stage {
+    grid-area: stage;
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-5) var(--space-2) var(--space-6);
+  }
+  .room__stage > :first-child { margin-block-start: auto; }   /* el vivo queda abajo sin romper el scroll */
+
+  /* Pantallas anchas (64rem = 1024 px): subtítulos más grandes y margen más ancho. */
+  @container glosa (min-width: 64rem) {
+    .room, .index, .admin {
+      --gutter: 2rem;
+      --margin-w: 5rem;
+      --margin-gap: 1.25rem;
+      --caption-base: clamp(1.75rem, 1rem + 1.35cqi, 2.5rem);
+      --history-base: 1.3125rem;
+    }
+  }
+
+  /* Escritorio: salas al costado, controles arriba a la derecha. */
+  @container glosa (min-width: 64rem) {
+    .room {
+      grid-template-columns: 19rem minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas:
+        "head head controls"
+        "nav  stage stage";
+    }
+    .room > .room-nav { display: flex; grid-area: nav; }
+    /* El encabezado usa las columnas de la sala: la marca queda sobre la lista de salas
+       y el nombre de la sala arranca en el mismo borde que los subtítulos. */
+    .room > .room-head {
+      grid-template-columns: subgrid;
+      grid-template-rows: auto auto auto;
+      align-items: center;
+      column-gap: 0;
+      row-gap: var(--space-1);
+      padding: var(--space-4) 0;
+    }
+    .room > .room-head .room-head__bar {
+      grid-column: 1;
+      grid-row: 1 / span 3;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: var(--space-2);
+      margin: 0;
+      padding-inline: var(--gutter);
+      align-self: stretch;
+    }
+    .room > .room-head > :not(.room-head__bar) {
+      grid-column: 2;
+      padding-inline: calc(var(--space-2) + var(--margin-w) + var(--margin-gap)) var(--gutter);
+    }
+    .room > .room-head .room-head__name { font-size: var(--step-4); }
+    .room > .room-head .room-head__talk { font-size: var(--step-2); }
+    .room > .controls {
+      border-block-start: 4px solid var(--brand-primary);
+      border-block-end: var(--rule-w) solid var(--rule);
+      padding-block: var(--space-3);
+    }
+    .room > .controls .control--select { flex: 0 0 11rem; }
+    .room__stage { padding-inline-end: var(--gutter); padding-block-end: var(--space-7); }
+    .room-head__rooms { display: none; }
+    .room-head__brand { flex-direction: column; gap: var(--space-2); }
+    .room-head__event { display: block; }
+  }
+
+  /* ---- Lista pública de salas --------------------------------------- */
+  /* La franja de marca va de lado a lado; el contenido, en una columna de 84rem. */
+  .index {
+    padding: 0 max(var(--gutter), (100% - 84rem) / 2) var(--space-7);
+    border-block-start: 4px solid var(--brand-primary);
+  }
+  .index__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding-block: var(--space-3);
+  }
+  .index__intro {
+    display: grid;
+    gap: var(--space-3);
+    padding-block: var(--space-6) var(--space-6);
+  }
+  .index__title {
+    font-size: var(--step-5);
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    line-height: 1;
+  }
+  .index__lede {
+    max-inline-size: 34rem;
+    font-size: var(--step-1);
+    line-height: var(--leading-body);
+    color: var(--text-2);
+  }
+  .index__foot {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-6);
+    padding-block-start: var(--space-5);
+    border-block-start: var(--rule-w) solid var(--rule);
+    font-size: var(--step--1);
+    color: var(--text-2);
+  }
+  @container glosa (min-width: 64rem) {
+    .index__title { font-size: var(--step-7); }
+    .index__intro { padding-block: var(--space-8) var(--space-7); }
+  }
+
+  /* ---- Panel de producción ------------------------------------------ */
+  .admin {
+    min-block-size: 100dvh;
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .admin__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
+    padding: var(--space-3) var(--gutter);
+    background: var(--surface);
+    border-block-start: 4px solid var(--brand-primary);
+    border-block-end: var(--rule-w) solid var(--rule);
+  }
+  .admin__title { font-family: var(--font-gloss); font-weight: 700; font-style: italic; font-size: var(--step-2); }
+  .admin__clock { font-size: var(--step-2); font-weight: 700; font-variant-numeric: tabular-nums lining-nums; }
+  .admin__summary { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+  .admin__user { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-3); font-size: var(--step--1); color: var(--text-2); }
+  .admin__main {
+    display: grid;
+    gap: var(--space-6);
+    padding: var(--space-5) var(--gutter) var(--space-7);
+    align-content: start;
+  }
+  .admin__lower {
+    display: grid;
+    gap: var(--space-6);
+  }
+  .panel { display: grid; gap: var(--space-3); align-content: start; }
+  .panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+  .panel__title { font-size: var(--step-3); }
+  .panel__note { font-size: var(--step--1); color: var(--text-2); }
+  @container glosa (min-width: 64rem) {
+    .admin__lower { grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr); }
+  }
+
+  /* ---- Página del overlay (fuente de navegador en OBS) --------------- */
+  .overlay-page {
+    min-block-size: 100vh;
+    margin: 0;
+    display: grid;
+    place-items: end center;
+    padding: 0 5vw 5.5vw;
+    background: transparent;
+  }
+}

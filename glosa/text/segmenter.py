@@ -4,7 +4,11 @@ arrives, e.g. from Engine source_delta/source_final events) into short
 segments that are cheap and fast to hand off to the Translator.
 
 Cut rules, in the order they're checked as each character arrives:
-  - terminal punctuation (. ? ! ; :) always closes the current segment;
+  - terminal punctuation (. ? ! ; :) closes the current segment, except a
+    "." followed right away (no space) by a letter or digit in the same
+    text: "3.5", "Node.js", "k8s.io" are one token. A "." that ends the
+    text fed so far still cuts at once (what follows is not known yet;
+    waiting would delay every sentence end);
   - a comma only closes it once the segment already has at least
     comma_min_words words (so short lead-ins like "So," aren't cut early);
   - reaching max_words words forces a close even with no punctuation.
@@ -56,12 +60,15 @@ class Segmenter:
         """
         completed: list[str] = []
 
-        for ch in text:
+        for i, ch in enumerate(text):
             if not self._buf and ch.isspace():
                 continue  # never start a segment with whitespace
             if not self._buf:
                 self._seg_start_t = t
             self._buf += ch
+
+            if ch == "." and i + 1 < len(text) and text[i + 1].isalnum():
+                continue  # inside a token: "3.5", "Node.js"
 
             if ch in _TERMINAL_PUNCTUATION:
                 segment = self._cut()

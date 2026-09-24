@@ -275,12 +275,24 @@ async def test_a_punctuation_cut_inside_a_word_is_not_lost_nor_duplicated() -> N
     tr, sink = FakeTranslate(clock), Sink()
     pipe = make_pipeline(clock, tr, sink)
 
-    pipe.interim("we use gemini 3.5", t=0.0)  # the segmenter cuts after "3."
+    pipe.interim("we use gemini 3.", t=0.0)  # the segmenter cuts after "3.": nothing follows it yet
     pipe.interim("we use gemini 3.5 flash lite", t=0.5)
     pipe.final(None, t=1.0)
     await pipe.drain()
 
     assert [c.segment for c in tr.calls] == ["we use gemini 3.", "5 flash lite"]
+
+
+async def test_a_period_inside_a_token_that_arrives_whole_does_not_cut() -> None:
+    clock = FakeClock()
+    tr, sink = FakeTranslate(clock), Sink()
+    pipe = make_pipeline(clock, tr, sink)
+
+    pipe.interim("we use gemini 3.5 with Node.js", t=0.0)
+    pipe.final("we use gemini 3.5 with Node.js on k8s.io.", t=0.5)
+    await pipe.drain()
+
+    assert [c.segment for c in tr.calls] == ["we use gemini 3.5 with Node.js on k8s.io."]
 
 
 async def test_punctuation_added_to_a_word_committed_by_tick_is_not_a_new_segment() -> None:
@@ -586,6 +598,102 @@ async def test_the_sync_methods_only_enqueue() -> None:
     assert all(t.get_name().startswith("glosa-pipeline-worker") for t in pipeline_tasks())
     await pipe.drain()
     assert len(sink.out) == 2
+
+
+async def test_an_empty_translation_is_a_failure() -> None:
+    clock = FakeClock()
+    sink = Sink()
+
+    async def empty(segment, target, glossary, context) -> Translation:
+        return Translation(text="", latency_s=0.0, usd=0.001)
+
+    pipe = make_pipeline(clock, empty, sink)
+    pipe.final("Uno.", t=0.0)
+    await pipe.drain()
+
+    assert [(s.source, s.text) for s in sink.out] == [("Uno.", None)]
+    assert (pipe.stats["translated"], pipe.stats["failed"]) == (0, 1)
+
+
+async def test_a_job_that_waited_too_long_since_its_cut_is_dropped_unsent() -> None:
+    clock = FakeClock()
+    tr, sink = FakeTranslate(clock, gated=True), Sink()
+    pipe = make_pipeline(clock, tr, sink, max_inflight=1, max_age_s=8.0)
+
+    pipe.final("Uno.", t=0.0)  # taken by the only worker at once
+    pipe.final("Dos.", t=0.1)  # queued behind it
+    await settle(lambda: len(tr.calls) == 1)
+    clock.advance(8.5)  # "Uno." is stuck: "Dos." ages in the queue
+    pipe.final("Tres.", t=8.5)
+    tr.release("Uno.", "es")
+    tr.release("Tres.", "es")
+    await pipe.drain()
+
+    assert [c.segment for c in tr.calls] == ["Uno.", "Tres."]  # "Dos." was never sent
+    assert [(s.source, s.text) for s in sink.out] == [("Uno.", "[es] Uno."), ("Dos.", None), ("Tres.", "[es] Tres.")]
+    assert pipe.stats["failed"] == 1 and pipe.stats["dropped"] == 1
+    await pipe.aclose()
+
+
+async def test_max_age_none_translates_every_job_however_late() -> None:
+    clock = FakeClock()
+    tr, sink = FakeTranslate(clock, gated=True), Sink()
+    pipe = make_pipeline(clock, tr, sink, max_inflight=1, max_age_s=None)
+
+    pipe.final("Uno. Dos.", t=0.0)
+    await settle(lambda: len(tr.calls) == 1)
+    clock.advance(60.0)
+    tr.release("Uno.", "es")
+    tr.release("Dos.", "es")
+    await pipe.drain()
+
+    assert [s.text for s in sink.out] == ["[es] Uno.", "[es] Dos."]
+
+
+async def test_a_translate_that_raises_cancelled_error_by_itself_is_a_failure_that_blocks_nothing() -> None:
+    """A library that raises CancelledError without our task being cancelled:
+    the segment still gets its (failed) result, the worker survives, and the
+    segments after it are delivered."""
+    clock = FakeClock()
+    sink = Sink()
+    calls: list[str] = []
+
+    async def translate(segment, target, glossary, context) -> Translation:
+        calls.append(segment)
+        if segment == "Uno.":
+            raise asyncio.CancelledError()
+        return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)
+
+    pipe = make_pipeline(clock, translate, sink, max_inflight=1)
+    pipe.final("Uno. Dos.", t=0.0)
+    await pipe.drain()
+    pipe.final("Tres.", t=1.0)
+    await pipe.drain()
+
+    assert calls == ["Uno.", "Dos.", "Tres."]
+    assert [(s.source, s.text) for s in sink.out] == [("Uno.", None), ("Dos.", "[es] Dos."), ("Tres.", "[es] Tres.")]
+    await pipe.aclose()
+
+
+async def test_segments_carry_the_time_they_opened_and_were_cut() -> None:
+    clock = FakeClock()
+    tr, sink = FakeTranslate(clock), Sink()
+    pipe = make_pipeline(clock, tr, sink)
+
+    pipe.interim("Hola a", t=10.0)
+    pipe.interim("Hola a todos.", t=10.5)  # cut: opened at 10.0, cut at 10.5
+    pipe.interim("Hola a todos. Bienvenidos", t=11.0)
+    pipe.final("Hola a todos. Bienvenidos. Uno. Dos.", t=12.0)  # three cuts at once share 11.0-12.0
+    await pipe.drain()
+
+    spans = [(s.source, s.t_start, s.t_end) for s in sink.out]
+    assert spans[0] == ("Hola a todos.", 10.0, 10.5)
+    assert [s for s, _, _ in spans[1:]] == ["Bienvenidos.", "Uno.", "Dos."]
+    starts = [a for _, a, _ in spans[1:]]
+    ends = [b for _, _, b in spans[1:]]
+    assert starts[0] == 11.0 and ends[-1] == 12.0
+    assert all(a < b for a, b in zip(starts, ends))
+    assert ends[:-1] == pytest.approx(starts[1:])  # consecutive, never overlapping
 
 
 # --- lifecycle ------------------------------------------------------------------

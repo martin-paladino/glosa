@@ -1,0 +1,32 @@
+# Example reverse proxy for Glosa's room stations (README's "Room stations
+# (mini PC per stage)" section): getUserMedia only runs in a secure context,
+# so a mini PC on the venue network needs Glosa served over real HTTPS, not
+# plain http://<server>:8000.
+#
+# Copy this file, replace the placeholder below, and run Caddy next to (or
+# in front of) Glosa -- as its own process, or as the commented-out `caddy`
+# service in docker-compose.yml, which already mounts this file.
+#
+# --- Option A: a real domain (recommended for the venue) -------------------
+# Caddy requests and renews a Let's Encrypt certificate on its own; the
+# domain must resolve to this machine and ports 80/443 must be reachable
+# from the internet for the ACME challenge.
+
+station.example.com {
+	reverse_proxy glosa:8000
+}
+
+# --- Option B: LAN only, no public domain -----------------------------------
+# `tls internal` makes Caddy its own local certificate authority: every
+# device that will open a station (or the admin panel) needs Caddy's root
+# certificate installed once (`caddy trust`, or copy
+# $XDG_DATA_HOME/caddy/pki/authorities/local/root.crt to each mini PC and
+# import it) -- after that, this hostname is a secure context for
+# getUserMedia like any real HTTPS site. Comment out Option A above and
+# uncomment this block instead; give the mini PCs' hosts file (or your DNS)
+# an entry for the chosen hostname pointing at this machine.
+#
+# glosa.local {
+# 	tls internal
+# 	reverse_proxy glosa:8000
+# }

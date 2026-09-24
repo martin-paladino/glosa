@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}{{ room.name }} — {{ event_name }} | Glosa{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/station.css">
+  <script src="/static/js/clock.js" defer></script>
+  {#- room.js unmodified: it only ever finds elements through data-* hooks,
+      so the same script renders the stage captions here as on /s/{slug}
+      (docs/design/README.md §5) -- no rendering logic is duplicated. #}
+  <script src="/static/js/room.js" defer></script>
+  <script src="/static/js/station.js" defer></script>
+{%- endblock %}
+
+{% block body %}
+<div class="station" data-station>
+
+  {#- Shown instead of everything else when getUserMedia has no secure
+      context to run in (docs/field-notes.md's deployment gotcha). #}
+  <div class="station-block" data-insecure hidden>
+    <div class="station-block__card">
+      <p class="station-block__title">{{ tr("station_insecure_title") }}</p>
+      <p class="station-block__body">{{ tr("station_insecure_body") }}</p>
+      <p class="station-block__body tc" data-insecure-origin></p>
+    </div>
+  </div>
+
+  {#- Capture setup: the level meter and the "Start" gesture the browser
+      requires for the AudioContext, unless the mic permission is already
+      granted and station.js can start on its own. #}
+  <div class="station-setup" data-setup hidden>
+    <div class="station-setup__card">
+      <p class="station-setup__room">{{ room.name }}</p>
+      <div class="vu station-setup__vu" data-vu role="meter" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" aria-label="{{ tr('station_device') }}" style="--level: 0"></div>
+      <output class="station-setup__db tc" data-db>−∞ dBFS</output>
+      <label class="station-setup__device">
+        <span>{{ tr("station_device") }}</span>
+        <select data-device></select>
+      </label>
+      <button class="btn station-setup__start" type="button" data-start>{{ tr("station_start") }}</button>
+      <p class="station-setup__hint" data-hint>{{ tr("station_permission_hint") }}</p>
+    </div>
+  </div>
+
+  {#- The room, with the exact markup static/js/room.js expects (a trimmed
+      room.html: no room-nav -- one station, one room, no list to switch
+      to -- and its container is width-capped in station.css so the
+      responsive rules never switch it into that two-column layout). #}
+  <div class="station-stage-wrap">
+    <div class="room" data-room>
+      <header class="room-head">
+        <div class="room-head__bar">
+          <div class="room-head__brand">
+            <span class="wordmark">glosa</span>
+            {%- if logo_url %}
+            <img class="event-logo room-head__event" src="{{ logo_url }}" alt="{{ event_name }}">
+            {%- else %}
+            <span class="room-head__event event-name">{{ event_name }}</span>
+            {%- endif %}
+          </div>
+        </div>
+        <div class="room-head__umd">
+          <h1 class="room-head__name">{{ room.name }}</h1>
+          {%- if now %}
+          <span class="status status--live" data-status data-state="live" role="status">{{ tr("live") }}</span>
+          {%- else %}
+          <span class="status status--idle" data-status data-state="idle" role="status">{{ tr("between_talks") }}</span>
+          {%- endif %}
+          <time class="clock" data-clock hidden></time>
+        </div>
+        {%- if now %}
+        <p class="room-head__talk talk-title" data-talk-title lang="{{ now.language }}">{{ now.title }}</p>
+        <p class="room-head__meta talk-meta" data-talk-meta>
+          <span data-talk-speakers>{{ now.speakers_text }}</span>
+          <span class="direction" data-direction aria-label=""></span>
+        </p>
+        {%- else %}
+        <p class="room-head__talk talk-title" data-talk-title hidden></p>
+        <p class="room-head__meta talk-meta" data-talk-meta hidden>
+          <span data-talk-speakers></span>
+          <span class="direction" data-direction aria-label=""></span>
+        </p>
+        {%- endif %}
+      </header>
+
+      <nav class="controls" aria-label="{{ tr('reading_controls') }}">
+        <label class="control control--select">
+          <span class="visually-hidden">{{ tr("caption_language") }}</span>
+          <select data-lang-select>
+            {%- for code in config.langs %}
+            <option value="{{ code }}"{% if code == config.defaultLang %} selected{% endif %}>{{ config.endonyms.get(code, code) }}</option>
+            {%- endfor %}
+          </select>
+        </label>
+        <div class="control-group" role="group" aria-label="{{ tr('font_size') }}">
+          <button class="control" type="button" data-action="size" data-step="-1" aria-label="{{ tr('smaller') }}" title="{{ tr('smaller') }} (−)">A−</button>
+          <button class="control" type="button" data-action="size" data-step="1" aria-label="{{ tr('larger') }}" title="{{ tr('larger') }} (+)">A+</button>
+        </div>
+        <button class="control control--fullscreen" type="button" data-action="fullscreen" aria-label="{{ tr('fullscreen') }} (F)" title="{{ tr('fullscreen') }} (F)">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </nav>
+
+      <main class="room__stage" data-stage aria-label="{{ tr('captions_in').format(lang=config.langNames.get(config.defaultLang, config.defaultLang)) }}">
+        <div class="transcript" data-transcript data-layout="single" lang="{{ config.defaultLang }}">
+          {%- if now %}
+          <p class="stage-note" data-stage-note="waiting">{{ tr("waiting_captions") }}</p>
+          {%- else %}
+          <div class="station-idle" data-stage-note="agenda">
+            {%- if logo_url %}
+            <img class="station-idle__logo" src="{{ logo_url }}" alt="{{ event_name }}">
+            {%- endif %}
+            <p class="stage-note">{{ tr("no_talk_now") }}</p>
+          </div>
+          {%- endif %}
+          <noscript><p class="stage-note">{{ tr("no_js") }}</p></noscript>
+        </div>
+      </main>
+
+      <button class="to-live room__to-live" type="button" data-action="live" hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v11M4 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        {{ tr("back_to_live") }}
+      </button>
+    </div>
+  </div>
+
+  {#- Discrete corner mark: the station's own WS/audio state, separate
+      from the room's caption status above. #}
+  <div class="station-badge" data-badge hidden>
+    <span class="led led--idle" data-badge-led></span>
+    <span data-badge-text></span>
+  </div>
+</div>
+<script type="application/json" id="glosa-room">{{ config | tojson }}</script>
+{% endblock %}

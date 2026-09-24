@@ -9,15 +9,27 @@ always fails ("false") and a FakeClock, so no real waiting happens.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from glosa.audio import ingest as ingest_module
-from glosa.audio.ingest import AudioIngest, build_ffmpeg_cmd
+from glosa.audio.ingest import (
+    CHUNK_BYTES,
+    STATION_QUEUE_CHUNKS,
+    STATION_TIMEOUT_S,
+    AudioIngest,
+    EmitterIngest,
+    StationHub,
+    build_ffmpeg_cmd,
+)
 from glosa.clock import FakeClock
 
 FIXTURE_WAV = Path(__file__).parent.parent / "fixtures" / "short_clip.wav"
+PCM = bytes(CHUNK_BYTES)  # one silent 100 ms frame, already server-side-repacked
 
 
 def test_build_ffmpeg_cmd_realtime_flag() -> None:
@@ -170,3 +182,162 @@ async def test_ingest_youtube_resolution_always_fails_terminal_error(monkeypatch
     assert ingest.last_error is not None
     assert "could not resolve" in ingest.last_error
     assert clock.now() == pytest.approx(1 + 2 + 4 + 8 + 16)
+
+
+# --------------------------------------------------------------- StationHub
+
+
+def test_station_hub_queue_drops_the_oldest_chunk_when_full() -> None:
+    hub = StationHub(FakeClock())
+    total = STATION_QUEUE_CHUNKS + 3
+    for i in range(total):
+        hub.push_audio("r1", bytes([i % 256]) * CHUNK_BYTES)
+
+    queue = hub.queue("r1")
+    assert queue.qsize() == STATION_QUEUE_CHUNKS
+    kept = [queue.get_nowait() for _ in range(STATION_QUEUE_CHUNKS)]
+    # the oldest 3 were dropped: what's left starts at chunk #3
+    assert kept[0][0] == 3 % 256
+    assert kept[-1][0] == (total - 1) % 256
+
+
+@pytest.mark.asyncio
+async def test_station_hub_connect_replaces_the_previous_connection() -> None:
+    hub = StationHub(FakeClock())
+    old = MagicMock()
+    old.close = AsyncMock()
+
+    gen1 = await hub.connect("r1", old)
+    new = MagicMock()
+    gen2 = await hub.connect("r1", new)
+
+    old.close.assert_awaited_once_with(code=4409)
+    assert gen2 != gen1
+    assert hub.info("r1").connected is True
+
+    # disconnect() from the *old* (superseded) generation must not clear the
+    # still-active connection.
+    hub.disconnect("r1", gen1)
+    assert hub.info("r1").connected is True
+    hub.disconnect("r1", gen2)
+    assert hub.info("r1").connected is False
+
+
+@pytest.mark.asyncio
+async def test_station_hub_connect_tolerates_a_close_failure_on_the_old_socket() -> None:
+    hub = StationHub(FakeClock())
+    old = MagicMock()
+    old.close = AsyncMock(side_effect=RuntimeError("already gone"))
+
+    await hub.connect("r1", old)
+    await hub.connect("r1", MagicMock())  # must not raise
+
+    assert hub.info("r1").connected is True
+
+
+def test_station_hub_hello_and_level_update_info() -> None:
+    hub = StationHub(FakeClock())
+    assert hub.info("r1") == ingest_module.StationInfo(
+        connected=False, device=None, level_db=None, last_audio_age_s=None
+    )
+
+    hub.set_hello("r1", "Focusrite Scarlett 2i2")
+    hub.set_level("r1", -23.4)
+
+    info = hub.info("r1")
+    assert info.device == "Focusrite Scarlett 2i2"
+    assert info.level_db == -23.4
+
+
+@pytest.mark.asyncio
+async def test_station_hub_reload_only_reaches_a_connected_station() -> None:
+    hub = StationHub(FakeClock())
+    assert await hub.reload("r1") is False  # nobody connected
+
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    await hub.connect("r1", ws)
+
+    assert await hub.reload("r1") is True
+    ws.send_json.assert_awaited_once_with({"type": "reload"})
+
+
+def test_station_hub_is_stale_before_first_audio_and_after_a_timeout() -> None:
+    clock = FakeClock()
+    hub = StationHub(clock)
+
+    assert hub.is_stale("r1") is True  # never sent audio: not "up" yet
+
+    hub.push_audio("r1", PCM)
+    assert hub.is_stale("r1") is False
+    assert hub.info("r1").last_audio_age_s == 0.0
+
+    clock.advance(STATION_TIMEOUT_S - 0.01)
+    assert hub.is_stale("r1") is False
+
+    clock.advance(0.02)
+    assert hub.is_stale("r1") is True
+    assert hub.info("r1").last_audio_age_s == pytest.approx(STATION_TIMEOUT_S + 0.01)
+
+    hub.push_audio("r1", PCM)  # the station is back
+    assert hub.is_stale("r1") is False
+
+
+def test_station_hub_rooms_are_independent() -> None:
+    hub = StationHub(FakeClock())
+    hub.push_audio("r1", PCM)
+    assert hub.is_stale("r1") is False
+    assert hub.is_stale("r2") is True  # r2 never sent anything
+
+
+# ------------------------------------------------------------- EmitterIngest
+
+
+@pytest.mark.asyncio
+async def test_emitter_ingest_yields_audio_chunks_from_the_hub_with_monotonic_t() -> None:
+    hub = StationHub(FakeClock())
+    ingest = EmitterIngest(hub, "r1", FakeClock())
+    hub.push_audio("r1", b"\x01" * CHUNK_BYTES)
+    hub.push_audio("r1", b"\x02" * CHUNK_BYTES)
+    hub.push_audio("r1", b"\x03" * CHUNK_BYTES)
+
+    chunks = []
+    async with contextlib.aclosing(ingest.chunks()) as stream:
+        async for chunk in stream:
+            chunks.append(chunk)
+            if len(chunks) == 3:
+                break
+
+    assert [c.pcm[:1] for c in chunks] == [b"\x01", b"\x02", b"\x03"]
+    assert all(len(c.pcm) == CHUNK_BYTES for c in chunks)
+    assert [c.t for c in chunks] == pytest.approx([0.0, 0.1, 0.2])
+    assert ingest.restarts == 0
+    assert ingest.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_emitter_ingest_waits_for_the_next_chunk_without_ending() -> None:
+    """Unlike AudioIngest, chunks() never ends on its own: a quiet station
+    just leaves the generator waiting (RoomWorker notices via stale())."""
+    hub = StationHub(FakeClock())
+    ingest = EmitterIngest(hub, "r1", FakeClock())
+
+    async with contextlib.aclosing(ingest.chunks()) as stream:
+        task = asyncio.ensure_future(stream.__anext__())
+        await asyncio.sleep(0)
+        assert not task.done()
+        hub.push_audio("r1", PCM)
+        chunk = await task
+        assert chunk.pcm == PCM
+
+
+def test_emitter_ingest_stale_reflects_the_hub() -> None:
+    clock = FakeClock()
+    hub = StationHub(clock)
+    ingest = EmitterIngest(hub, "r1", clock)
+
+    assert ingest.stale() == "station disconnected"
+    hub.push_audio("r1", PCM)
+    assert ingest.stale() is None
+    clock.advance(STATION_TIMEOUT_S)
+    assert ingest.stale() == "station disconnected"

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from glosa.audio.ingest import AudioIngest
+from glosa.audio.ingest import STATION_TIMEOUT_S, AudioIngest, EmitterIngest, StationHub
 from glosa.captions.bus import CaptionBus
 from glosa.clock import FakeClock, RealClock
 from glosa.config import RelayCfg, RoomCfg, Settings
@@ -941,3 +941,74 @@ async def test_restarting_the_running_talk_takes_its_edited_fields_from_the_db(t
     assert worker.talk.targets == ["en", "es"] and worker.talk.title == "Edited while live"
     assert stored.actual_start == began and stored.status == "live"
     await worker.stop()
+
+
+# ---------------------------------------------------------- Task 14a: station
+
+
+async def test_a_quiet_station_marks_the_room_red_and_resumes_without_restarting(db) -> None:
+    """RoomWorker + the real EmitterIngest + StationHub (Task 14a), with a
+    simulated station: audio is pushed straight into the hub's queue, the
+    same way glosa/web/station.py's WebSocket handler would after
+    re-packing whatever the station sent. Real captions flow through the
+    real FakeEngine pipeline; a quiet station turns the room red (the same
+    `_source_down` mechanism AudioIngest's terminal error uses) without
+    ending the talk, and resumes on its own once audio flows again -- no
+    play_file()/start() needed, unlike a dead AudioIngest."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    hub = StationHub(clock)
+
+    def emitter_factory(source_type, source_url, realtime, clock):
+        assert source_type == "emitter"
+        return EmitterIngest(hub, "r1", clock)
+
+    room = replace(_room(), source_type="emitter", source_url="r1")
+    worker = RoomWorker(
+        room, _settings(), bus, db, clock, Factory(clock, FAKE_LT),
+        ingest_factory=emitter_factory, station_hub=hub, realtime=False,
+    )
+
+    await worker.start(None)
+    await run_for(clock, 0.5)  # the ticker's first pass: no station audio yet
+    status = worker.status()
+    assert status.state == "red"
+    assert "station disconnected" in status.detail
+    assert worker.talk is not None  # unlike AudioIngest's terminal error, the talk stays open
+
+    # The station connects and streams audio: 2.5 s of voice, then silence
+    # (already CHUNK_BYTES frames, as the WS handler hands them to the hub).
+    for i in range(30):
+        voiced = i < 25
+        hub.push_audio("r1", TONE if voiced else SILENCE)
+        await run_for(clock, 0.1)
+    assert worker.status().state != "red"
+
+    await run_for(clock, 8.0)  # let the fixture's deltas play out and segments idle-close
+
+    en = _history(bus, "r1", "en")
+    es = _history(bus, "r1", "es")
+    for msgs in (en, es):
+        kinds = {m.type for m in msgs}
+        assert {"append", "close"} <= kinds, [m.type for m in msgs]
+
+    # No push_audio since the voice/silence loop above (last one ~3.0 s in):
+    # by now (~11 s in) the station has been quiet well past STATION_TIMEOUT_S.
+    status = worker.status()
+    assert status.state == "red"
+    assert "station disconnected" in status.detail
+    assert worker.talk is not None and worker.talk.id == FREE_R1  # same talk throughout
+
+    await worker.stop()
+    assert not _live_tasks()
+
+
+async def test_station_hub_queue_is_bounded_and_survives_a_burst(db) -> None:
+    """A burst of station audio queued faster than RoomWorker can consume it
+    (e.g. right after a reconnect flushes its 5 s local buffer) drops the
+    oldest chunks instead of growing without bound or blocking push_audio."""
+    clock = DrivenClock()
+    hub = StationHub(clock)
+    for _ in range(200):
+        hub.push_audio("r1", SILENCE)  # never awaited/consumed concurrently here
+    assert hub.queue("r1").qsize() <= 50

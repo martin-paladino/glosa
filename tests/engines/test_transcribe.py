@@ -110,8 +110,11 @@ def test_map_message_accepts_sdk_message_objects() -> None:
 def test_a_repeated_interim_is_not_emitted_again() -> None:
     # The server re-sends an unchanged interim (e.g. "Por cierto," twice, 0.5 s
     # apart). It is no progress: it must not look like output to the stall watchdog.
-    engine = _engine()
-    events = _map_all(engine, [INTERIM_1, INTERIM_1, INTERIM_2, FINAL_1, INTERIM_1])
+    clock = FakeClock()
+    engine = _engine(clock)
+    events = _map_all(engine, [INTERIM_1, INTERIM_1, INTERIM_2, FINAL_1])
+    clock.advance(2.0)  # past the stale window (see the next test)
+    events += engine._map_message(INTERIM_1)
 
     assert [(ev.kind, ev.text) for ev in events] == [
         ("source_delta", "Por cierto,"),
@@ -119,6 +122,39 @@ def test_a_repeated_interim_is_not_emitted_again() -> None:
         ("source_final", "Por cierto, cuando ustedes reciben la factura."),
         ("source_delta", "Por cierto,"),  # a new segment that happens to start the same way
     ]
+
+
+def test_a_stale_interim_of_the_segment_just_closed_is_dropped() -> None:
+    """Live run of 2026-09-24 (T10-wiring): 0.3-0.5 s after a final, the
+    server sometimes re-sends the closed segment's last interim. As a new
+    segment it would flash the old text again and get translated twice."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    events = _map_all(engine, [INTERIM_1, INTERIM_3, FINAL_1])
+    clock.advance(0.4)
+    events += _map_all(engine, [INTERIM_3, INTERIM_2])  # the last interim again, and an older prefix of it
+    clock.advance(0.3)
+    events += _map_all(engine, [INTERIM_NEXT, INTERIM_3])  # the new segment; then it is its text to rewrite
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "Por cierto,"),
+        ("source_delta", "Por cierto, cuando ustedes reciben la"),
+        ("source_final", "Por cierto, cuando ustedes reciben la factura."),
+        ("source_delta", "En nodos"),
+        ("source_delta", "Por cierto, cuando ustedes reciben la"),
+    ]
+
+
+def test_a_new_segment_that_starts_like_the_closed_one_shows_up_with_its_next_interim() -> None:
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [INTERIM_2, FINAL_1])
+    clock.advance(0.5)
+    later = {"serverContent": {"interimInputTranscription": {"text": "Por cierto, otra cosa"}}}
+
+    events = _map_all(engine, [INTERIM_1, later])  # "Por cierto," could be stale: it waits for more
+
+    assert [(ev.kind, ev.text) for ev in events] == [("source_delta", "Por cierto, otra cosa")]
 
 
 def test_an_empty_final_closes_an_open_segment_and_is_skipped_otherwise() -> None:

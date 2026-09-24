@@ -64,6 +64,10 @@ class _FakeModels:
 class _FakeAio:
     def __init__(self, models: _FakeModels) -> None:
         self.models = models
+        self.closed = 0
+
+    async def aclose(self) -> None:
+        self.closed += 1
 
 
 class FakeGenAIClient:
@@ -174,6 +178,12 @@ async def test_raises_last_error_when_fallback_also_exhausts_retries() -> None:
     with pytest.raises(ServerError):
         await translator.translate("hi", "es", [], [])
     assert len(client.models.calls) == 6
+
+
+async def test_aclose_releases_the_client_connections() -> None:
+    translator, client = _translator([])
+    await translator.aclose()
+    assert client.aio.closed == 1
 
 
 @pytest.mark.live

@@ -87,6 +87,13 @@ class Translator:
         self._client = client if client is not None else genai.Client(api_key=api_key)
         self._clock: Clock = clock if clock is not None else RealClock()
 
+    async def aclose(self) -> None:
+        """Release the client's HTTP connections (the owner calls it when it
+        is done with this Translator; RoomWorker does at the end of a run)."""
+        close = getattr(getattr(self._client, "aio", None), "aclose", None)
+        if close is not None:
+            await close()
+
     def _cost_usd(self, usage_metadata: Any) -> float:
         if usage_metadata is None:
             return 0.0

@@ -53,8 +53,8 @@ Fallback to the glossary engine (case 10.5)
     lost), a file plays from its beginning.
 
 Translation lane
-    A LivePipeline (glosa/room_text.TranslationLane) with the Translator
-    (FakeTranslator with ``engine_mode: fake``). Each segment it delivers
+    A LivePipeline (glosa/room_text.TranslationLane) with a Translator of the
+    run's own, closed with it (FakeTranslator with ``engine_mode: fake``). Each segment it delivers
     becomes one ``append`` + ``close`` in its language, in order, stored
     with the times of its source's cut; a failed one (no text) is not shown.
     The source is always published before it is fed to the lane, so a
@@ -241,6 +241,7 @@ class _Run:
     tracks: dict[str, _Track]
     t0: float
     lane: TranslationLane | None = None  # translations the engine does not make itself
+    translator: Translator | None = None  # the lane's, when the run made its own (closed with it)
     text_session: int = 0  # the engine session whose source text is in use (the newest that spoke)
     flaps: FlapDetector = field(default_factory=FlapDetector)
     manual_reconnects: int = 0  # the admin's, which the fallback rule ignores
@@ -307,7 +308,9 @@ class RoomWorker:
         self._aux: set[asyncio.Task] = set()
         self._on_talk_end = on_talk_end
         self._hooks: set[asyncio.Task] = set()
-        self._translate = translate  # built on first use: see _translator()
+        # The lane's translate function; None: a Translator per run (closed
+        # with it), or FakeTranslator with engine_mode fake (no API, no key).
+        self._translate = translate
 
     # ------------------------------------------------------------ public API
 
@@ -524,9 +527,21 @@ class RoomWorker:
             last_cost_flush=now,
         )
         if lane_targets:
+            translate = self._translate
+            if translate is None and self._settings.engine_mode == "fake":
+                translate = FakeTranslator().translate
+            elif translate is None:
+                prices = self._settings.prices
+                run.translator = Translator(
+                    self._settings.gemini_api_key,
+                    price_in_per_m=prices.flash_lite_in_per_m,
+                    price_out_per_m=prices.flash_lite_out_per_m,
+                    clock=self._clock,
+                )
+                translate = run.translator.translate
             run.lane = TranslationLane(
                 targets=lane_targets,
-                translate=self._translator(),
+                translate=translate,
                 glossary=lambda: run.talk.glossary,
                 clock=self._clock,
                 segmenter=self._settings.segmenter,
@@ -587,6 +602,11 @@ class RoomWorker:
                 await run.lane.close()
             except Exception:
                 log.exception("room %s: translation lane close failed", self.room.id)
+        if run.translator is not None:  # its HTTP connections
+            try:
+                await run.translator.aclose()
+            except Exception:
+                log.exception("room %s: translator close failed", self.room.id)
         await self._flush_cost(run, self._clock.now())
 
     async def _end_talk(self) -> None:
@@ -954,23 +974,6 @@ class RoomWorker:
             await self._db_call(self._db.add_cost(self.room.id, component, units, usd))
 
     # ------------------------------------------------------------ helpers
-
-    def _translator(self) -> TranslateFn:
-        """The Translator's translate (built once, on the first lane), or
-        FakeTranslator's with ``engine_mode: fake`` (no API, no key)."""
-        if self._translate is None:
-            if self._settings.engine_mode == "fake":
-                self._translate = FakeTranslator().translate
-            else:
-                prices = self._settings.prices
-                translator = Translator(
-                    self._settings.gemini_api_key,
-                    price_in_per_m=prices.flash_lite_in_per_m,
-                    price_out_per_m=prices.flash_lite_out_per_m,
-                    clock=self._clock,
-                )
-                self._translate = translator.translate
-        return self._translate
 
     def _publish_all(self, tracks: dict[str, _Track], type: str, **payload: Any) -> None:
         for lang in tracks:

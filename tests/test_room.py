@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
+import math
 import os
 import struct
 import subprocess
@@ -850,6 +851,116 @@ async def test_live_translate_room_smoke(tmp_path: Path) -> None:
     database.close()
 
 
+ES_CLIP = ROOT / "samples" / "es_clip.opus"
+LIVE_VOCAB = ["Kubernetes", "control plane", "namespaces", "labels", "workloads", "Grafana", "Loki", "AWS", "GCP", "Azure"]
+
+
+def _live_key() -> str:
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key and (ROOT / ".env").exists():
+        key = Settings.load(env_path=str(ROOT / ".env"), config_path=str(ROOT / "config.yaml")).gemini_api_key
+    if not key:
+        pytest.skip("GEMINI_API_KEY not set")
+    return key
+
+
+def _pct(values: list[float], q: float) -> float:
+    """Nearest-rank percentile."""
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(q * len(ordered)) - 1)] if ordered else float("nan")
+
+
+@pytest.mark.live
+async def test_live_glossary_room(tmp_path: Path) -> None:  # 10.6 through a real RoomWorker
+    """60 s of the ES clip, real time, engine "glossary": transcribe-live +
+    flash-lite into English (about US$0.01). Source latency: the "close" of
+    each utterance (its final) after the end of the speech (the room's
+    end_utterance() on the VAD pause, minus the VAD's 400 ms). Translation
+    latency: from the cut to the answer (the lane's own measure)."""
+    from glosa.engines.transcribe import TranscribeLiveEngine
+
+    key = _live_key()
+    clip = tmp_path / "es_60s.wav"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-t", "60", "-i", str(ES_CLIP), "-ac", "1", "-ar", "16000", str(clip)], check=True
+    )
+    clock = RealClock()
+    bus = CaptionBus(clock=clock)
+    database = init_db(tmp_path / "live.db")
+    settings = Settings(
+        gemini_api_key=key, admin_password="test-password",
+        rooms=[RoomCfg(id="r1", name="Sala r1", source_type="file", source_url=str(clip), language="es")],
+    )
+    engines: list[TranscribeLiveEngine] = []
+
+    def factory(cfg: EngineConfig) -> TranscribeLiveEngine:
+        engine = TranscribeLiveEngine(cfg, key, clock, price_per_min=settings.prices.transcribe_per_min)
+        engines.append(engine)
+        return engine
+
+    worker = RoomWorker(replace(_room(targets=["en"]), source_url=str(clip)), settings, bus, database, clock, factory)
+    pauses: list[float] = []  # when the room ended an utterance (a VAD pause)
+    closes: list[float] = []  # when an es segment closed (its final)
+    publish = bus.publish
+
+    def spy_publish(room_id, lang, type, **payload):
+        if lang == "es" and type == "close":
+            closes.append(clock.now())
+        return publish(room_id, lang, type, **payload)
+
+    bus.publish = spy_publish  # type: ignore[method-assign]
+    lanes = []
+
+    async def run() -> None:
+        await worker.start(_talk("live-g1", glossary=tuple(GlossaryTerm(t, True) for t in LIVE_VOCAB)))
+        relay = worker._run.relay
+        lanes.append(worker._run.lane)
+        end_utterance = relay.end_utterance
+
+        async def spy_end_utterance() -> None:
+            pauses.append(clock.now())
+            await end_utterance()
+
+        relay.end_utterance = spy_end_utterance  # type: ignore[method-assign]
+        while worker.talk is not None:  # 60 s of audio, then the 5 s tail
+            await asyncio.sleep(0.2)
+
+    try:
+        await asyncio.wait_for(run(), timeout=100)
+    finally:
+        await worker.stop()
+
+    source_lat: list[float] = []
+    for n, paused in enumerate(pauses):
+        following = pauses[n + 1] if n + 1 < len(pauses) else float("inf")
+        close = next((c for c in closes if paused < c < following), None)
+        if close is not None:
+            source_lat.append(close - (paused - 0.4))
+    stats = lanes[0].pipeline.stats
+    es = [s.text for s in await database.get_segments("live-g1", "es", "live")]
+    en = [s.text for s in await database.get_segments("live-g1", "en", "live")]
+    cost = await database.total_cost()
+    print(
+        f"\nLIVE glossary room: {len(pauses)} pauses, {len(closes)} es closes, {len(es)} es / {len(en)} en segments"
+        f"\n  source after end of speech: p50={_pct(source_lat, 0.5):.3f}s p90={_pct(source_lat, 0.9):.3f}s"
+        f" n={len(source_lat)} {[round(v, 2) for v in source_lat]}"
+        f"\n  translation after the cut:  p50={_pct(stats['latencies_s'], 0.5):.3f}s"
+        f" p90={_pct(stats['latencies_s'], 0.9):.3f}s n={stats['translated']} failed={stats['failed']}"
+        f"\n  cost: total={cost:.5f} (transcribe {sum(e.usd_total for e in engines):.5f},"
+        f" translate {stats['usd_total']:.5f})"
+    )
+    for text in es:
+        print("  ES:", text)
+    for text in en:
+        print("  EN:", text)
+
+    assert es and en
+    assert source_lat and _pct(source_lat, 0.5) < 1.5
+    assert stats["translated"] >= 10 and stats["failed"] <= 2
+    assert 0 < cost < 0.05
+    database.close()
+
+
 # ------------------------------------------------------- on_talk_end, reconnect (T9)
 
 
@@ -1233,6 +1344,44 @@ async def test_a_glossary_talk_translates_to_every_target(tmp_path: Path, db) ->
         msgs = _track(bus, lang, "g1")
         assert _closed_texts(msgs) == [f"[{lang}] Hola a todos."]
         assert msgs[-1].type == "talk" and msgs[-1].data["talk_id"] is None
+
+
+async def test_each_run_gets_a_translator_of_its_own_closed_with_the_run(
+    db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made: list = []
+
+    class RecordingTranslator:
+        def __init__(self, api_key: str, **kwargs) -> None:
+            self.api_key = api_key
+            self.closed = 0
+            made.append(self)
+
+        async def translate(self, segment, target, glossary, context) -> Translation:
+            return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)
+
+        async def aclose(self) -> None:
+            self.closed += 1
+
+    monkeypatch.setattr("glosa.room.Translator", RecordingTranslator)
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = RoomWorker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, TR_ES),
+                        ingest_factory=IngestFactory(), realtime=False)  # no translate: the real kind
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 5.0)
+    assert "append" in {m.type for m in _track(bus, "en", "g1")}
+    await worker.start(_talk("g2"))  # the next talk: g1's run ends
+    assert [t.closed for t in made] == [1, 0]
+    await run_for(clock, 1.0)
+    await worker.stop()
+    assert [t.closed for t in made] == [1, 1] and made[0].api_key == "test-key"
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))  # no lane: no Translator
+    await run_for(clock, 1.0)
+    await worker.stop()
+    assert len(made) == 2
 
 
 async def test_the_free_session_engine_follows_the_room_language(db) -> None:

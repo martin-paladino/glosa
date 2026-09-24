@@ -17,7 +17,14 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY . .
+# Explicit runtime paths, not `COPY . .` (Ruling 30): keeps anything
+# unanticipated -- a stray .env, config.yaml, data/, .git, tests/ -- out of
+# the image even if .dockerignore is ever wrong. samples/long/ is excluded
+# by .dockerignore even though samples/ is copied whole.
+COPY glosa/ glosa/
+COPY samples/ samples/
+COPY config.demo.yaml config.demo-fake.yaml config.example.yaml agenda.example.csv ./
+COPY README.md LICENSE ./
 
 ENV PATH="/app/.venv/bin:${PATH}"
 EXPOSE 8000

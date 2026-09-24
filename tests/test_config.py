@@ -120,3 +120,39 @@ def test_engine_mode_rejects_unknown_values(env_file: Path, tmp_path: Path) -> N
 
     with pytest.raises(ConfigError):
         Settings.load(env_path=str(env_file), config_path=str(config))
+
+
+# ---- Ruling 35: a weak ADMIN_PASSWORD must not boot ------------------------
+
+
+def test_load_rejects_a_blank_admin_password(tmp_path: Path, config_yaml: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("GEMINI_API_KEY=test-gemini-key\nADMIN_PASSWORD=\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="ADMIN_PASSWORD must be at least 8 characters"):
+        Settings.load(env_path=str(env), config_path=str(config_yaml))
+
+
+def test_load_rejects_a_short_admin_password(tmp_path: Path, config_yaml: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("GEMINI_API_KEY=test-gemini-key\nADMIN_PASSWORD=1234567\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="ADMIN_PASSWORD must be at least 8 characters"):
+        Settings.load(env_path=str(env), config_path=str(config_yaml))
+
+
+def test_load_accepts_an_eight_character_admin_password(tmp_path: Path, config_yaml: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("GEMINI_API_KEY=test-gemini-key\nADMIN_PASSWORD=12345678\n", encoding="utf-8")
+
+    settings = Settings.load(env_path=str(env), config_path=str(config_yaml))
+
+    assert settings.admin_password == "12345678"
+
+
+def test_weak_admin_password_error_mentions_how_to_generate_one(tmp_path: Path, config_yaml: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text("GEMINI_API_KEY=test-gemini-key\nADMIN_PASSWORD=short\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="openssl rand -base64 18"):
+        Settings.load(env_path=str(env), config_path=str(config_yaml))

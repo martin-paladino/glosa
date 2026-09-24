@@ -3,15 +3,27 @@ services:
     build: .
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    environment:
+      # A fresh clone's `docker compose up` behaves like `make demo`: the 2
+      # bundled sample rooms, real engine. Override to try it free
+      # (`GLOSA_CONFIG=config.demo-fake.yaml docker compose up`) or to run
+      # a real event (`GLOSA_CONFIG=config.yaml docker compose up`, with a
+      # config.yaml bind mount -- see README's "Running your own event with
+      # Docker").
+      GLOSA_CONFIG: ${GLOSA_CONFIG:-config.demo.yaml}
     volumes:
       # Settings.load() reads secrets from a real .env FILE (python-dotenv),
-      # not from the process environment (glosa/config.py deliberately
+      # not from the process environment: glosa/config.py deliberately
       # ignores it, so loading never depends on whatever a shell happens to
-      # export) -- env_file above alone would not be enough, so .env is also
-      # bind-mounted at the path Settings.load() reads by default.
+      # export. There's no `env_file:` here on purpose (Ruling 37) -- it
+      # would only *add* a way for the secrets to leak (into `docker
+      # inspect` and every child process' environment) without the app ever
+      # reading them that way; the bind mount below is the one path
+      # Settings.load() actually uses.
       - ./.env:/app/.env:ro
+      # Uncomment for a real event (see README): mount your own config.yaml
+      # and run with GLOSA_CONFIG=config.yaml.
+      # - ./config.yaml:/app/config.yaml:ro
       # Captions, the agenda and cost tracking (SQLite, data/glosa.db by
       # default) survive a restart or a rebuild.
       - ./data:/app/data

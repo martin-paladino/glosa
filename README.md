@@ -2,6 +2,10 @@
 
 Live captions and translation for conference talks, room by room, straight from an audio source into your phone.
 
+## Prerequisites
+
+Either **Docker** (with Compose), or, to run it directly: **uv**, **ffmpeg** and **make**.
+
 ## Quickstart
 
 ```bash
@@ -10,26 +14,34 @@ cp .env.example .env   # fill in GEMINI_API_KEY and ADMIN_PASSWORD, see Credenti
 make demo               # or: docker compose up
 ```
 
-Open **http://localhost:8000**. Two rooms come up captioning the bundled sample clips (`samples/en_clip.opus`, `samples/es_clip.opus`) at real speed, in English and Spanish, each with a live translation into the other language. `make demo` runs Gemini for real (costs about $0.10 for the two ~90s clips); `make demo-fake` does the same with no API key and no cost, replaying a recorded session instead.
+Open **http://localhost:8000**. Two rooms come up captioning the bundled sample clips (`samples/en_clip.opus`, `samples/es_clip.opus`) at real speed, in English and Spanish, each with a live translation into the other language. `make demo` / plain `docker compose up` run Gemini for real (costs about $0.10 for the two ~90s clips); `make demo-fake` / `GLOSA_CONFIG=config.demo-fake.yaml docker compose up` do the same with no API key and no cost, replaying a recorded session instead.
 
 To run your own event instead of the demo:
 
 ```bash
 cp config.example.yaml config.yaml   # describe your rooms, agenda, branding
-make run                              # or: docker compose up (uses the same config.yaml)
+make run                              # or, with Docker: see below
 ```
 
 `config.yaml` is never touched by `make demo`/`make demo-fake` (they use the versioned `config.demo.yaml` / `config.demo-fake.yaml` instead), so you can try the demo and set up your real event side by side.
+
+**Running your own event with Docker:** `config.yaml` is deliberately never baked into the image (see `.dockerignore`) or read from the host's environment (see *Secrets* below), so mount it explicitly and point `GLOSA_CONFIG` at it:
+
+```bash
+GLOSA_CONFIG=config.yaml docker compose run --rm -p 8000:8000 -v "$PWD/config.yaml:/app/config.yaml:ro" glosa
+```
+
+or add the same volume line to a local `docker-compose.override.yml` (Compose merges it automatically) so plain `GLOSA_CONFIG=config.yaml docker compose up` picks it up every time.
 
 ## Credentials (`.env`)
 
 | Variable | Required | What it's for |
 |---|---|---|
 | `GEMINI_API_KEY` | yes | Drives live captioning/translation (Gemini Live). Get one at [Google AI Studio](https://aistudio.google.com/). Billed per minute of audio (see *How it scales* below); `make demo-fake` needs no key at all. |
-| `ADMIN_PASSWORD` | yes | The single password for `/admin` (start/stop rooms). Any string; the app won't start without one. |
+| `ADMIN_PASSWORD` | yes | The single password for `/admin` (start/stop rooms). At least 8 characters — Glosa refuses to start otherwise. Use a long random one, e.g. `openssl rand -base64 18`; it's the only thing standing between the internet and your rooms' start/stop controls. |
 | `TYPESAFE_API_KEY` | no | Enables the Jev quality meter. Leave blank to skip it — everything else works without it. |
 
-Secrets live only in `.env` (gitignored). Never put them in `config.yaml` or commit them.
+Secrets live only in `.env` (gitignored) and are read from that file directly, never from the shell/container environment (so a stray exported variable, or `docker inspect`, can't leak them — see `docker-compose.yml`'s comment). Never put them in `config.yaml` or commit them.
 
 ## What's in the box
 

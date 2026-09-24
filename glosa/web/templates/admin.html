@@ -7,8 +7,9 @@
       (docs/design/admin.html): VU meters, quality, cost, the event log.
       Until then, this reuses glosa.css's tokens and console/strip/status/btn
       components as-is; these few rules are only the login card and the
-      couple of bits (inputs, an empty state) glosa.css doesn't already
-      style, so there is no second stylesheet for a page this small. #}
+      couple of bits (inputs, error banners, an empty state) glosa.css
+      doesn't already style, so there is no second stylesheet for a page
+      this small. #}
   <style>
     .admin-login { display: grid; place-items: center; min-block-size: 100dvh; padding: var(--gutter); }
     .admin-login__card {
@@ -30,17 +31,17 @@
       background: var(--bg);
       font-size: var(--step-0);
     }
-    .admin-login__error { display: none; font-size: var(--step--1); font-weight: 700; color: var(--fail); }
-    .admin-login__error[data-visible] { display: block; }
+    .admin__notice { display: none; font-size: var(--step--1); font-weight: 700; color: var(--fail); }
+    .admin__notice[data-visible] { display: block; }
+    .admin__notice a { color: inherit; }
     .admin__empty { padding-block: var(--space-4); color: var(--text-2); }
     .strip__empty { color: var(--text-2); }
+    .strip__detail { font-size: var(--step--2); color: var(--text-2); }
   </style>
 {%- endblock %}
 
 {% block head %}
-{%- if authenticated %}
   <script src="/static/js/admin.js" defer></script>
-{%- endif %}
 {%- endblock %}
 
 {% block body %}
@@ -49,7 +50,7 @@
   <div class="admin-login__card">
     <a class="wordmark" href="/" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
     <h1 class="panel__title">Admin</h1>
-    <p class="admin-login__error" data-admin-login-error>Wrong password.</p>
+    <p class="admin__notice" data-admin-login-error>Wrong password.</p>
     <form class="admin-login__form" method="post" action="/admin/login" data-admin-login-form>
       <div class="admin-login__field">
         <label for="admin-password">Password</label>
@@ -64,16 +65,20 @@
   <header class="admin__bar">
     <a class="wordmark" href="/" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
     <h1 class="admin__title">Admin</h1>
+    <form class="admin__user" method="post" action="/admin/logout">
+      <button class="btn btn--quiet" type="submit">Log out</button>
+    </form>
   </header>
   <main class="admin__main">
     <section class="panel" aria-labelledby="admin-rooms">
       <div class="panel__head">
         <h2 class="panel__title" id="admin-rooms">Rooms</h2>
       </div>
+      <p class="admin__notice" data-rooms-error></p>
       {% if rooms %}
       <div class="console" data-rooms>
         {%- for room in rooms %}
-        <article class="strip strip--{{ room.css_state }}" data-room-row data-room-id="{{ room.slug }}"
+        <article class="strip strip--{{ room.css_state }}" data-room-row data-room-id="{{ room.id }}"
                   aria-labelledby="admin-room-{{ loop.index }}">
           <header class="strip__head">
             <h3 class="strip__name" id="admin-room-{{ loop.index }}">{{ room.name }}</h3>
@@ -86,9 +91,12 @@
             <span class="strip__empty" data-room-talk>No talk running</span>
             {%- endif %}
           </div>
+          {%- if room.status.detail %}
+          <p class="strip__detail" data-room-detail>{{ room.status.detail }}</p>
+          {%- endif %}
           <div class="strip__actions">
-            <button class="btn btn--primary" type="button" data-action="start" data-room-id="{{ room.slug }}">Start</button>
-            <button class="btn btn--danger" type="button" data-action="stop" data-room-id="{{ room.slug }}">Stop</button>
+            <button class="btn btn--primary" type="button" data-action="start" data-room-id="{{ room.id }}">Start</button>
+            <button class="btn btn--danger" type="button" data-action="stop" data-room-id="{{ room.id }}">Stop</button>
           </div>
         </article>
         {%- endfor %}

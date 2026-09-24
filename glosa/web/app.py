@@ -10,6 +10,8 @@ each room that has a source, and stops them all on shutdown.
 ``app.state``:
   - ``settings``, ``bus`` (CaptionBus), ``db`` (Database, once started);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
+  - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
+    admin session cookies;
   - ``rooms_view()``: the rooms as the pages see them (task-6 contract);
   - ``branding``: {"event_name", "primary", "accent", "logo_url"}.
 
@@ -54,6 +56,7 @@ from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room
 from glosa.room import IngestFactory, RoomWorker
 from glosa.web import admin_api, pages, public_api
+from glosa.web.auth import new_admin_secret
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +148,9 @@ def create_app(
     app.state.settings = settings
     app.state.bus = bus
     app.state.workers = workers
+    # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
+    # invalidates every outstanding admin session cookie.
+    app.state.admin_secret = new_admin_secret()
     app.state.rooms_view = lambda: [w.view() for w in workers.values()]
     app.state.branding = {
         "event_name": settings.event_name,

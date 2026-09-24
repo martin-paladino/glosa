@@ -13,12 +13,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+# Ruling 35: a blank or weak /admin password must fail loudly at boot,
+# rather than quietly accept the empty default some deploy tooling leaves
+# behind.
+ADMIN_PASSWORD_MIN_LEN = 8
 
 
 class ConfigError(RuntimeError):
@@ -104,6 +109,19 @@ class Settings(BaseSettings):
     engine_mode: Literal["live", "fake"] = "live"
     fake_fixture: str | None = None
     db_path: str = "data/glosa.db"
+
+    @field_validator("admin_password")
+    @classmethod
+    def _admin_password_must_be_strong(cls, value: str) -> str:
+        # Ruling 35. glosa/web/auth.py also refuses to sign or verify a
+        # session for a blank admin_password (defense in depth), but the
+        # loud failure belongs here, at boot.
+        if len(value) < ADMIN_PASSWORD_MIN_LEN:
+            raise ValueError(
+                f"ADMIN_PASSWORD must be at least {ADMIN_PASSWORD_MIN_LEN} characters; "
+                "generate one with `openssl rand -base64 18`"
+            )
+        return value
 
     @classmethod
     def settings_customise_sources(

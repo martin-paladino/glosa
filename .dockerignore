@@ -1,6 +1,11 @@
 # Secrets: never baked into the image (mounted at runtime instead, see
-# docker-compose.yml).
-.env
+# docker-compose.yml). .env.example is a template with no secrets, kept.
+.env*
+!.env.example
+
+# The event's own config: mount it at runtime instead (see README), so a
+# stale baked-in config.yaml can never silently override what's on disk.
+config.yaml
 
 # Local data and environment, not part of the image.
 data/

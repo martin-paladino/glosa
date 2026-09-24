@@ -12,10 +12,14 @@ raised. Any other error (e.g. 400) is raised immediately, unretried.
 The genai client can be injected (`client=`), which is how tests fake it
 without spending API budget; production code leaves it unset and Translator
 builds a real `genai.Client(api_key=...)`.
+
+FakeTranslator is what a room uses with ``engine_mode: fake`` (a demo or a
+load test with FakeEngine): no API call, no key needed.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -134,3 +138,20 @@ class Translator:
 
         assert last_error is not None  # every exit path above sets it before falling through
         raise last_error
+
+
+class FakeTranslator:
+    """``engine_mode: fake``: the "translation" is the segment itself tagged
+    with the target language ("[en] Hola a todos."), at once and for free,
+    so a demo shows the glossary engine's and the extra languages' captions
+    without a Gemini key."""
+
+    async def translate(
+        self,
+        segment: str,
+        target: str,
+        glossary: list[GlossaryTerm],
+        context: list[str],
+    ) -> Translation:
+        await asyncio.sleep(0)
+        return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)

@@ -38,12 +38,16 @@ to ``create_app(on_talk_end=...)`` if given (Task 11: exports).
   - ``rooms_view()``: the rooms as the pages see them (task-6 contract);
   - ``branding``: {"event_name", "primary", "accent", "logo_url"}.
 
-Engines (``make_engine_factory``): Live Translate with the API key and
-``prices.lt_per_min`` (Ruling 5), or, with ``engine_mode: fake``, FakeEngine
-replaying a recorded session so a demo or a load test spends nothing:
-``fake_fixture`` if set, else samples/fixtures/lt_en.jsonl under the working
-directory, else the copy in the source checkout. None found is a
-ConfigError at startup (an installed package has no samples/).
+Engines (``make_engine_factory``), by ``EngineConfig.kind`` (the talk's
+engine): "fast" is Live Translate with the API key and ``prices.lt_per_min``
+(Ruling 5); "glossary" is transcribe-live with ``prices.transcribe_per_min``
+and the glossary as vocabulary. With ``engine_mode: fake``, FakeEngine
+replays a recorded session so a demo or a load test spends nothing: for
+"fast", ``fake_fixture`` if set, else samples/fixtures/lt_en.jsonl; for
+"glossary", samples/fixtures/tr_es.jsonl; each under the working directory,
+else the copy in the source checkout. None found is a ConfigError at
+startup (an installed package has no samples/). (RoomWorker then uses
+FakeTranslator for the text translations: no API either.)
 
 Run it with ``python -m glosa.web.app`` (``main()``: $HOST, default 0.0.0.0,
 and $PORT, default 8000), which reads .env and config.yaml from the working
@@ -77,6 +81,7 @@ from glosa.db import init_db
 from glosa.engines.base import EngineFactory
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
+from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
@@ -89,6 +94,8 @@ log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
 FAKE_FIXTURE = Path("samples") / "fixtures" / "lt_en.jsonl"
 CHECKOUT_FAKE_FIXTURE = Path(__file__).resolve().parents[2] / FAKE_FIXTURE
+FAKE_GLOSSARY_FIXTURE = Path("samples") / "fixtures" / "tr_es.jsonl"
+CHECKOUT_FAKE_GLOSSARY_FIXTURE = Path(__file__).resolve().parents[2] / FAKE_GLOSSARY_FIXTURE
 # On shutdown, open SSE streams are cut after this long (EventSource
 # reconnects by itself) so the lifespan can stop the rooms.
 SHUTDOWN_GRACE_S = 3
@@ -96,9 +103,12 @@ SHUTDOWN_GRACE_S = 3
 HOOK_GRACE_S = 5.0
 
 
-def resolve_fake_fixture(settings: Settings) -> str:
-    """The recording engine_mode fake replays (see the module docstring)."""
-    if settings.fake_fixture:
+def resolve_fake_fixture(settings: Settings, kind: str = "fast") -> str:
+    """The recording engine_mode fake replays for an engine kind (see the
+    module docstring)."""
+    if kind == "glossary":
+        candidates = [Path.cwd() / FAKE_GLOSSARY_FIXTURE, CHECKOUT_FAKE_GLOSSARY_FIXTURE]
+    elif settings.fake_fixture:
         candidates = [Path(settings.fake_fixture)]
     else:
         candidates = [Path.cwd() / FAKE_FIXTURE, CHECKOUT_FAKE_FIXTURE]
@@ -106,23 +116,28 @@ def resolve_fake_fixture(settings: Settings) -> str:
         if path.is_file():
             return str(path.resolve())
     tried = ", ".join(str(path) for path in candidates)
-    raise ConfigError(
-        f"engine_mode fake: no recorded session found (tried {tried}); "
-        "set fake_fixture in config.yaml to a JSONL recording"
-    )
+    if kind == "glossary":
+        hint = f"run from a checkout, or copy {FAKE_GLOSSARY_FIXTURE} into the working directory"
+    else:
+        hint = "set fake_fixture in config.yaml to a JSONL recording"
+    raise ConfigError(f"engine_mode fake: no recorded session found for the {kind} engine (tried {tried}); {hint}")
 
 
 def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
     if settings.engine_mode == "fake":
-        fixture = resolve_fake_fixture(settings)
+        fixtures = {kind: resolve_fake_fixture(settings, kind) for kind in ("fast", "glossary")}
 
         def fake(cfg: EngineConfig) -> FakeEngine:
+            fixture = fixtures.get(cfg.kind, fixtures["fast"])
             return FakeEngine(replace(cfg, kind="fake", fixture_path=fixture), clock)
 
         return fake
 
-    def live(cfg: EngineConfig) -> LiveTranslateEngine:
-        return LiveTranslateEngine(cfg, settings.gemini_api_key, clock, price_per_min=settings.prices.lt_per_min)
+    def live(cfg: EngineConfig) -> LiveTranslateEngine | TranscribeLiveEngine:
+        prices = settings.prices
+        if cfg.kind == "glossary":
+            return TranscribeLiveEngine(cfg, settings.gemini_api_key, clock, price_per_min=prices.transcribe_per_min)
+        return LiveTranslateEngine(cfg, settings.gemini_api_key, clock, price_per_min=prices.lt_per_min)
 
     return live
 

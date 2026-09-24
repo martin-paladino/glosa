@@ -7,17 +7,20 @@ test_relay.py): the audio source, the replaying engines and the worker's
 ticker then share one coherent timeline. FakeIngest stands in for ffmpeg with
 100 ms chunks of a square wave (voice) or zeros (silence), paced by that clock;
 one test feeds the real samples/en_clip.opus through the real AudioIngest.
+FakeTranslate stands in for the Translator of the glossary engine and of the
+extra languages (no API is ever called).
 """
 
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import os
 import struct
 import subprocess
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -28,11 +31,13 @@ from glosa.clock import FakeClock, RealClock
 from glosa.config import RelayCfg, RoomCfg, Settings
 from glosa.db import init_db
 from glosa.engines.fake import FakeEngine
-from glosa.models import AudioChunk, CaptionMsg, EngineConfig, Room
+from glosa.models import AudioChunk, CaptionMsg, EngineConfig, GlossaryTerm, Room, Talk
 from glosa.room import RoomWorker
+from glosa.text.translator import Translation
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE_LT = ROOT / "tests" / "fixtures" / "fake_lt.jsonl"
+TR_ES = ROOT / "samples" / "fixtures" / "tr_es.jsonl"
 EN_CLIP = ROOT / "samples" / "en_clip.opus"
 
 TONE = struct.pack("<1600h", *([8000, -8000] * 800))  # 100 ms, about -12 dBFS
@@ -96,10 +101,17 @@ class _SleepUntilClosed:
 
 
 class QuickFakeEngine(FakeEngine):
-    def __init__(self, cfg: EngineConfig, clock: DrivenClock, usd: float = 0.0) -> None:
+    def __init__(
+        self, cfg: EngineConfig, clock: DrivenClock, usd: float = 0.0, fail_after_s: float | None = None
+    ) -> None:
         self._closing = asyncio.Event()
         self._usd = usd
-        super().__init__(cfg, _SleepUntilClosed(clock, self._closing))
+        self.end_utterances = 0
+        super().__init__(cfg, _SleepUntilClosed(clock, self._closing), fail_after_s=fail_after_s)
+
+    async def end_utterance(self) -> None:
+        self.end_utterances += 1
+        await super().end_utterance()
 
     async def close(self) -> None:
         self._closing.set()
@@ -115,16 +127,40 @@ class QuickFakeEngine(FakeEngine):
 class Factory:
     """EngineFactory: the n-th session replays fixtures[n] (the last one repeats)."""
 
-    def __init__(self, clock: DrivenClock, *fixtures: Path, usd: float = 0.0) -> None:
+    def __init__(
+        self, clock: DrivenClock, *fixtures: Path, usd: float = 0.0, fail_after_s: float | None = None
+    ) -> None:
         self.clock = clock
         self.fixtures = fixtures
         self.usd = usd
+        self.fail_after_s = fail_after_s
         self.configs: list[EngineConfig] = []
+        self.engines: list[QuickFakeEngine] = []
 
     def __call__(self, cfg: EngineConfig) -> QuickFakeEngine:
         self.configs.append(cfg)
         fixture = self.fixtures[min(len(self.configs), len(self.fixtures)) - 1]
-        return QuickFakeEngine(replace(cfg, fixture_path=str(fixture)), self.clock, self.usd)
+        engine = QuickFakeEngine(replace(cfg, fixture_path=str(fixture)), self.clock, self.usd, self.fail_after_s)
+        self.engines.append(engine)
+        return engine
+
+
+class FakeTranslate:
+    """Translator.translate stand-in: "[<target>] <segment>" at once, or ""
+    for the segments in `empty`."""
+
+    def __init__(self, usd: float = 0.0, empty: tuple[str, ...] = ()) -> None:
+        self.usd = usd
+        self.empty = empty
+        self.calls: list[tuple[str, str, list[GlossaryTerm], list[str]]] = []
+
+    async def __call__(
+        self, segment: str, target: str, glossary: list[GlossaryTerm], context: list[str]
+    ) -> Translation:
+        self.calls.append((segment, target, list(glossary), list(context)))
+        await asyncio.sleep(0)
+        text = "" if segment in self.empty else f"[{target}] {segment}"
+        return Translation(text=text, latency_s=0.0, usd=self.usd)
 
 
 class FakeIngest:
@@ -204,7 +240,9 @@ def _room(room_id: str = "r1", targets: list[str] | None = None) -> Room:
     )
 
 
-def _settings(*rooms: tuple[str, str], relay: RelayCfg | None = None, timezone: str = "UTC") -> Settings:
+def _settings(
+    *rooms: tuple[str, str], relay: RelayCfg | None = None, timezone: str = "UTC", **extra: object
+) -> Settings:
     return Settings(
         gemini_api_key="test-key",
         admin_password="test-password",
@@ -214,6 +252,7 @@ def _settings(*rooms: tuple[str, str], relay: RelayCfg | None = None, timezone: 
             for rid, lang in (rooms or (("r1", "en"),))
         ],
         relay=relay or RelayCfg(),
+        **extra,
     )
 
 
@@ -223,6 +262,35 @@ def _script(path: Path, records: list[tuple[float, str, str]]) -> Path:
         for t, kind, text in records:
             f.write(json.dumps({"t": t, "kind": kind, "text": text}) + "\n")
     return path
+
+
+def _transcript(path: Path, records: list[tuple[float, str, str]]) -> Path:
+    """A transcribe-live recording: (t, "interim" | "final", text) per record."""
+    with path.open("w", encoding="utf-8") as f:
+        for t, kind, text in records:
+            if kind == "interim":
+                rec = {"t": t, "kind": "source_delta", "text": text, "meta": {"interim": True}}
+            else:
+                rec = {"t": t, "kind": "source_final", "text": text}
+            f.write(json.dumps(rec) + "\n")
+    return path
+
+
+def _talk(
+    talk_id: str,
+    *,
+    language: str = "es",
+    targets: tuple[str, ...] = ("en",),
+    engine: str = "glossary",
+    glossary: tuple[GlossaryTerm, ...] = (),
+    room_id: str = "r1",
+) -> Talk:
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return Talk(
+        id=talk_id, room_id=room_id, title=f"Talk {talk_id}", speakers=[], language=language,
+        targets=list(targets), engine=engine, start=start, end=start + timedelta(hours=1),  # type: ignore[arg-type]
+        abstract="", tags=[], glossary=list(glossary), status="scheduled", actual_start=None, actual_end=None,
+    )
 
 
 def _clip(tmp_path: Path) -> str:
@@ -265,7 +333,7 @@ def _live_tasks() -> list[str]:
     return [
         t.get_name()
         for t in asyncio.all_tasks()
-        if t is not asyncio.current_task() and t.get_name().startswith(("room-", "relay-"))
+        if t is not asyncio.current_task() and t.get_name().startswith(("room-", "relay-", "glosa-pipeline"))
     ]
 
 
@@ -277,6 +345,7 @@ def db(tmp_path: Path):
 
 
 def _worker(room, settings, bus, db, clock, factory, ingests, **kw) -> RoomWorker:
+    kw.setdefault("translate", FakeTranslate())  # never the real Translator
     return RoomWorker(room, settings, bus, db, clock, factory, ingest_factory=ingests, realtime=False, **kw)
 
 
@@ -349,8 +418,9 @@ async def test_two_rooms_at_once_keep_their_streams_apart(tmp_path: Path, db) ->
     r2_text = " ".join(m.text or "" for msgs in r2.values() for m in msgs)
     assert "alpha" in r1_text and "beta" not in r1_text
     assert "beta" in r2_text and "alpha" not in r2_text
-    # r2 speaks Spanish: its source deltas feed "es", its translation "en"
-    assert "betasrc0" in _segments(r2["es"])[0] and "betatgt0" in _segments(r2["en"])[0]
+    # r2 speaks Spanish: its source deltas feed "es"; its free session runs
+    # the glossary engine, so "en" is translated from them (FakeTranslate)
+    assert "betasrc0" in _segments(r2["es"])[0] and "[en] betasrc0" in _segments(r2["en"])[0]
     # each track numbers its own segments
     assert min(_segments(r1["en"])) == 0 and min(_segments(r2["es"])) == 0
 
@@ -941,3 +1011,241 @@ async def test_restarting_the_running_talk_takes_its_edited_fields_from_the_db(t
     assert worker.talk.targets == ["en", "es"] and worker.talk.title == "Edited while live"
     assert stored.actual_start == began and stored.status == "live"
     await worker.stop()
+
+
+# -------------------------------------------------------- glossary engine (T10)
+
+
+def _finals(path: Path) -> list[str]:
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [r["text"] for r in rows if r["kind"] == "source_final"]
+
+
+def _track(bus: CaptionBus, lang: str, talk_id: str, room_id: str = "r1") -> list[CaptionMsg]:
+    return sorted(bus.history(room_id, lang, talk_id) + bus.history(room_id, lang, None), key=lambda m: m.id)
+
+
+def _closed_texts(msgs: list[CaptionMsg]) -> list[str]:
+    """The text each segment had when it closed: its appends, or its last set."""
+    text: dict[int, str] = {}
+    out: list[str] = []
+    for m in msgs:
+        if m.type == "append":
+            text[m.seg] = text.get(m.seg, "") + (m.text or "")
+        elif m.type == "set":
+            text[m.seg] = m.text or ""
+        elif m.type == "close":
+            out.append(text.get(m.seg, ""))
+    return out
+
+
+async def test_a_glossary_talk_sets_its_source_and_translates_every_segment(db) -> None:  # 10.4
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    translate = FakeTranslate(usd=0.0001)
+    factory = Factory(clock, TR_ES, usd=0.0002)
+    glossary = (
+        GlossaryTerm("Kubernetes", True), GlossaryTerm("kubernetes ", True), GlossaryTerm("control plane", True),
+        GlossaryTerm("Grafana Loki", True),
+    )
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, factory, IngestFactory(),
+                     translate=translate)
+
+    await worker.start(_talk("g1", glossary=glossary))
+    await run_for(clock, 62.0)
+    await worker.stop()
+
+    cfg = factory.configs[0]
+    assert (cfg.kind, cfg.source_lang, cfg.target_lang) == ("glossary", "es", None)
+    assert cfg.vocabulary == ["Kubernetes", "control plane", "Grafana Loki"]  # deduped ignoring case
+
+    finals = _finals(TR_ES)
+    es = _track(bus, "es", "g1")
+    assert "append" not in {m.type for m in es}
+    sets = [m for m in es if m.type == "set"]
+    assert len(sets) > 3 * len(finals)  # the interims rewrite the open segment
+    assert _closed_texts(es) == finals  # each utterance closes with its final text
+    for a, b in zip(sets, sets[1:]):
+        assert (a.seg, a.text) != (b.seg, b.text)  # a repeated text is never published
+    assert [s.text for s in await db.get_segments("g1", "es", "live")] == finals
+
+    en = _track(bus, "en", "g1")
+    appends = [m for m in en if m.type == "append"]
+    assert len(appends) >= len(finals)
+    assert [m.type for m in en if m.type in ("append", "close")] == ["append", "close"] * len(appends)
+    assert all(m.text.startswith("[en] ") for m in appends)
+    assert {c[1] for c in translate.calls} == {"en"}
+    assert translate.calls[0][2] == list(glossary)  # the talk's glossary
+    said = " ".join(finals).lower().split()
+    translated = " ".join(c[0] for c in translate.calls).lower().split()
+    assert difflib.SequenceMatcher(a=said, b=translated, autojunk=False).ratio() >= 0.9
+
+    saved_en = await db.get_segments("g1", "en", "live")
+    assert [s.text for s in saved_en] == [m.text for m in appends]
+    assert all(s.kind == "translation" and 0.8 <= s.t_start <= s.t_end <= 61.0 for s in saved_en)
+    assert en[-1].type == "talk" and en[-1].data["talk_id"] is None  # after every translation
+
+    engine_usd = 0.0002 * sum(1 for r in map(json.loads, TR_ES.read_text().splitlines())
+                              if r["kind"] in ("source_delta", "source_final"))
+    assert worker.status().cost_usd == pytest.approx(engine_usd + 0.0001 * len(translate.calls), rel=0.05)
+    assert await db.total_cost() == pytest.approx(worker.status().cost_usd)
+    assert not _live_tasks()
+
+
+async def test_the_glossary_engine_ends_the_utterance_on_each_pause_and_the_fast_one_does_not(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    glossary_factory, fast_factory = Factory(clock, TR_ES), Factory(clock, FAKE_LT)
+    glossary = _worker(_room("r1", targets=["en"]), _settings(("r1", "es"), ("r2", "en")), bus, db, clock,
+                       glossary_factory, IngestFactory())
+    fast = _worker(_room("r2"), _settings(("r1", "es"), ("r2", "en")), bus, db, clock, fast_factory, IngestFactory())
+
+    await glossary.start(_talk("g1"))
+    await fast.start(_talk("f1", language="en", targets=("es",), engine="fast", room_id="r2"))
+    await run_for(clock, 8.0)  # FakeIngest: 2 s of voice, 0.6 s of silence: a pause every 2.6 s
+
+    assert glossary_factory.engines[0].end_utterances >= 2
+    assert fast_factory.engines[0].end_utterances == 0
+    await glossary.stop()
+    await fast.stop()
+
+
+async def test_repeated_interims_are_not_published_and_an_empty_final_removes_the_segment(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    translate = FakeTranslate()
+    script = _transcript(tmp_path / "tr.jsonl", [
+        (0.5, "interim", "Hola"), (1.0, "interim", "Hola"), (1.5, "interim", "Hola a todos"),
+        (2.0, "final", "Hola a todos."),
+        (3.0, "interim", "eh"), (3.5, "final", ""),
+        (4.0, "interim", "Sigo."), (4.5, "final", "Sigo."),
+    ])
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, script),
+                     IngestFactory(), translate=translate)
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 6.0)
+    await worker.stop()
+
+    es = [(m.type, m.seg, m.text) for m in _track(bus, "es", "g1") if m.type in ("set", "close")]
+    assert es == [
+        ("set", 0, "Hola"), ("set", 0, "Hola a todos"), ("set", 0, "Hola a todos."), ("close", 0, None),
+        ("set", 1, "eh"), ("set", 1, ""), ("close", 1, None),
+        ("set", 2, "Sigo."), ("close", 2, None),  # the final repeats the last interim: only the close
+    ]
+    assert [s.text for s in await db.get_segments("g1", "es", "live")] == ["Hola a todos.", "Sigo."]
+    assert [c[0] for c in translate.calls] == ["Hola a todos.", "Sigo."]
+
+
+async def test_an_empty_translation_is_not_published(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    script = _transcript(tmp_path / "tr.jsonl", [
+        (0.5, "final", "Uno."), (1.0, "final", "Dos."), (1.5, "final", "Tres."),
+    ])
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, script),
+                     IngestFactory(), translate=FakeTranslate(empty=("Dos.",)))
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 3.0)
+    await worker.stop()
+
+    assert _closed_texts(_track(bus, "en", "g1")) == ["[en] Uno.", "[en] Tres."]
+    assert [s.text for s in await db.get_segments("g1", "en", "live")] == ["[en] Uno.", "[en] Tres."]
+
+
+async def test_stopping_translates_what_is_still_open_before_the_talk_ends(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    script = _transcript(tmp_path / "tr.jsonl", [(0.5, "interim", "sin terminar la frase"), (60.0, "final", "x")])
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, script),
+                     IngestFactory())
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 1.5)
+    await worker.stop()
+
+    en = _track(bus, "en", "g1")
+    assert [m.type for m in en][-3:] == ["append", "close", "talk"]  # translated, then the talk ends
+    assert _closed_texts(en) == ["[en] sin terminar la frase"]
+    assert _closed_texts(_track(bus, "es", "g1")) == ["sin terminar la frase"]
+    assert [s.text for s in await db.get_segments("g1", "es", "live")] == ["sin terminar la frase"]
+    assert [s.text for s in await db.get_segments("g1", "en", "live")] == ["[en] sin terminar la frase"]
+    assert not _live_tasks()
+
+
+async def test_a_file_that_ends_leaves_no_pipeline_behind(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, TR_ES),
+                     IngestFactory(seconds=10.0), tail_s=1.0)
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 13.0)
+
+    assert worker.talk is None
+    assert "append" in {m.type for m in _track(bus, "en", "g1")}
+    assert not _live_tasks()
+
+
+async def test_a_newer_session_closes_the_older_ones_open_segment(tmp_path: Path, db) -> None:
+    """Rotation: the draining session's late final is dropped once the new
+    session speaks; its segment closes with the last interim it showed."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    translate = FakeTranslate()
+    relay = RelayCfg(standby_at=3.0, force_at=4.0, stall_timeout=8.0)
+    s1 = _transcript(tmp_path / "s1.jsonl", [
+        (0.5, "interim", "a1"), (1.5, "interim", "a1 a2"), (3.5, "interim", "a1 a2 a3"),
+        (4.6, "final", "a1 a2 a3 fin."),  # after s2's first interim
+    ])
+    s2 = _transcript(tmp_path / "s2.jsonl", [
+        (1.2, "interim", "b1"), (2.0, "interim", "b1 b2"), (2.5, "final", "b1 b2."),
+    ])
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es"), relay=relay), bus, db, clock,
+                     Factory(clock, s1, s2), IngestFactory(), translate=translate)
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 7.0)
+    await worker.stop()
+
+    es = _track(bus, "es", "g1")
+    assert _closed_texts(es) == ["a1 a2 a3", "b1 b2."]
+    assert "a1 a2 a3 fin." not in [m.text for m in es]
+    assert " ".join(c[0] for c in translate.calls) == "a1 a2 a3 b1 b2."  # "fin." never reaches the lane
+    assert [s.text for s in await db.get_segments("g1", "es", "live")] == ["a1 a2 a3", "b1 b2."]
+
+
+async def test_a_glossary_talk_translates_to_every_target(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    script = _transcript(tmp_path / "tr.jsonl", [(0.5, "final", "Hola a todos.")])
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, script),
+                     IngestFactory())
+
+    await worker.start(_talk("g1", targets=("es", "en", "pt")))  # the spoken language is not a target
+    await run_for(clock, 1.5)
+
+    assert worker.langs() == ["es", "en", "pt"]
+    assert worker.view()["langs"] == ["es", "en", "pt"]
+    await worker.stop()
+    for lang in ("en", "pt"):
+        msgs = _track(bus, lang, "g1")
+        assert _closed_texts(msgs) == [f"[{lang}] Hola a todos."]
+        assert msgs[-1].type == "talk" and msgs[-1].data["talk_id"] is None
+
+
+async def test_the_free_session_engine_follows_the_room_language(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    kinds = {}
+    for room_id, lang, default_en in (("r1", "es", "fast"), ("r2", "en", "fast"), ("r3", "en", "glossary")):
+        factory = Factory(clock, TR_ES)
+        settings = _settings((room_id, lang), default_engine_en=default_en)
+        worker = _worker(_room(room_id), settings, bus, db, clock, factory, IngestFactory())
+        await worker.start(None)
+        await run_for(clock, 0.5)
+        kinds[room_id] = (worker.talk.engine, factory.configs[0].kind)
+        await worker.stop()
+
+    assert kinds == {"r1": ("glossary", "glossary"), "r2": ("fast", "fast"), "r3": ("glossary", "glossary")}

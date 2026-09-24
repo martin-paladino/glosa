@@ -755,6 +755,32 @@ async def test_at_most_one_connection_attempt_in_flight(steady: Path) -> None:
     assert_no_chunk_in_two_sessions(h)
 
 
+# ------------------------------------------------------------ end_utterance()
+
+
+async def test_end_utterance_reaches_only_the_confirmed_active_session(steady: Path) -> None:
+    # The glossary engine's hybrid VAD: the room calls relay.end_utterance() on
+    # each pause, and only the session that has the audio may get it.
+    h = Harness([Plan(steady, connect_s=3.0)])
+    await h.start()
+    await h.run_until(1, vad=talking(0))
+    await h.relay.end_utterance()  # the first session is still connecting
+    [first] = h.engines
+    assert first.end_utterance_at == []
+
+    await h.run_until(515, vad=talking(0))  # the standby connected at 510 s, up at 513 s
+    await h.relay.end_utterance()
+    active, standby = h.engines
+    assert active is first
+    assert active.end_utterance_at == [pytest.approx(515.0)]
+    assert standby.end_utterance_at == []
+
+    await h.stop()
+    await h.relay.end_utterance()  # stopped: a no-op
+    assert active.end_utterance_at == [pytest.approx(515.0)]
+    assert standby.end_utterance_at == []
+
+
 # ---------------------------------------------------------------- event stream
 
 

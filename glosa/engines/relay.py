@@ -284,6 +284,14 @@ class SessionRelay:
             self._in_pause = True
             self._maybe_switch(self._clock.now())
 
+    async def end_utterance(self) -> None:
+        """Pass ``end_utterance()`` to the active session (the glossary
+        engine's client-side VAD: call it on each VAD ``pause``). A no-op
+        with no confirmed active session or after ``stop()``."""
+        if self._stopped or self._active is None:
+            return
+        await self._end_utterance(self._active)
+
     async def reconnect(self, reason: str) -> None:
         """Replace the active session now ("stall", "manual", ...). A ready
         standby takes over at once. Otherwise the active one is retired and a

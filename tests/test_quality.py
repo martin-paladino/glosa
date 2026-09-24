@@ -14,9 +14,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 from dotenv import dotenv_values
-from typesafe_sdk import TypeSafeAPIConnectionError
 
-import glosa.quality as quality
+# Jev is an optional extra (`uv sync --extra jev`); without it the quality
+# meter is simply off, so its tests are skipped rather than failing collection.
+pytest.importorskip("typesafe_sdk")
+from typesafe_sdk import TypeSafeAPIConnectionError  # noqa: E402
+
+import glosa.quality as quality  # noqa: E402
 from glosa.quality import FIDELITY_QUESTION, ClosedSegment, QualityMeter, find_matching_source
 
 MAIN_REPO_ENV = Path("/Users/mpaladino/repos/glosa/.env")

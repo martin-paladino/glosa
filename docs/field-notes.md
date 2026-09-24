@@ -21,7 +21,7 @@ Other answers from the channel:
 
 ## What Glosa does about it
 
-> Status on 2026-09-24 20:45 UTC: the room station (1), remote reload (2) and the overlay (5) are being built. The autopilot (3) and the audience QR flow (4) are in progress or done. This note is updated when they land.
+> Status on 2026-09-24 19:50 UTC: the room station (1), remote reload (2) and the overlay (5) are being built. The autopilot (3) and the audience QR flow (4) are in progress or done. This note is updated when they land.
 
 1. **Room station.** Instead of a SaaS tab, the mini PC opens `/station/{room}?key=…`.
    - Capture:

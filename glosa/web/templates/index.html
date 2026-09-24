@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tr("index_title").format(event=event_name) }} | Glosa{% endblock %}
+
+{% block styles %}
+  <link rel="stylesheet" href="/static/css/room.css">
+{%- endblock %}
+
+{% block body %}
+<div class="index">
+  <header class="index__head">
+    <div class="index__brand">
+      <a class="wordmark" href="/{{ lang_suffix }}" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
+      {%- if logo_url %}
+      <img class="event-logo" src="{{ logo_url }}" alt="{{ event_name }}">
+      {%- endif %}
+    </div>
+    <a href="/?lang={{ other_lang }}" lang="{{ other_lang }}" hreflang="{{ other_lang }}">{{ other_lang_name }}</a>
+  </header>
+
+  <section class="index__intro" aria-labelledby="event">
+    <h1 class="index__title" id="event">{{ event_name }}</h1>
+    <p class="index__lede">{{ tr("index_lede") }}</p>
+  </section>
+
+  {%- if rooms %}
+  <ul class="room-list" aria-label="{{ tr('rooms') }}">
+    {%- for room in rooms %}
+    <li class="room-card{% if room.live %} room-card--live{% endif %}">
+      <div class="room-card__head">
+        <h2 class="room-card__name"><a class="room-card__link" href="{{ room.href }}">{{ room.name }}</a></h2>
+        {%- if room.live %}
+        <span class="status status--live">{{ tr("live") }}</span>
+        {%- else %}
+        <span class="status status--idle">{{ tr("between_talks") }}</span>
+        {%- endif %}
+      </div>
+      <dl class="agenda">
+        <div class="slot slot--now">
+          <dt class="slot__when">{{ tr("now") }}</dt>
+          {%- if room.now %}
+          <dd class="slot__what">
+            <cite class="talk-title" lang="{{ room.now.language }}">{{ room.now.title }}</cite>
+            <span class="talk-meta">{{ room.now.meta }}</span>
+          </dd>
+          {%- else %}
+          <dd class="slot__what"><span class="slot__empty">{{ tr("no_talk_now") }}</span></dd>
+          {%- endif %}
+        </div>
+        <div class="slot">
+          {%- if room.next %}
+          <dt class="slot__when">{{ tr("next") }} <time datetime="{{ room.next.start }}">{{ room.next.start }}</time></dt>
+          <dd class="slot__what">
+            <cite class="talk-title" lang="{{ room.next.language }}">{{ room.next.title }}</cite>
+            <span class="talk-meta">{{ room.next.meta }}</span>
+          </dd>
+          {%- else %}
+          <dt class="slot__when">{{ tr("next") }}</dt>
+          <dd class="slot__what"><span class="slot__empty">{{ tr("no_more_talks") }}</span></dd>
+          {%- endif %}
+        </div>
+      </dl>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <p class="index__empty">{{ tr("rooms_empty") }}</p>
+  {%- endif %}
+
+  <footer class="index__foot">
+    <p class="colophon"><b>{{ tr("colophon_word") }}</b> {{ tr("colophon_def") }}</p>
+    <p>{{ tr("free_software") }} <a href="{{ source_url }}">{{ tr("view_source") }}</a></p>
+  </footer>
+</div>
+{% endblock %}

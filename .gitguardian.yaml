@@ -1,0 +1,8 @@
+# GitGuardian / ggshield configuration.
+# tests/ only contains throwaway fixture credentials (e.g. ADMIN_PASSWORD
+# values used to test login, the 8-character minimum and error redaction).
+# Real secrets live only in .env, which is gitignored and never committed.
+version: 2
+secret:
+  ignored_paths:
+    - "tests/**"

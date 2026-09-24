@@ -18,7 +18,10 @@ Segments
     carries ``meta["session"]``). Each (session, language) gets its own
     CaptionAssembler, so the tail of one session and the start of the next
     never end up in the same segment; the assemblers' seg numbers are
-    remapped to one counter per (room, language) before publishing. A
+    remapped to one counter per language that lives as long as the worker
+    (a restarted pipeline never reuses a seg id). An assembler's ops are
+    applied without awaiting, so the ticker never sees half of them;
+    closed segments are saved afterwards. A
     segment closes on terminal punctuation (the assembler), on
     ``max_chars``, when its session reports an error, when the talk ends,
     or after ``IDLE_CLOSE_S`` without new text in it. The last one is the
@@ -36,17 +39,21 @@ Segments
 Sources
     ``start(talk)`` plays the room's configured source; ``play_file(path)``
     replaces the source of the running talk (or starts the free session).
-    When a source ends by itself, ``tail_s`` s of silence are fed so the
-    engine can finish the last phrase, then the pipeline stops:
-      - a clean end (a file that finished) ends the talk: the room goes idle;
-      - a source that died (AudioIngest gave up: ``last_error``) keeps the
-        talk on and turns the room red ("source is down") until
-        ``play_file()``, ``start()`` or ``stop()``.
+    When a source ends by itself, the pipeline stops:
+      - a clean end (a file that finished) first feeds ``tail_s`` s of
+        silence so the engine can finish the last phrase, then ends the
+        talk: the room goes idle;
+      - a source that died (AudioIngest gave up after its restarts, ~31 s
+        without audio, so the engine is long done) keeps the talk on and
+        turns the room red ("source is down") until ``play_file()``,
+        ``start()`` or ``stop()``.
 
 Free session (MVP, no agenda)
-    ``start(None)`` opens a synthetic talk ``free-<room id>`` titled
-    "Sesión libre", in the room's ``language`` (config.yaml), translated to
-    its first ``default_targets`` entry, engine "fast".
+    ``start(None)`` opens a synthetic talk titled "Sesión libre", in the
+    room's ``language`` (config.yaml), translated to its first
+    ``default_targets`` entry, engine "fast". Each run gets its own id,
+    ``free-<room id>-<YYYYmmddTHHMMSS>`` in the event timezone (Ruling 27),
+    so exports never mix runs; its ``start`` is in that timezone too.
 
 Clock
     Timers (idle close, status, cost batching) run on ``clock.sleep``, so
@@ -57,12 +64,14 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from glosa.audio.ingest import CHUNK_BYTES, CHUNK_S, AudioIngest
 from glosa.audio.vad import EnergyVad
@@ -119,17 +128,23 @@ class _OpenSeg:
     t_start: float
     last_at: float
     text: str = ""
+    t_end: float | None = None  # set when it closes
 
 
 class _Track:
-    """One language of the room: the assemblers of each session, one id space."""
+    """One language of the talk: the assembler of each engine session."""
 
     def __init__(self, lang: str, kind: str) -> None:
         self.lang = lang
         self.kind = kind  # "source" | "translation"
-        self.next_seg = 0
         self.assemblers: dict[int, CaptionAssembler] = {}
         self.open: dict[int, _OpenSeg] = {}  # session -> its open segment
+
+    def sessions(self) -> set[int]:
+        return set(self.assemblers) | set(self.open)
+
+
+_Closed = list[tuple[_Track, _OpenSeg]]  # closed segments, still to be saved
 
 
 @dataclass(eq=False)
@@ -185,6 +200,13 @@ class RoomWorker:
         self._tail_s = tail_s
         cfg = next((r for r in settings.rooms if r.id == room.id), None)
         self.language = cfg.language if cfg is not None else "en"
+        try:
+            self._tz: timezone | ZoneInfo = ZoneInfo(settings.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            log.warning("unknown timezone %r: free sessions use UTC", settings.timezone)
+            self._tz = timezone.utc
+        self._free_ids: set[str] = set()
+        self._next_seg: dict[str, int] = {}  # per language, for the worker's lifetime
 
         self.talk: Talk | None = None
         self.audio_s = 0.0  # seconds of audio fed to the pipeline (all sources)
@@ -230,7 +252,7 @@ class RoomWorker:
                 return
             if run.audio is not None:
                 run.audio.cancel()
-                await asyncio.gather(run.audio, return_exceptions=True)
+                self._report(await asyncio.gather(run.audio, return_exceptions=True), "audio")
             self._source_down = None
             run.audio = self._spawn(self._audio_loop(run, "file", path, True), "audio")
             await self._log("info", "source_change", f"playing file {path}")
@@ -239,6 +261,14 @@ class RoomWorker:
         if self.talk is not None:
             return [self.talk.language, target_lang(self.talk.language, self.talk.targets)]
         return [self.language, target_lang(self.language, self.room.default_targets)]
+
+    def stream_langs(self) -> set[str]:
+        """Every language this room may publish captions in: its own and its
+        default targets, and the current talk's."""
+        langs = {self.language, *self.room.default_targets, *self.langs()}
+        if self.talk is not None:
+            langs |= {self.talk.language, *self.talk.targets}
+        return langs
 
     def view(self) -> dict:
         """The room as the audience pages see it (task-6 contract)."""
@@ -290,9 +320,15 @@ class RoomWorker:
         )
 
     def free_talk(self) -> Talk:
-        now = self._clock.wall()
+        """A new free session (Ruling 27: one id per run)."""
+        now = self._clock.wall().astimezone(self._tz)
+        base = f"free-{self.room.id}-{now:%Y%m%dT%H%M%S}"
+        talk_id, n = base, 2
+        while talk_id in self._free_ids:  # two runs within one second
+            talk_id, n = f"{base}-{n}", n + 1
+        self._free_ids.add(talk_id)
         return Talk(
-            id=f"free-{self.room.id}",
+            id=talk_id,
             room_id=self.room.id,
             title=FREE_SESSION_TITLE,
             speakers=[],
@@ -362,22 +398,28 @@ class RoomWorker:
             self._run = None
         if run.ticker is not None:
             run.ticker.cancel()
-            await asyncio.gather(run.ticker, return_exceptions=True)
+            self._report(await asyncio.gather(run.ticker, return_exceptions=True), "ticker")
         if run.tick is not None:  # let a tick that is writing finish its writes
-            await asyncio.gather(run.tick, return_exceptions=True)
+            self._report(await asyncio.gather(run.tick, return_exceptions=True), "tick")
         if run.audio is not None:
             run.audio.cancel()
-            await asyncio.gather(run.audio, return_exceptions=True)
-        await run.relay.stop()  # its events() ends with `closed`
+            self._report(await asyncio.gather(run.audio, return_exceptions=True), "audio")
+        try:
+            await run.relay.stop()  # its events() ends with `closed`
+        except Exception:
+            log.exception("room %s: relay stop failed", self.room.id)
         if run.consumer is not None:
             _, late = await asyncio.wait({run.consumer}, timeout=CONSUMER_GRACE_S)
             for task in late:
+                log.error("room %s: event consumer still busy after %s s", self.room.id, CONSUMER_GRACE_S)
                 task.cancel()
-            await asyncio.gather(run.consumer, return_exceptions=True)
+            self._report(await asyncio.gather(run.consumer, return_exceptions=True), "event consumer")
         now = self._clock.now()
+        closed: _Closed = []
         for track in run.tracks.values():
-            for session in list(track.assemblers):
-                await self._close_session(run, track, session, now)
+            for session in track.sessions():
+                closed += self._close_session(run, track, session, now)
+        await self._save(run, closed)
         await self._flush_cost(run, now)
 
     async def _end_talk(self) -> None:
@@ -416,17 +458,21 @@ class RoomWorker:
         error: str | None = None
         restarts_seen = run.ingest_restarts
         try:
-            async for chunk in ingest.chunks():
-                await self._feed(run, AudioChunk(pcm=chunk.pcm, t=round(base + chunk.t, 3)))
-                restarts_seen = getattr(ingest, "restarts", 0)
+            # aclosing: on cancellation (stop, play_file) the generator is
+            # closed right away, which kills ffmpeg, instead of whenever the
+            # garbage collector gets to it.
+            async with contextlib.aclosing(ingest.chunks()) as chunks:
+                async for chunk in chunks:
+                    await self._feed(run, AudioChunk(pcm=chunk.pcm, t=round(base + chunk.t, 3)))
+                    restarts_seen = getattr(ingest, "restarts", 0)
             # AudioIngest keeps last_error after a restart that recovered: the
             # source died for good only if it kept failing after its last chunk.
             if getattr(ingest, "restarts", 0) > restarts_seen:
                 error = getattr(ingest, "last_error", None) or "the source stopped"
-            # The source ended: let the engine finish the last phrase.
-            for _ in range(round(self._tail_s / CHUNK_S)):
-                await self._clock.sleep(CHUNK_S)
-                await self._feed(run, AudioChunk(pcm=SILENCE, t=run.t_next))
+            else:  # a clean end: let the engine finish the last phrase
+                for _ in range(round(self._tail_s / CHUNK_S)):
+                    await self._clock.sleep(CHUNK_S)
+                    await self._feed(run, AudioChunk(pcm=SILENCE, t=run.t_next))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -470,58 +516,68 @@ class RoomWorker:
             if ev.kind == "target_delta":
                 run.latency.on_output(now)
             assembler = track.assemblers.setdefault(session, CaptionAssembler())
-            await self._apply(run, track, session, assembler.on_delta(ev.text, now), now)
+            await self._save(run, self._apply(run, track, session, assembler.on_delta(ev.text, now), now))
         elif ev.kind == "error":
+            closed: _Closed = []
+            for track in run.tracks.values():  # that session is gone
+                closed += self._close_session(run, track, session, now)
+            await self._save(run, closed)
             code = int(ev.meta.get("code") or 0)
             fatal = bool(ev.meta.get("payment")) or code == 402 or not ev.meta.get("retryable", True)
             await self._log(
                 "error" if fatal else "warning", "engine_error", f"session {session}: error {code}: {ev.text}"
             )
-            for track in run.tracks.values():  # that session is gone
-                await self._close_session(run, track, session, now)
         elif ev.kind == "go_away":
             left = float(ev.meta.get("time_left_s") or 0.0)
             await self._log("info", "go_away", f"session {session}: {left:.0f} s left")
 
-    async def _apply(
-        self, run: _Run, track: _Track, session: int, ops: list[tuple[str, dict]], now: float
-    ) -> None:
+    def _apply(self, run: _Run, track: _Track, session: int, ops: list[tuple[str, dict]], now: float) -> _Closed:
+        """Publish an assembler's ops, all at once (no await), and return the
+        segments they closed, for ``_save``."""
+        closed: _Closed = []
         for op, payload in ops:
             current = track.open.get(session)
             if op == "append":
                 if current is not None and current.local != payload["seg"]:
-                    del track.open[session]  # the assembler moved on without a close
-                    await self._close_segment(run, track, current, now)
+                    closed.append(self._close(run, track, session, now))  # moved on without a close
                     current = None
                 if current is None:
-                    current = _OpenSeg(seg=track.next_seg, local=payload["seg"], t_start=now - run.t0, last_at=now)
-                    track.next_seg += 1
+                    seg = self._next_seg.get(track.lang, 0)
+                    self._next_seg[track.lang] = seg + 1
+                    current = _OpenSeg(seg=seg, local=payload["seg"], t_start=now - run.t0, last_at=now)
                     track.open[session] = current
                 current.text += payload["text"]
                 current.last_at = now
                 self._bus.publish(self.room.id, track.lang, "append", seg=current.seg, text=payload["text"])
             elif op == "close" and current is not None and current.local == payload["seg"]:
-                del track.open[session]
-                await self._close_segment(run, track, current, now)
+                closed.append(self._close(run, track, session, now))
+        return closed
 
-    async def _close_segment(self, run: _Run, track: _Track, seg: _OpenSeg, now: float) -> None:
+    def _close(self, run: _Run, track: _Track, session: int, now: float) -> tuple[_Track, _OpenSeg]:
+        seg = track.open.pop(session)
+        seg.t_end = max(now - run.t0, seg.t_start)
         self._bus.publish(self.room.id, track.lang, "close", seg=seg.seg)
-        text = seg.text.strip()
-        if text:
-            t_end = max(now - run.t0, seg.t_start)
-            await self._db_call(
-                self._db.save_segment(
-                    run.talk.id, self.room.id, track.lang, track.kind, "live", text, seg.t_start, t_end
-                )
-            )
+        return track, seg
 
-    async def _close_session(self, run: _Run, track: _Track, session: int, now: float) -> None:
+    def _close_session(self, run: _Run, track: _Track, session: int, now: float) -> _Closed:
+        """Close the session's open segment in this track and drop its assembler."""
+        closed: _Closed = []
         assembler = track.assemblers.pop(session, None)
         if assembler is not None:
-            await self._apply(run, track, session, assembler.on_pause(now), now)
-        leftover = track.open.pop(session, None)
-        if leftover is not None:
-            await self._close_segment(run, track, leftover, now)
+            closed += self._apply(run, track, session, assembler.on_pause(now), now)
+        if session in track.open:  # an open segment the assembler did not know about
+            closed.append(self._close(run, track, session, now))
+        return closed
+
+    async def _save(self, run: _Run, closed: _Closed) -> None:
+        for track, seg in closed:
+            text = seg.text.strip()
+            if text:
+                await self._db_call(
+                    self._db.save_segment(
+                        run.talk.id, self.room.id, track.lang, track.kind, "live", text, seg.t_start, seg.t_end
+                    )
+                )
 
     # ------------------------------------------------------------ housekeeping
 
@@ -540,13 +596,15 @@ class RoomWorker:
             log.exception("room %s: tick failed", self.room.id)
 
     async def _tick(self, run: _Run, now: float) -> None:
+        closed: _Closed = []
         for track in run.tracks.values():
-            for session, assembler in list(track.assemblers.items()):
+            for session in track.sessions():
                 seg = track.open.get(session)
                 if seg is not None and now - seg.last_at >= IDLE_CLOSE_S - 1e-9:
-                    await self._apply(run, track, session, assembler.on_pause(now), now)
-                if session < run.newest_session and session not in track.open:
-                    track.assemblers.pop(session, None)
+                    closed += self._close_session(run, track, session, now)
+                elif seg is None and session < run.newest_session:
+                    track.assemblers.pop(session, None)  # an older session with nothing open
+        await self._save(run, closed)
         run.latency.tick(now)
 
         stats = run.relay.stats
@@ -585,6 +643,12 @@ class RoomWorker:
         for lang in tracks:
             self._bus.publish(self.room.id, lang, type, **payload)
 
+    def _report(self, results: list[Any], what: str) -> None:
+        """Log what a gather(return_exceptions=True) caught, but a cancellation."""
+        for result in results:
+            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                log.error("room %s: %s failed", self.room.id, what, exc_info=result)
+
     async def _log(self, level: str, type: str, message: str) -> None:
         await self._db_call(self._db.log_event(self.room.id, level, type, message))
 
@@ -608,7 +672,7 @@ class RoomWorker:
         current = asyncio.current_task()
         pending = [t for t in self._aux if t is not current]
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            self._report(await asyncio.gather(*pending, return_exceptions=True), "source-ended handler")
 
 
 def _talk_data(talk: Talk) -> dict:

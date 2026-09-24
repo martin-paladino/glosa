@@ -14,8 +14,10 @@ shutdown.
 
 Engines (``make_engine_factory``): Live Translate with the API key and
 ``prices.lt_per_min`` (Ruling 5), or, with ``engine_mode: fake``, FakeEngine
-replaying ``fake_fixture`` (default samples/fixtures/lt_en.jsonl) so a demo
-or a load test spends nothing.
+replaying a recorded session so a demo or a load test spends nothing:
+``fake_fixture`` if set, else samples/fixtures/lt_en.jsonl under the working
+directory, else the copy in the source checkout. None found is a
+ConfigError at startup (an installed package has no samples/).
 
 Run it with ``python -m glosa.web.app`` (``main()``: $HOST, default 0.0.0.0,
 and $PORT, default 8000), which reads .env and config.yaml from the working
@@ -40,29 +42,47 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from glosa.audio.ingest import AudioIngest
 from glosa.captions.bus import CaptionBus
 from glosa.clock import Clock, RealClock
-from glosa.config import Settings
+from glosa.config import ConfigError, Settings
 from glosa.db import init_db
 from glosa.engines.base import EngineFactory
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room
-from glosa.room import RoomWorker
+from glosa.room import IngestFactory, RoomWorker
 from glosa.web import pages, public_api
 
 log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
-DEFAULT_FAKE_FIXTURE = Path(__file__).resolve().parents[2] / "samples" / "fixtures" / "lt_en.jsonl"
+FAKE_FIXTURE = Path("samples") / "fixtures" / "lt_en.jsonl"
+CHECKOUT_FAKE_FIXTURE = Path(__file__).resolve().parents[2] / FAKE_FIXTURE
 # On shutdown, open SSE streams are cut after this long (EventSource
 # reconnects by itself) so the lifespan can stop the rooms.
 SHUTDOWN_GRACE_S = 3
 
 
+def resolve_fake_fixture(settings: Settings) -> str:
+    """The recording engine_mode fake replays (see the module docstring)."""
+    if settings.fake_fixture:
+        candidates = [Path(settings.fake_fixture)]
+    else:
+        candidates = [Path.cwd() / FAKE_FIXTURE, CHECKOUT_FAKE_FIXTURE]
+    for path in candidates:
+        if path.is_file():
+            return str(path.resolve())
+    tried = ", ".join(str(path) for path in candidates)
+    raise ConfigError(
+        f"engine_mode fake: no recorded session found (tried {tried}); "
+        "set fake_fixture in config.yaml to a JSONL recording"
+    )
+
+
 def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
     if settings.engine_mode == "fake":
-        fixture = settings.fake_fixture or str(DEFAULT_FAKE_FIXTURE)
+        fixture = resolve_fake_fixture(settings)
 
         def fake(cfg: EngineConfig) -> FakeEngine:
             return FakeEngine(replace(cfg, kind="fake", fixture_path=fixture), clock)
@@ -80,6 +100,7 @@ def create_app(
     *,
     clock: Clock | None = None,
     engine_factory: EngineFactory | None = None,
+    ingest_factory: IngestFactory = AudioIngest,
 ) -> FastAPI:
     clock = clock if clock is not None else RealClock()
     bus = CaptionBus(clock=clock)
@@ -105,13 +126,17 @@ def create_app(
                     default_targets=list(cfg.default_targets),
                 )
                 await db.upsert_room(room)
-                workers[room.id] = RoomWorker(room, settings, bus, db, clock, factory)
+                workers[room.id] = RoomWorker(room, settings, bus, db, clock, factory, ingest_factory=ingest_factory)
             for worker in workers.values():
                 if worker.has_source:
                     await _start_free_session(worker, db)
             yield
         finally:
-            await asyncio.gather(*(w.stop() for w in workers.values()), return_exceptions=True)
+            rooms = list(workers.values())
+            results = await asyncio.gather(*(w.stop() for w in rooms), return_exceptions=True)
+            for worker, result in zip(rooms, results, strict=True):
+                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                    log.error("room %s: stop failed", worker.room.id, exc_info=result)
             workers.clear()
             db.close()
 

@@ -41,7 +41,7 @@ Las maquetas abren con doble clic, sin servidor. Las capturas de la app real est
 - `base.html` ya lo hace. El reloj de la casa es `static/js/clock.js`: llena cada `[data-clock]` con la hora local (`data-clock="hms"` para HH:MM:SS) y le saca el `hidden`.
 - **Capas**, de menor a mayor prioridad: `glosa.reset`, `glosa.tokens`, `glosa.base`, `glosa.components`, `glosa.captions`, `glosa.audience`, `glosa.admin`, `glosa.views`. Cualquier CSS de la página que no esté en una capa le gana siempre.
 - **Las vistas se acomodan al contenedor, no a la ventana.** `body` es el contenedor `glosa` (`container: glosa / inline-size`). Para mostrar una vista dentro de un marco, dale al marco `container: glosa / inline-size`.
-- **Cortes:** 64rem (1024 px) pasa la sala a escritorio. 40rem (640 px) es el corte angosto (bilingüe interlineal, pared de una columna). El panel se compacta a 86,25rem (1380 px) y pasa a dos columnas a 73,75rem (1180 px).
+- **Cortes:** 64rem (1024 px) pasa la sala a escritorio, compacto hasta 75rem (lista de salas de 17rem, márgenes de 2rem, el reloj en la fila de la sala y el tema solo con ícono) para que el título de la charla no pase de dos renglones; desde 75rem (1200 px), la versión amplia con el reloj a la derecha de las teclas. 40rem (640 px) es el corte angosto (bilingüe interlineal, pared de una columna); del lado ancho se escribe `(width > 40rem)`, así los 640 px exactos quedan de un solo lado. El panel se compacta a 86,25rem (1380 px) y pasa a dos columnas a 73,75rem (1180 px).
 - Se necesita un navegador de 2024 en adelante: `light-dark()`, `color-mix()`, `:has()`, container queries y subgrid.
 
 ## 3. Tipografías
@@ -144,7 +144,7 @@ La regla más importante del sistema. `room.js` escribe este markup (las clases 
 5. Siempre hay **una sola** `.phrase--open`, y es la última. Lo nuevo se agrega al final: nunca se reescribe lo que ya está en pantalla.
 6. En texto en vivo **no se usan** `text-wrap: balance` ni `pretty`, ni texto centrado, ni corte de palabras automático.
 7. **Roll-up:** el vidrio se desvanece en sus 64 px de arriba (en el monitor del panel, en su tercio de arriba). En las páginas enfrentadas del bilingüe (desde 40rem) no, porque arriba van los rótulos de cada página; en el bilingüe interlineal del celular, sí.
-8. **Auto-scroll:** si el lector sube más de 48 px, se pausa y aparece `.to-live` ("Volver al vivo"), una tecla gris con borde claro que flota abajo del vidrio. Al tocarla, vuelve abajo y se esconde.
+8. **Auto-scroll:** si el lector sube más de 48 px, se pausa y aparece `.to-live` ("Volver al vivo"), una tecla gris con borde claro que flota abajo del vidrio. Al tocarla, vuelve abajo y se esconde. El vidrio lleva `overflow-anchor: none`: `room.js` maneja el scroll solo, y el anclaje del navegador lo movía sin que el lector hiciera nada (cuando B612 reemplaza a la fuente de reserva, o cuando la página más corta del bilingüe crece hacia arriba).
 9. **Bilingüe:** dos páginas enfrentadas (`.transcript--facing` con dos `.page`), original a la izquierda, cada una con su rótulo pegado arriba (`.line--head`). Abajo de 40rem, el original queda como un renglón chico y gris arriba del vivo de la traducción.
 
 ### Overlay de TV
@@ -185,8 +185,8 @@ Los estados usan siempre las mismas cuatro palabras en los modificadores: `--liv
 
 | Pieza | Clases |
 |---|---|
-| Encabezado de sala | `.room-head`, `__bar` (marca, evento y "Cambiar de sala"), `__brand`, `__event`, `__rooms` (solo celular), `__umd` (nombre, estado y reloj en celular), `__name`, `__talk`, `__meta`; `.room__clock` (el reloj en escritorio, a la derecha de las teclas) |
-| Teclas de lectura | `.controls`, `.control` (46 px; 40 px en escritorio), `.control--select`, `.control--fullscreen` (solo escritorio), `.control-group`, `.control__word` (se oculta abajo de 23,5rem) |
+| Encabezado de sala | `.room-head`, `__bar` (marca, evento y "Cambiar de sala"), `__brand`, `__event`, `__rooms` (solo celular), `__umd` (nombre, estado y reloj hasta 75rem), `__name`, `__talk`, `__meta`; `.room__clock` (el reloj desde 75rem, a la derecha de las teclas) |
+| Teclas de lectura | `.controls`, `.control` (46 px; 40 px en escritorio), `.control--select`, `.control--fullscreen` (solo escritorio), `.control-group`, `.control__word` (se oculta abajo de 23,5rem y entre 64 y 75rem) |
 | Volver al vivo | `.to-live` (+ `.room__to-live` para flotar sobre el vidrio) |
 | Escenario vacío | `.stage-note`, `.stage-agenda` |
 | "Ahora" y "Próxima" | `.agenda`, `.slot` (+ `--now`), `__when` (con `<time>`), `__what`, `__empty` |

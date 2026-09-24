@@ -1434,14 +1434,15 @@
   }
   /* Las páginas enfrentadas llevan rótulos pegados arriba: ahí no hay desvanecido.
      Abajo de 40rem el bilingüe es interlineal, sin rótulos, y conserva el roll-up. */
-  @container glosa (min-width: 40rem) {
+  @container glosa (width > 40rem) {   /* no min-width: a 640 px exactos rige el interlineal (max-width: 40rem) */
     .room__stage:has(> .transcript--facing) { -webkit-mask-image: none; mask-image: none; }
   }
   .room__stage > :first-child { margin-block-start: auto; }   /* el vivo queda abajo sin romper el scroll */
-  /* En bilingüe la página más corta va anclada abajo y crece hacia arriba: el anclaje
-     de scroll del navegador la seguía subiendo el vidrio, y room.js lo tomaba como
-     el lector yéndose para atrás. Acá room.js maneja el scroll solo. */
-  .room__stage:has(> .transcript--facing) { overflow-anchor: none; }
+  /* Sin anclaje de scroll del navegador: room.js maneja el scroll solo. El anclaje
+     subía el vidrio sin que el lector hiciera nada (cuando B612 reemplaza a la fuente
+     de reserva, o cuando la página más corta del bilingüe crece hacia arriba), y
+     room.js lo tomaba como el lector yéndose para atrás. */
+  .room__stage { overflow-anchor: none; }
 
   /* "Volver al vivo" flota abajo del vidrio. */
   .room > .room__to-live {
@@ -1452,17 +1453,21 @@
     margin-block-end: var(--space-4);
   }
 
-  /* Escritorio (64rem = 1024 px): el monitor grande, las otras salas al costado. */
+  /* Escritorio (64rem = 1024 px): el monitor grande, las otras salas al costado.
+     De 64 a 75rem va compacto (lista de 17rem, márgenes de 2rem, el reloj en la fila
+     de la sala y el tema solo con ícono) para que el título de la charla no pase de
+     dos renglones; desde 75rem (1200 px), la versión amplia, con el reloj a la derecha. */
   @container glosa (min-width: 64rem) {
     .room {
       --gutter: 1rem;
       --tap: 40px;
       --caption-base: clamp(1.5rem, 0.75rem + 1.3cqi, 2.25rem);
-      grid-template-columns: 20rem minmax(0, 1fr) auto auto;
+      --head-pad: 2rem;
+      grid-template-columns: 17rem minmax(0, 1fr) auto;
       grid-template-rows: auto minmax(0, 1fr);
       grid-template-areas:
-        "head head  controls clock"
-        "nav  stage stage    stage";
+        "head head  controls"
+        "nav  stage stage";
       background: var(--room);
     }
     .room > .room-nav { display: flex; grid-area: nav; }
@@ -1493,7 +1498,7 @@
     .room > .room-head .room-head__event.event-name { font-size: var(--step-1); font-weight: 650; color: var(--ink); }
     .room > .room-head > :not(.room-head__bar) {
       grid-column: 2;
-      padding-inline: 3rem var(--space-5);
+      padding-inline: var(--head-pad) var(--space-4);
     }
     .room-head__rooms { display: none; }
     .room > .room-head .room-head__name { font-size: var(--step-4); }
@@ -1502,10 +1507,31 @@
 
     .room > .controls {
       align-self: stretch;
-      padding: 0;
+      padding: 0 var(--space-4) 0 0;
       border-block-start: 0;
       border-block-end: var(--border-w) solid var(--line);
     }
+    .room .control--fullscreen { display: inline-flex; }
+
+    /* El borde del texto del encabezado y el de los subtítulos coinciden (--head-pad). */
+    .room__stage { padding: 32px var(--head-pad) 72px; --stage-pad-top: 32px; }
+    .room .transcript--facing { --caption-base: clamp(1.25rem, 0.5rem + 1.05cqi, 1.75rem); }
+    .room .transcript--facing > .page { padding-inline-end: 2.5rem; }
+    .room .transcript--facing > .page + .page { padding-inline: 2.5rem 0; }
+  }
+  @container glosa (64rem <= width < 75rem) {
+    .room .control__word { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  }
+  @container glosa (min-width: 75rem) {
+    .room {
+      --head-pad: 3rem;
+      grid-template-columns: 20rem minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "head head  controls clock"
+        "nav  stage stage    stage";
+    }
+    .room > .room-head > :not(.room-head__bar) { padding-inline-end: var(--space-5); }
+    .room > .controls { padding: 0; }
     /* El reloj de la casa, a la derecha de las teclas, como en la franja del panel. */
     .room-head__umd > .clock { display: none; }
     .room > .room__clock {
@@ -1518,12 +1544,6 @@
       border-block-end: var(--border-w) solid var(--line);
       font-size: var(--step-1);
     }
-    .room .control--fullscreen { display: inline-flex; }
-
-    .room__stage { padding: 32px 3rem 72px; --stage-pad-top: 32px; }
-    .room .transcript--facing { --caption-base: clamp(1.25rem, 0.5rem + 1.05cqi, 1.75rem); }
-    .room .transcript--facing > .page { padding-inline-end: 2.5rem; }
-    .room .transcript--facing > .page + .page { padding-inline: 2.5rem 0; }
   }
 
   /* ---- Lista pública de salas --------------------------------------------------- */

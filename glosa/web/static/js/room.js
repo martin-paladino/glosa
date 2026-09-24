@@ -184,6 +184,7 @@
       this.liveTime.textContent = "";
       this.liveTime.removeAttribute("datetime");
       this.reset();
+      autoTop = 0;   // the content just shrank: until the next jump, no clamp is the reader's
     }
 
     append(seg, text, stamp) {

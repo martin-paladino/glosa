@@ -1,0 +1,11 @@
+# secrets & local data
+.env
+data/
+samples/long/
+# tooling
+.superpowers/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

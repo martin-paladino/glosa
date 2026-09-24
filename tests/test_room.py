@@ -17,6 +17,7 @@ import os
 import struct
 import subprocess
 from dataclasses import replace
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -138,22 +139,26 @@ class FakeIngest:
         self.restarts = 0
         self.last_error: str | None = None
         self.yielded = 0
+        self.closed = False  # the chunks() generator was finalized
 
     async def chunks(self):
         n_max = None if self.seconds is None else round(self.seconds / 0.1)
         n = 0
-        while n_max is None or n < n_max:
-            await self.clock.sleep(0.1)
-            t = round(n * 0.1, 2)
-            if self.blip_at is not None and t == self.blip_at:
-                self.restarts, self.last_error = 1, "ffmpeg: connection reset"
-            voiced = (t % 2.6) < 2.0 - 1e-9
-            yield AudioChunk(pcm=TONE if voiced else SILENCE, t=t)
-            self.yielded += 1
-            n += 1
-        if self.error:  # AudioIngest gives up after 5 failed restarts
-            self.restarts = 5
-            self.last_error = self.error
+        try:
+            while n_max is None or n < n_max:
+                await self.clock.sleep(0.1)
+                t = round(n * 0.1, 2)
+                if self.blip_at is not None and t == self.blip_at:
+                    self.restarts, self.last_error = 1, "ffmpeg: connection reset"
+                voiced = (t % 2.6) < 2.0 - 1e-9
+                yield AudioChunk(pcm=TONE if voiced else SILENCE, t=t)
+                self.yielded += 1
+                n += 1
+            if self.error:  # AudioIngest gives up after 5 failed restarts
+                self.restarts = 5
+                self.last_error = self.error
+        finally:
+            self.closed = True
 
 
 class IngestFactory:
@@ -199,10 +204,11 @@ def _room(room_id: str = "r1", targets: list[str] | None = None) -> Room:
     )
 
 
-def _settings(*rooms: tuple[str, str], relay: RelayCfg | None = None) -> Settings:
+def _settings(*rooms: tuple[str, str], relay: RelayCfg | None = None, timezone: str = "UTC") -> Settings:
     return Settings(
         gemini_api_key="test-key",
         admin_password="test-password",
+        timezone=timezone,
         rooms=[
             RoomCfg(id=rid, name=f"Sala {rid}", source_type="file", source_url=f"fake://{rid}", language=lang)
             for rid, lang in (rooms or (("r1", "en"),))
@@ -226,14 +232,23 @@ def _clip(tmp_path: Path) -> str:
     return str(path)
 
 
+def _free_id(room_id: str) -> str:
+    """The free session of a worker started at t=0: FakeClock's wall clock
+    starts at 2026-01-01 00:00:00 UTC (Settings.timezone defaults to UTC)."""
+    return f"free-{room_id}-20260101T000000"
+
+
+FREE_R1 = _free_id("r1")
+
+
 def _history(bus: CaptionBus, room_id: str, lang: str) -> list[CaptionMsg]:
-    return list(bus.history(room_id, lang, f"free-{room_id}"))
+    return list(bus.history(room_id, lang, _free_id(room_id)))
 
 
 def _all(bus: CaptionBus, room_id: str, lang: str) -> list[CaptionMsg]:
     """Every buffered message of the track: the free session's and the ones
     published after it ended (tagged with no talk)."""
-    msgs = bus.history(room_id, lang, f"free-{room_id}") + bus.history(room_id, lang, None)
+    msgs = bus.history(room_id, lang, _free_id(room_id)) + bus.history(room_id, lang, None)
     return sorted(msgs, key=lambda m: m.id)
 
 
@@ -278,7 +293,7 @@ async def test_fake_engine_captions_flow_to_the_bus_and_the_db_in_10_s(db) -> No
     await run_for(clock, 10.0)
 
     en, es = _history(bus, "r1", "en"), _history(bus, "r1", "es")
-    assert en[0].type == "talk" and en[0].data["talk_id"] == "free-r1"
+    assert en[0].type == "talk" and en[0].data["talk_id"] == FREE_R1
     assert es[0].type == "talk" and es[0].data["language"] == "en"
     for msgs in (en, es):
         kinds = {m.type for m in msgs}
@@ -286,8 +301,8 @@ async def test_fake_engine_captions_flow_to_the_bus_and_the_db_in_10_s(db) -> No
     assert _segments(en)[0] == "Great starting scenario, for sure."
     assert _segments(es)[0] == "Un gran escenario de inicio, sin duda."
 
-    saved_en = await db.get_segments("free-r1", "en", "live")
-    saved_es = await db.get_segments("free-r1", "es", "live")
+    saved_en = await db.get_segments(FREE_R1, "en", "live")
+    saved_es = await db.get_segments(FREE_R1, "es", "live")
     assert saved_en[0].text == "Great starting scenario, for sure."
     assert saved_en[0].kind == "source" and saved_en[0].room_id == "r1"
     assert 4.4 <= saved_en[0].t_start <= 4.8 and 5.1 <= saved_en[0].t_end <= 5.4
@@ -340,7 +355,7 @@ async def test_two_rooms_at_once_keep_their_streams_apart(tmp_path: Path, db) ->
     assert min(_segments(r1["en"])) == 0 and min(_segments(r2["es"])) == 0
 
     for room_id, word in (("r1", "alpha"), ("r2", "beta")):
-        talk_id = f"free-{room_id}"
+        talk_id = _free_id(room_id)
         saved = [s for lang in ("en", "es") for s in await db.get_segments(talk_id, lang, "live")]
         assert saved and all(word in s.text and s.room_id == room_id for s in saved)
 
@@ -405,7 +420,7 @@ async def test_segments_close_after_a_quiet_stretch(tmp_path: Path, db) -> None:
     assert "close" in {m.type for m in _history(bus, "r1", "en")}
     await worker.stop()
 
-    assert [s.text for s in await db.get_segments("free-r1", "es", "live")] == ["sin puntuación"]
+    assert [s.text for s in await db.get_segments(FREE_R1, "es", "live")] == ["sin puntuación"]
 
 
 async def test_the_free_session_and_the_engine_config(db) -> None:
@@ -420,7 +435,7 @@ async def test_the_free_session_and_the_engine_config(db) -> None:
 
     assert worker.talk is not None
     assert (worker.talk.id, worker.talk.title, worker.talk.language, worker.talk.engine) == (
-        "free-r1", "Sesión libre", "en", "fast",
+        FREE_R1, "Sesión libre", "en", "fast",
     )
     assert factory.configs[0].kind == "fast"
     assert (factory.configs[0].source_lang, factory.configs[0].target_lang) == ("en", "es")
@@ -429,15 +444,15 @@ async def test_the_free_session_and_the_engine_config(db) -> None:
         "slug": "r1",
         "name": "Sala r1",
         "langs": ["en", "es"],
-        "now": {"talk_id": "free-r1", "title": "Sesión libre", "speakers": [], "language": "en"},
+        "now": {"talk_id": FREE_R1, "title": "Sesión libre", "speakers": [], "language": "en"},
         "next": None,
     }
-    stored = await db.get_talk("free-r1")
+    stored = await db.get_talk(FREE_R1)
     assert stored is not None and stored.status == "live" and stored.actual_start is not None
 
     await worker.stop()
 
-    stored = await db.get_talk("free-r1")
+    stored = await db.get_talk(FREE_R1)
     assert stored is not None and stored.status == "done" and stored.actual_end is not None
     assert worker.talk is None and worker.view()["now"] is None
     assert worker.status().state == "idle"
@@ -456,7 +471,7 @@ async def test_status_cost_and_events_while_running(db) -> None:
 
     status = worker.status()
     assert status.state in ("green", "yellow")
-    assert status.talk_id == "free-r1"
+    assert status.talk_id == FREE_R1
     assert status.level_db > -30  # the chunk at t=5.9 s is voice
     texts = [r for r in map(json.loads, FAKE_LT.read_text().splitlines()) if r["kind"].endswith("_delta")]
     assert status.cost_usd == pytest.approx(0.001 * sum(r["t"] <= 6.0 for r in texts))
@@ -495,7 +510,7 @@ async def test_play_file_starts_the_free_session_when_idle(tmp_path: Path, db) -
     await run_for(clock, 6.0)
 
     assert ingests.made[0].args == ("file", clip, True)
-    assert worker.talk is not None and worker.talk.id == "free-r1"
+    assert worker.talk is not None and worker.talk.id == FREE_R1
     assert "append" in {m.type for m in _history(bus, "r1", "es")}
     await worker.stop()
 
@@ -514,6 +529,7 @@ async def test_play_file_swaps_the_source_of_a_running_room(tmp_path: Path, db) 
     await run_for(clock, 4.0)
 
     assert [i.args[:2] for i in ingests.made] == [("file", "fake://r1"), ("file", _clip(tmp_path))]
+    assert ingests.made[0].closed  # the old source was shut (ffmpeg killed), not left to the GC
     assert ingests.made[1].yielded >= 30  # the new source is being fed
     assert worker.talk is talk  # same talk, same relay session: no new engine
     assert len(factory.configs) == 1
@@ -532,7 +548,7 @@ async def test_a_file_that_ends_ends_the_session(db) -> None:
 
     assert worker.talk is None
     assert worker.status().state == "idle"
-    stored = await db.get_talk("free-r1")
+    stored = await db.get_talk(FREE_R1)
     assert stored is not None and stored.status == "done"
     es = _all(bus, "r1", "es")
     assert es[-1].type == "talk" and es[-1].data["talk_id"] is None
@@ -589,6 +605,106 @@ async def test_play_file_rejects_a_missing_file(tmp_path: Path, db) -> None:
     assert worker.talk is None
 
 
+async def test_the_free_session_id_is_unique_per_run_in_the_event_timezone(db) -> None:  # Ruling 27
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    settings = _settings(timezone="America/Argentina/Buenos_Aires")
+    worker = _worker(_room(), settings, bus, db, clock, Factory(clock, FAKE_LT), IngestFactory())
+
+    await worker.start(None)  # 2026-01-01 00:00:00 UTC is 21:00 of Dec 31 in Buenos Aires
+    first = worker.talk
+    assert first is not None and first.id == "free-r1-20251231T210000"
+    assert first.start.utcoffset() == timedelta(hours=-3)
+    assert [t.id for t in await db.get_talks("r1", date(2025, 12, 31))] == [first.id]
+    await run_for(clock, 1.0)
+    await worker.stop()
+
+    clock.advance(60.0)
+    await worker.start(None)
+    second = worker.talk.id
+    await worker.stop()
+    await worker.start(None)  # same second: still a run of its own
+    third = worker.talk.id
+    await worker.stop()
+
+    assert second == "free-r1-20251231T210101"
+    assert len({first.id, second, third}) == 3 and third.startswith(second)
+
+
+async def test_segment_ids_keep_growing_when_the_source_comes_back(tmp_path: Path, db) -> None:
+    """Segment numbers belong to the worker, not to one run of the pipeline:
+    after a restart the audience must not see seg 0 again (room.js would
+    append the new text to the old phrase)."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    ingests = IngestFactory(seconds=6.0, error="ffmpeg: connection refused")
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+
+    await worker.start(None)
+    await run_for(clock, 7.0)  # captions from 4.5 s, then the source dies at 6 s
+    assert worker.status().state == "red"
+    before = [m for m in _all(bus, "r1", "es") if m.seg is not None]
+    assert before
+
+    await worker.play_file(_clip(tmp_path))  # same talk, new pipeline
+    await run_for(clock, 7.0)
+    await worker.stop()
+
+    after = [m for m in _all(bus, "r1", "es") if m.seg is not None][len(before):]
+    assert after
+    assert min(m.seg for m in after) > max(m.seg for m in before)
+
+
+class GatedDb:
+    """A Database whose save of a segment containing `word` waits for `gate`."""
+
+    def __init__(self, db, word: str) -> None:
+        self._db = db
+        self.word = word
+        self.gate = asyncio.Event()
+        self.blocked = asyncio.Event()
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+    async def save_segment(self, talk_id, room_id, lang, kind, version, text, t_start, t_end):
+        if self.word in text and not self.gate.is_set():
+            self.blocked.set()
+            await self.gate.wait()
+        return await self._db.save_segment(talk_id, room_id, lang, kind, version, text, t_start, t_end)
+
+
+async def test_a_draining_session_segment_is_closed_and_saved_even_mid_save(tmp_path: Path, db) -> None:
+    """One delta of a draining session closes a segment and opens the next
+    (" fin. siguiente"). While the close is being saved, the ticker runs and
+    the newer session has taken over: the segment it opened must still be
+    closed and saved, not orphaned."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    relay = RelayCfg(standby_at=3.0, force_at=4.0, stall_timeout=8.0)
+    s1 = _script(tmp_path / "s1.jsonl", [
+        *((0.5 * i, "target_delta", f" a{i}") for i in range(1, 6)),
+        (6.0, "target_delta", " fin. siguiente"),
+    ])
+    s2 = _script(tmp_path / "s2.jsonl", [(0.3 * i, "target_delta", f" b{i}") for i in range(1, 60)])
+    gated = GatedDb(db, "fin")
+    worker = _worker(_room(), _settings(relay=relay), bus, gated, clock, Factory(clock, s1, s2), IngestFactory())
+
+    await worker.start(None)
+    await run_for(clock, 6.0)
+    assert gated.blocked.is_set()  # the consumer is saving "fin." right now
+    await run_for(clock, 1.0)  # the ticker sweeps meanwhile
+    gated.gate.set()
+    await run_for(clock, 5.0)
+    await worker.stop()
+
+    es = _all(bus, "r1", "es")
+    segs = _segments(es)
+    following = next(seg for seg, text in segs.items() if "siguiente" in text)
+    assert following in {m.seg for m in es if m.type == "close"}
+    assert "siguiente" in [s.text for s in await db.get_segments(FREE_R1, "es", "live")]
+
+
 async def test_real_audio_through_the_whole_pipeline(db) -> None:
     """samples/en_clip.opus through the real AudioIngest (ffmpeg, not paced)
     and EnergyVad, FakeEngine for the engine: no API."""
@@ -610,7 +726,7 @@ async def test_real_audio_through_the_whole_pipeline(db) -> None:
     es = _all(bus, "r1", "es")
     assert {"append", "close"} <= {m.type for m in es}
     assert worker.talk is None
-    assert [s.text for s in await db.get_segments("free-r1", "es", "live")][0] == (
+    assert [s.text for s in await db.get_segments(FREE_R1, "es", "live")][0] == (
         "Un gran escenario de inicio, sin duda."
     )
     await worker.stop()
@@ -641,8 +757,11 @@ async def test_live_translate_room_smoke(tmp_path: Path) -> None:
         lambda cfg: LiveTranslateEngine(cfg, api_key, clock, price_per_min=settings.prices.lt_per_min),
     )
 
+    talk_ids = []
+
     async def run() -> None:
         await worker.start(None)
+        talk_ids.append(worker.talk.id)
         while worker.talk is not None:  # 20 s of audio + the tail
             await asyncio.sleep(0.5)
 
@@ -651,9 +770,9 @@ async def test_live_translate_room_smoke(tmp_path: Path) -> None:
     finally:
         await worker.stop()
 
-    es = _all(bus, "r1", "es")
+    es = bus.history("r1", "es", talk_ids[0])
     assert {"append", "close"} <= {m.type for m in es}, [m.type for m in es]
-    saved = await database.get_segments("free-r1", "es", "live")
+    saved = await database.get_segments(talk_ids[0], "es", "live")
     assert saved and all(s.text for s in saved)
     assert await database.total_cost() > 0
     print("\nLIVE es segments:", [s.text for s in saved])

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -20,11 +22,14 @@ import pytest
 import uvicorn
 
 from glosa.clock import RealClock
-from glosa.config import RoomCfg, Settings
+from glosa.config import ConfigError, RoomCfg, Settings
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig
+from glosa.web import app as app_module
 from glosa.web.app import create_app, make_engine_factory
+
+FREE_ID = re.compile(r"free-(r1|r2)-\d{8}T\d{6}")
 
 ROOT = Path(__file__).resolve().parents[2]
 EN_CLIP = ROOT / "samples" / "en_clip.opus"
@@ -109,10 +114,14 @@ async def test_rooms_api_lists_both_rooms_with_their_talk(server: str) -> None: 
     r1, r2 = rooms
     assert r1["name"] == "Sala Uno" and r1["langs"] == ["en", "es"]
     assert r2["langs"] == ["es", "en"]
-    assert r1["now"] == {"talk_id": "free-r1", "title": "Sesión libre", "speakers": [], "language": "en"}
+    talk_id = r1["now"]["talk_id"]
+    assert FREE_ID.fullmatch(talk_id) and talk_id.startswith("free-r1-")  # Ruling 27
+    assert r1["now"] == {"talk_id": talk_id, "title": "Sesión libre", "speakers": [], "language": "en"}
     assert r2["now"]["language"] == "es"
     assert r1["next"] is None
-    assert r1["status"]["talk_id"] == "free-r1"
+    # Ruling 29: the public status is state, talk and a fixed text, nothing raw
+    assert set(r1["status"]) == {"state", "talk_id", "detail"}
+    assert r1["status"]["talk_id"] == talk_id
     assert r1["status"]["state"] in ("green", "yellow")
     assert "public_token" not in json.dumps(rooms)  # qr_only tokens stay secret
 
@@ -126,9 +135,9 @@ async def test_stream_delivers_captions_for_both_rooms_at_once(server: str) -> N
         timeout=15,
     )
 
-    assert r1[0]["type"] == "talk" and r1[0]["data"]["talk_id"] == "free-r1"
+    assert r1[0]["type"] == "talk" and r1[0]["data"]["talk_id"].startswith("free-r1-")
     assert any(m["type"] == "append" and "palabra" in m["text"] for m in r1)  # r1: EN talk, ES translation
-    assert r2[0]["data"]["talk_id"] == "free-r2"
+    assert r2[0]["data"]["talk_id"].startswith("free-r2-")
     assert any(m["type"] == "append" and "word" in m["text"] for m in r2)  # r2: ES talk, its source track
     assert all(isinstance(m["id"], int) and m["ts"] for m in r1 + r2)
 
@@ -152,6 +161,21 @@ async def test_unknown_rooms_and_bad_languages_are_404(server: str) -> None:
     async with _client(server) as client:
         assert (await client.get("/api/stream/nope/es")).status_code == 404
         assert (await client.get("/api/stream/r1/not a lang")).status_code == 404
+        assert (await client.get("/api/stream/r1/pt")).status_code == 404
+
+
+async def test_stream_refuses_other_languages_before_touching_the_bus(tmp_path: Path) -> None:
+    """Anonymous requests must not be able to create bus tracks at will."""
+    app = create_app(_settings(tmp_path, rooms=[RoomCfg(id="r1", name="Sala Uno", default_targets=["es"])]))
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            codes = [(await client.get(f"/api/stream/r1/{lang}")).status_code for lang in ("pt", "fr", "de-AT")]
+        tracks = set(app.state.bus._tracks)
+
+    assert codes == [404, 404, 404]
+    assert not {key for key in tracks if key[1] in ("pt", "fr", "de-AT")}
 
 
 async def test_pages_and_static_files_are_served(server: str) -> None:
@@ -190,6 +214,86 @@ async def test_room_tokens_survive_a_restart(tmp_path: Path) -> None:
         tokens.append(rooms[0].public_token)
 
     assert tokens[0] == tokens[1] and len(tokens[0]) >= 16
+
+
+class _DeadSource:
+    """An AudioIngest stand-in whose ffmpeg gave up, quoting the source URL."""
+
+    def __init__(self, source_type, source_url, realtime, clock) -> None:
+        self.restarts = 0
+        self.last_error: str | None = None
+        self.url = source_url
+
+    async def chunks(self):
+        self.restarts = 5
+        self.last_error = f"{self.url}: Connection refused"
+        return
+        yield  # an async generator that yields nothing
+
+
+async def test_public_status_never_shows_raw_details(tmp_path: Path) -> None:  # Ruling 29
+    secret_url = "rtmp://operator:s3cr3t-pass@10.9.9.9/live/key-abc123"
+    settings = _settings(
+        tmp_path, rooms=[RoomCfg(id="r1", name="Sala Uno", source_type="url", source_url=secret_url)]
+    )
+    app = create_app(settings, ingest_factory=_DeadSource)
+
+    async with app.router.lifespan_context(app):
+        worker = app.state.workers["r1"]
+        for _ in range(200):
+            if worker.status().state == "red":
+                break
+            await asyncio.sleep(0.01)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            body = (await client.get("/api/rooms")).text
+        internal = worker.status().detail
+
+    assert "s3cr3t" in internal  # the raw detail stays available inside (admin API, T7)
+    room = json.loads(body)[0]
+    assert room["status"]["state"] == "red"
+    assert room["status"]["detail"] == "captions unavailable"
+    for leak in ("s3cr3t", "operator", "10.9.9.9", "key-abc123", "rtmp", "Connection refused"):
+        assert leak not in body
+
+
+def test_fake_fixture_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = RealClock()
+    cfg = EngineConfig(kind="fast", source_lang="en", target_lang="es")
+
+    # an explicit path that does not exist fails at startup, with a clear message
+    with pytest.raises(ConfigError, match="fake_fixture"):
+        create_app(_settings(tmp_path, fake_fixture=str(tmp_path / "missing.jsonl")))
+
+    # no fake_fixture: samples/fixtures/lt_en.jsonl under the working directory first
+    local = tmp_path / "run" / "samples" / "fixtures" / "lt_en.jsonl"
+    local.parent.mkdir(parents=True)
+    local.write_text((ROOT / "samples" / "fixtures" / "lt_en.jsonl").read_text()[:2000].rsplit("\n", 1)[0] + "\n")
+    monkeypatch.chdir(tmp_path / "run")
+    engine = make_engine_factory(_settings(tmp_path, fake_fixture=None), clock)(cfg)
+    assert Path(engine.cfg.fixture_path) == local.resolve()
+
+    # installed package (no source checkout) and nothing in the working directory
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(app_module, "CHECKOUT_FAKE_FIXTURE", tmp_path / "nowhere" / "lt_en.jsonl")
+    with pytest.raises(ConfigError, match="fake_fixture"):
+        make_engine_factory(_settings(tmp_path, fake_fixture=None), clock)
+
+
+async def test_lifespan_logs_a_room_that_fails_to_stop(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    settings = _settings(tmp_path, rooms=[RoomCfg(id="a", name="A"), RoomCfg(id="b", name="B")])
+    app = create_app(settings)
+
+    async def broken_stop() -> None:
+        raise RuntimeError("stop exploded")
+
+    with caplog.at_level(logging.ERROR):
+        async with app.router.lifespan_context(app):
+            app.state.workers["a"].stop = broken_stop
+            stopped_b = app.state.workers["b"]
+
+    assert "stop exploded" in caplog.text
+    assert stopped_b.talk is None
 
 
 def test_engine_factory_by_engine_mode(tmp_path: Path) -> None:

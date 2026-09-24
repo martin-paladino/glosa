@@ -1,0 +1,58 @@
+# Glosa event configuration. Copy to config.yaml and edit.
+# All keys are optional; anything you omit falls back to the defaults
+# documented in glosa/config.py (Settings). Secrets (API keys, admin
+# password) do NOT go here — they live in .env (see .env.example).
+
+event_name: Nerdearla Vibeathon 2026
+timezone: America/Argentina/Buenos_Aires
+
+branding:
+  logo_url: ""
+  primary: "#0B5FFF"
+  accent: "#FF7A00"
+
+# "all": anyone with the room link can watch. "qr_only": only via the room QR.
+audience_mode: all
+
+rooms:
+  - id: main
+    name: Main Stage
+    source_type: youtube
+    source_url: "https://www.youtube.com/watch?v=REPLACE_ME"
+    default_targets: [es, en]
+  - id: track-2
+    name: Track 2
+    source_type: file
+    source_url: "samples/en_clip.opus"
+    default_targets: [es]
+
+budget_usd: 10.0
+exports_public: true
+
+# Gemini API list prices (USD), used for live cost tracking.
+prices:
+  lt_per_min: 0.0368
+  transcribe_per_min: 0.009
+  flash_lite_in_per_m: 0.30
+  flash_lite_out_per_m: 2.50
+
+# Live Translate session handoff (session lifetime is ~10 min).
+relay:
+  standby_at: 510 # open the next session in standby at 8.5 min
+  force_at: 570 # force the handoff at 9.5 min even without a VAD pause
+  stall_timeout: 8.0 # watchdog: reconnect if a session stalls this long
+
+# Server-side energy VAD with an adaptive noise floor.
+vad:
+  pause_ms: 400
+  min_speech_s: 1.5
+
+# P1 segmentation heuristic for on-screen captions.
+segmenter:
+  comma_min_words: 5
+  max_words: 14
+  max_wait_s: 3.0
+
+# Shift applied to Live Translate timestamps when generating exports, in
+# seconds (measured p50 translation delay; see samples/fixtures/lt_en.jsonl).
+default_export_shift_s: 2.4

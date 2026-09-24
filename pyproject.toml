@@ -1,0 +1,28 @@
+[project]
+name = "glosa"
+version = "0.1.0"
+description = "Glosa: open-source real-time conference captioning and translation"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+    "fastapi>=0.141.1",
+    "google-genai>=2.25",
+    "pydantic-settings>=2.15.0",
+    "pyyaml>=6.0.3",
+    "qrcode>=8.2",
+    "uvicorn[standard]>=0.53.0",
+    "yt-dlp>=2026.8.19",
+]
+
+[project.optional-dependencies]
+jev = [
+    "typesafe-sdk>=0.7.1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

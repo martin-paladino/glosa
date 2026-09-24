@@ -1,0 +1,134 @@
+"""Settings: load Glosa's configuration from a secrets file (.env) and an
+event configuration file (config.yaml), apply defaults, and validate.
+
+Secrets (GEMINI_API_KEY, TYPESAFE_API_KEY, ADMIN_PASSWORD) come only from the
+.env file (never from config.yaml, never committed). Everything else (event
+metadata, rooms, budget, prices, relay/VAD/segmenter tuning) comes from
+config.yaml, falling back to the defaults below when the key is absent.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml
+from pydantic import BaseModel, Field, ValidationError
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+class ConfigError(RuntimeError):
+    """Raised when Settings.load() cannot build a valid configuration."""
+
+
+class Branding(BaseModel):
+    logo_url: str = ""
+    primary: str = "#0B5FFF"
+    accent: str = "#FF7A00"
+
+
+class RoomCfg(BaseModel):
+    """Static, config-time description of a room (see config.yaml `rooms`).
+
+    Runtime-only fields (slug, mode, public_token) live on glosa.models.Room
+    and are assigned when the room is created, not here.
+    """
+
+    id: str
+    name: str
+    source_type: Literal["file", "url", "youtube", "emitter"] = "file"
+    source_url: str | None = None
+    default_targets: list[str] = Field(default_factory=list)
+
+
+class Prices(BaseModel):
+    lt_per_min: float = 0.0368
+    transcribe_per_min: float = 0.009
+    flash_lite_in_per_m: float = 0.30
+    flash_lite_out_per_m: float = 2.50
+
+
+class RelayCfg(BaseModel):
+    standby_at: float = 510
+    force_at: float = 570
+    stall_timeout: float = 8.0
+
+
+class VadCfg(BaseModel):
+    pause_ms: int = 400
+    min_speech_s: float = 1.5
+
+
+class SegmenterCfg(BaseModel):
+    comma_min_words: int = 5
+    max_words: int = 14
+    max_wait_s: float = 3.0
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=None,
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # --- secrets, from .env only ---
+    gemini_api_key: str
+    typesafe_api_key: str | None = None
+    admin_password: str
+
+    # --- event configuration, from config.yaml ---
+    event_name: str = "Glosa"
+    timezone: str = "UTC"
+    branding: Branding = Field(default_factory=Branding)
+    audience_mode: Literal["all", "qr_only"] = "all"
+    rooms: list[RoomCfg] = Field(default_factory=list)
+    budget_usd: float = 10.0
+    exports_public: bool = True
+    prices: Prices = Field(default_factory=Prices)
+    relay: RelayCfg = Field(default_factory=RelayCfg)
+    vad: VadCfg = Field(default_factory=VadCfg)
+    segmenter: SegmenterCfg = Field(default_factory=SegmenterCfg)
+    default_export_shift_s: float = 2.4
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Only read explicit config.yaml values (init_settings) and the
+        # explicit .env file (dotenv_settings). Deliberately drop
+        # env_settings (the real process environment) and
+        # file_secret_settings (Docker-style secret files) so loading is
+        # deterministic and isolated from whatever happens to be exported in
+        # the caller's shell.
+        return (init_settings, dotenv_settings)
+
+    @classmethod
+    def load(cls, env_path: str = ".env", config_path: str = "config.yaml") -> "Settings":
+        """Load settings from env_path (secrets) and config_path (event config).
+
+        Raises ConfigError if the resulting configuration is invalid (e.g.
+        GEMINI_API_KEY is missing from env_path).
+        """
+        yaml_path = Path(config_path)
+        data: dict[str, Any] = {}
+        if yaml_path.exists():
+            loaded = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(loaded, dict):
+                raise ConfigError(f"{yaml_path} must contain a YAML mapping at the top level")
+            data = loaded
+
+        try:
+            return cls(_env_file=env_path, **data)  # type: ignore[call-arg]
+        except ValidationError as exc:
+            raise ConfigError(f"Invalid Glosa configuration: {exc}") from exc

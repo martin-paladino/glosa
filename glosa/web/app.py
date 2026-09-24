@@ -28,6 +28,8 @@ to ``create_app(on_talk_end=...)`` if given (Task 11: exports).
   - ``admin_events``: the admin panel's in-process broadcaster
     (glosa/web/admin_events.py);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
+  - ``station_hub``: the one StationHub (Task 14a: ``source_type: emitter``
+    rooms -- glosa/web/station.py's WebSocket handler, EmitterIngest);
   - ``autopilot``: the Autopilot (once started);
   - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
     admin session cookies;
@@ -69,7 +71,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from glosa.audio.ingest import AudioIngest
+from glosa.audio.ingest import AudioIngest, StationHub
 from glosa.captions.bus import CaptionBus
 from glosa.clock import Clock, RealClock
 from glosa.config import ConfigError, Settings
@@ -80,7 +82,7 @@ from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
-from glosa.web import admin_api, pages, public_api
+from glosa.web import admin_api, pages, public_api, station
 from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
 
@@ -139,6 +141,10 @@ def create_app(
     clock = clock if clock is not None else RealClock()
     bus = CaptionBus(clock=clock)
     admin_events = AdminEvents()
+    # Task 14a: one StationHub per process, shared by every "emitter" room
+    # (glosa/web/station.py's WebSocket handler feeds it; RoomWorker reads
+    # it back through EmitterIngest and, for status(), directly).
+    station_hub = StationHub(clock)
     factory = engine_factory if engine_factory is not None else make_engine_factory(settings, clock)
     workers: dict[str, RoomWorker] = {}
 
@@ -179,7 +185,10 @@ def create_app(
                 )
                 await db.upsert_room(room)
                 workers[room.id] = RoomWorker(
-                    room, settings, bus, db, clock, factory, ingest_factory=ingest_factory, on_talk_end=talk_ended
+                    room, settings, bus, db, clock, factory,
+                    ingest_factory=station.ingest_factory_for(ingest_factory, station_hub, room.id),
+                    station_hub=station_hub,
+                    on_talk_end=talk_ended,
                 )
             autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
             app.state.autopilot = autopilot
@@ -207,6 +216,7 @@ def create_app(
     app.state.bus = bus
     app.state.admin_events = admin_events
     app.state.workers = workers
+    app.state.station_hub = station_hub
     # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
     # invalidates every outstanding admin session cookie.
     app.state.admin_secret = new_admin_secret()
@@ -224,6 +234,8 @@ def create_app(
     app.include_router(public_api.router)
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)
+    app.include_router(station.router)
+    app.include_router(station.api_router)
     app.include_router(pages.router)
     return app
 

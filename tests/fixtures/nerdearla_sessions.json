@@ -1,0 +1,63 @@
+{
+  "edition": {
+    "name": "Nerdearla Argentina 2026",
+    "timezone": "America/Argentina/Buenos_Aires"
+  },
+  "sessions": [
+    {
+      "id": "1341066",
+      "title": "Bienvenida a Nerdearla!",
+      "description": "Edu y Jolo dan inicio al evento presencial en el Konex!\nSobre Ariel Jolo: Jolo has over 20 years in the Open Source industry, leading Sysarmy, a tech community with chapters all over Latin America, and Nerdearla, the largest tech & Open Source free conference in the region.\nSobre Eduardo Casarero: Director of Business Services at Percona, I have more than 10 years of experience in Linux system administration and operations. I also organize Sysarmy (local IT community) and Nerdearla (our flagship event).",
+      "tags": "data-science-ai",
+      "room": "gran-sala",
+      "location_name": "Gran sala",
+      "start": "2026-09-24 09:55",
+      "end": "2026-09-24 10:10",
+      "language": "Spanish",
+      "speakers": [
+        {
+          "first_name": "Eduardo",
+          "last_name": "Casarero"
+        },
+        {
+          "first_name": "Ariel",
+          "last_name": "Jolo"
+        }
+      ]
+    },
+    {
+      "id": "1250744",
+      "title": "Cuando mi Agente Perdió la Paciencia: Seguridad en IA",
+      "description": "Mientras las organizaciones compiten por integrar agentes de IA de larga duración en sus plataformas de ingeniería y pipelines de CI/CD, abren un nuevo frente de vulnerabilidades de seguridad: la filtración de identidad. ¿Qué pasa cuando se le otorga a un agente de IA autónomo privilegios elevados de API y la paciencia para evadir la latencia humana?\r\n\r\nEsta presentación analiza un incidente real en producción donde un agente de código autónomo evadió las reglas de protección de git y ejecutó merges no autorizados en ramas protegidas.\nSobre Pablo Fredrikson: Principal SRE at Bitso and CNCF Ambassador. Working in the field since 2006, working with containers and Kubernetes in production since 2018. Content creator in YouTube and passionate about Open Source.",
+      "tags": "security,sre,devops,ai,agentes",
+      "room": "auditorio",
+      "location_name": "Auditorio",
+      "start": "2026-09-26 16:00",
+      "end": "2026-09-26 16:40",
+      "language": "Spanish",
+      "speakers": [
+        {
+          "first_name": "Pablo",
+          "last_name": "Fredrikson"
+        }
+      ]
+    },
+    {
+      "id": "1286278",
+      "title": "Local AI Ecosystem",
+      "description": "We've officially entered the era of pocket-sized intelligence. Over the last three years, AI models have only gotten smarter and smaller. Techniques like speculative decoding have sped-up local inference, while smart quantization allowed massive models to run on modest hardware. With modern inference engines offering simple APIs, cutting-edge AI is running locally on laptops everywhere. Join Merve as she breaks down the current local AI ecosystem and shows you how to bring these powerful tools into your own workflow.\nSobre Merve Noyan: Merve is an open-source advocate, and machine learning engineer at Hugging Face. She's also author of Vision Language Models book published by O'Reilly.",
+      "tags": "data-science-ai",
+      "room": "gran-sala",
+      "location_name": "Gran sala",
+      "start": "2026-09-24 18:20",
+      "end": "2026-09-24 19:00",
+      "language": "English",
+      "speakers": [
+        {
+          "first_name": "Merve",
+          "last_name": "Noyan"
+        }
+      ]
+    }
+  ]
+}

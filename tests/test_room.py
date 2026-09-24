@@ -1249,3 +1249,67 @@ async def test_the_free_session_engine_follows_the_room_language(db) -> None:
         await worker.stop()
 
     assert kinds == {"r1": ("glossary", "glossary"), "r2": ("fast", "fast"), "r3": ("glossary", "glossary")}
+
+
+# ------------------------------------------------ extra languages, fast engine (T11)
+
+
+async def test_a_fast_talk_translates_its_extra_targets_from_the_source(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    translate = FakeTranslate(usd=0.0001)
+    factory = Factory(clock, FAKE_LT)
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory(), translate=translate)
+
+    await worker.start(_talk("f1", language="en", targets=("es", "pt"), engine="fast"))
+    await run_for(clock, 12.0)
+    assert worker.langs() == ["en", "es", "pt"]
+    assert "pt" in worker.stream_langs()
+    await worker.stop()
+
+    cfg = factory.configs[0]
+    assert (cfg.kind, cfg.source_lang, cfg.target_lang) == ("fast", "en", "es")  # Live Translate: the first
+    es, pt, en = (_track(bus, lang, "f1") for lang in ("es", "pt", "en"))
+    assert _closed_texts(es)[0] == "Un gran escenario de inicio, sin duda."
+    assert not any(m.type == "append" and m.text.startswith("[") for m in es)  # es is Live Translate's only
+    pt_texts = _closed_texts(pt)
+    assert pt_texts and all(t.startswith("[pt] ") for t in pt_texts)
+    assert {c[1] for c in translate.calls} == {"pt"}
+    said = "".join(m.text or "" for m in en if m.type == "append").split()
+    translated = " ".join(c[0] for c in translate.calls).split()
+    assert difflib.SequenceMatcher(a=said, b=translated, autojunk=False).ratio() >= 0.9
+    assert [s.text for s in await db.get_segments("f1", "pt", "live")] == pt_texts
+    assert pt[-1].type == "talk" and pt[-1].data["talk_id"] is None
+    assert not _live_tasks()
+
+
+async def test_a_vad_pause_closes_the_extra_languages_utterance(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    script = _script(tmp_path / "lt.jsonl", [
+        (0.5, "source_delta", " uno dos tres"), (1.0, "source_delta", " cuatro"),
+        (60.0, "session_resumption_update", ""),
+    ])
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, script), IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es", "pt"), engine="fast"))
+    await run_for(clock, 2.8)  # FakeIngest: 2 s of voice, the VAD's pause at 2.4 s; no time cut before 3.5 s
+
+    assert _closed_texts(_track(bus, "pt", "f1")) == ["[pt] uno dos tres cuatro"]
+    await worker.stop()
+
+
+async def test_a_fast_talk_with_one_target_has_no_translation_lane(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    translate = FakeTranslate()
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory(),
+                     translate=translate)
+
+    await worker.start(_talk("f1", language="en", targets=("en", "es"), engine="fast"))
+    await run_for(clock, 8.0)
+
+    assert worker.langs() == ["en", "es"]
+    assert translate.calls == []
+    assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("glosa-pipeline")]
+    await worker.stop()

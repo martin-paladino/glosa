@@ -20,7 +20,9 @@ Engines (glosa/room_text.py)
     its language (``es`` glossary, else ``Settings.default_engine_en``).
 
     - ``fast``: Live Translate transcribes and translates into the first
-      target.
+      target. If the talk has more targets, the translation lane translates
+      the source deltas into the rest (Task 11's extra languages); each VAD
+      pause closes the lane's open utterance.
     - ``glossary``: transcribe-live (verbatim, the talk's glossary as its
       vocabulary, up to 100 terms) gives the source text; the lane
       translates it into every target. Each VAD pause calls
@@ -472,9 +474,9 @@ class RoomWorker:
             terms = vocabulary((term.term for term in talk.glossary), MAX_VOCABULARY)
             cfg = EngineConfig(kind="glossary", source_lang=talk.language, target_lang=None, vocabulary=terms)
             lane_targets = langs
-        else:  # Live Translate covers the first target
+        else:  # Live Translate covers the first target; the lane, the others
             cfg = EngineConfig(kind="fast", source_lang=talk.language, target_lang=target)
-            lane_targets = []
+            lane_targets = langs[1:]
         relay = SessionRelay(self._engine_factory, cfg, self._clock, **self._settings.relay.model_dump())
         now = self._clock.now()
         # Segment times count from the talk's actual start, also when the

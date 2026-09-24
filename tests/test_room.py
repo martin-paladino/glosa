@@ -1313,3 +1313,98 @@ async def test_a_fast_talk_with_one_target_has_no_translation_lane(db) -> None:
     assert translate.calls == []
     assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("glosa-pipeline")]
     await worker.stop()
+
+
+# ------------------------------------------------- fallback to the glossary engine (10.5)
+
+
+def _failing_connect(tmp_path: Path, name: str = "fail.jsonl") -> Path:
+    """A session whose connect fails (an error at t=0, retryable)."""
+    path = tmp_path / name
+    path.write_text(json.dumps({"t": 0.0, "kind": "error", "text": "503 UNAVAILABLE",
+                                "meta": {"code": 503, "retryable": True}}) + "\n", encoding="utf-8")
+    return path
+
+
+async def _events(db, n: int = 50) -> list[tuple[str, str, str]]:
+    return [(e.level, e.type, e.message) for e in reversed(await db.recent_events(n))]
+
+
+async def test_three_failed_connects_in_two_minutes_switch_the_talk_to_the_glossary_engine(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    hook = HookRecorder()
+    fail = _failing_connect(tmp_path)
+    factory = Factory(clock, fail, fail, fail, TR_ES)
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory(), on_talk_end=hook)
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 12.0)
+
+    assert [c.kind for c in factory.configs] == ["fast", "fast", "fast", "glossary"]
+    assert worker.talk is not None and worker.talk.id == "f1" and worker.talk.engine == "glossary"
+    stored = await db.get_talk("f1")
+    assert stored.engine == "glossary" and stored.status == "live"  # persisted; the talk goes on
+    events = await _events(db)
+    assert ("warning", "fallback", "fallback: glossary engine") in events
+    assert "talk_end" not in [t for _, t, _ in events]
+    assert "set" in {m.type for m in _track(bus, "en", "f1")}  # transcribe-live's text
+    assert any(m.type == "append" and m.text.startswith("[es] ") for m in _track(bus, "es", "f1"))
+    assert not [m for m in _track(bus, "es", "f1") if m.type == "talk" and m.data["talk_id"] is None]
+
+    await worker.stop()
+    await worker.drain_hooks()
+    assert [talk_id for talk_id, _, _ in hook.ended] == ["f1"]  # ended once, by stop()
+    assert not _live_tasks()
+
+
+async def test_three_hung_sessions_in_two_minutes_switch_to_the_glossary_engine(db) -> None:
+    """Sessions that never answer: the stall watchdog reconnects each one
+    (15 s of unanswered voice for a new session); the third does it."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, FAKE_LT, fail_after_s=0.0)  # every session hangs from the start
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 40.0)
+    assert [c.kind for c in factory.configs] == ["fast", "fast", "fast"]  # two stalls so far
+    await run_for(clock, 10.0)
+
+    # the third stall already opened a fourth Live Translate session; then the switch
+    assert [c.kind for c in factory.configs] == ["fast", "fast", "fast", "fast", "glossary"]
+    assert (await db.get_talk("f1")).engine == "glossary"
+    await worker.stop()
+    assert not _live_tasks()
+
+
+async def test_manual_reconnects_never_trigger_the_fallback(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, FAKE_LT)
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    for _ in range(4):
+        await run_for(clock, 1.0)
+        await worker.reconnect("manual")
+    await run_for(clock, 2.0)
+
+    assert {c.kind for c in factory.configs} == {"fast"} and len(factory.configs) == 5
+    assert worker.talk.engine == "fast"
+    await worker.stop()
+
+
+async def test_a_glossary_talk_has_no_fallback(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    fail = _failing_connect(tmp_path)
+    factory = Factory(clock, fail)
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 12.0)
+
+    assert len(factory.configs) >= 4 and {c.kind for c in factory.configs} == {"glossary"}
+    assert "fallback" not in [t for _, t, _ in await _events(db)]
+    await worker.stop()

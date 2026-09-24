@@ -40,6 +40,18 @@ Engines (glosa/room_text.py)
     the text it shows, the lane closes that utterance too, and the older
     session's late text is dropped.
 
+Fallback to the glossary engine (case 10.5)
+    If a fast talk's Live Translate fails 3 times within 2 min (errors,
+    failed connects, stalls, sessions that died; not the admin's
+    "Reconectar" nor a 402: ``room_text.FlapDetector``, checked on each
+    tick), the room switches to the glossary engine on the fly: the run is
+    torn down and the same talk starts again with ``engine="glossary"``,
+    without ending it (no talk_end, no hook, the audience keeps the talk).
+    ``talk.engine`` is saved, so it never goes back to fast by itself, and
+    the admin log gets a warning, "fallback: glossary engine". The source
+    is opened again: a live stream reconnects (a second or so of audio is
+    lost), a file plays from its beginning.
+
 Translation lane
     A LivePipeline (glosa/room_text.TranslationLane) with the Translator
     (FakeTranslator with ``engine_mode: fake``). Each segment it delivers
@@ -137,6 +149,8 @@ from glosa.engines.transcribe import MAX_VOCABULARY
 from glosa.metrics import LatencyTracker, RoomHealth
 from glosa.models import AudioChunk, EngineConfig, EngineEvent, Room, RoomStatus, Talk
 from glosa.room_text import (
+    EngineKind,
+    FlapDetector,
     TranslationLane,
     default_engine,
     engine_of,
@@ -228,6 +242,9 @@ class _Run:
     t0: float
     lane: TranslationLane | None = None  # translations the engine does not make itself
     text_session: int = 0  # the engine session whose source text is in use (the newest that spoke)
+    flaps: FlapDetector = field(default_factory=FlapDetector)
+    manual_reconnects: int = 0  # the admin's, which the fallback rule ignores
+    falling_back: bool = False
     latency: LatencyTracker = field(default_factory=LatencyTracker)
     levels: collections.deque = field(default_factory=lambda: collections.deque(maxlen=LEVEL_WINDOW_CHUNKS))
     audio: asyncio.Task | None = None
@@ -340,6 +357,7 @@ class RoomWorker:
         no-op when no talk is running."""
         run = self._run
         if run is not None:
+            run.manual_reconnects += 1
             await run.relay.reconnect(reason)
 
     async def drain_hooks(self, timeout: float | None = None) -> None:
@@ -447,8 +465,16 @@ class RoomWorker:
     # ------------------------------------------------------------ lifecycle
 
     async def _start_locked(
-        self, talk: Talk | None, source_type: str, source_url: str | None, realtime: bool
+        self,
+        talk: Talk | None,
+        source_type: str,
+        source_url: str | None,
+        realtime: bool,
+        *,
+        engine: EngineKind | None = None,
     ) -> None:
+        """Start ``talk`` (or the free session). ``engine`` overrides the
+        talk's (the fallback: it must win over the reload from the DB)."""
         if not source_url:
             raise ValueError(f"room {self.room.id!r} has no audio source")
         if self._run is not None:
@@ -458,6 +484,8 @@ class RoomWorker:
         talk = talk or self.talk or self.free_talk()
         if talk is self.talk:  # the running talk again: an admin may have edited it since
             await self._reload_agenda_fields(talk)
+        if engine is not None:
+            talk.engine = engine
         wall = self._clock.wall()
         if talk.actual_start is None:
             talk.actual_start = wall
@@ -467,10 +495,10 @@ class RoomWorker:
         self.talk = talk
         self._source_down = None
 
-        engine = engine_of(talk.engine)
+        kind = engine_of(talk.engine)
         langs = translation_langs(talk.language, talk.targets)
         target = langs[0]
-        if engine == "glossary":  # transcribe-live: the lane translates every target
+        if kind == "glossary":  # transcribe-live: the lane translates every target
             terms = vocabulary((term.term for term in talk.glossary), MAX_VOCABULARY)
             cfg = EngineConfig(kind="glossary", source_lang=talk.language, target_lang=None, vocabulary=terms)
             lane_targets = langs
@@ -486,7 +514,7 @@ class RoomWorker:
         tracks |= {lang: _Track(lang, "translation") for lang in langs}
         run = _Run(
             talk=talk,
-            engine=engine,
+            engine=kind,
             target=target,
             source=(source_type, source_url, realtime),
             relay=relay,
@@ -510,7 +538,7 @@ class RoomWorker:
         run.consumer = self._spawn(self._consume(run), "events")
         run.ticker = self._spawn(self._tick_loop(run), "ticker")
         run.audio = self._spawn(self._audio_loop(run, source_type, source_url, realtime), "audio")
-        direction = f"{talk.language} -> {', '.join(langs)}, {engine} engine"
+        direction = f"{talk.language} -> {', '.join(langs)}, {kind} engine"
         log.info("room %s: talk %s started (%s)", self.room.id, talk.id, direction)
         await self._log("info", "talk_start", f"{talk.id}: {talk.title} ({direction})")
 
@@ -585,6 +613,26 @@ class RoomWorker:
         except Exception:
             log.exception("room %s: talk-end hook failed for %s", self.room.id, talk.id)
 
+    async def _fall_back(self, run: _Run) -> None:
+        """Case 10.5 (see the module docstring): the same talk goes on with
+        the glossary engine."""
+        async with self._lock:
+            if self._run is not run:
+                return  # stopped or restarted meanwhile
+            talk = run.talk
+            log.warning(
+                "room %s: Live Translate keeps failing: %s goes on with the glossary engine", self.room.id, talk.id
+            )
+            await self._log("warning", "fallback", "fallback: glossary engine")
+            talk.engine = "glossary"
+            await self._db_call(self._db.update_talk(talk.id, engine="glossary"))
+            source_type, source_url, realtime = run.source
+            try:
+                await self._start_locked(talk, source_type, source_url, realtime, engine="glossary")
+            except Exception as exc:
+                log.exception("room %s: the fallback to the glossary engine failed", self.room.id)
+                await self._log("error", "fallback_failed", repr(exc))
+
     async def _source_ended(self, run: _Run, audio: asyncio.Task | None, error: str | None) -> None:
         async with self._lock:
             if self._run is not run or run.audio is not audio:
@@ -627,7 +675,7 @@ class RoomWorker:
         except Exception as exc:
             log.exception("room %s: audio pipeline failed", self.room.id)
             error = f"audio pipeline failed: {exc!r}"
-        self._spawn_aux(self._source_ended(run, asyncio.current_task(), error))
+        self._spawn_aux(self._source_ended(run, asyncio.current_task(), error), "source-ended")
 
     async def _feed(self, run: _Run, chunk: AudioChunk) -> None:
         events = run.vad.process(chunk)
@@ -873,6 +921,10 @@ class RoomWorker:
             run.reconnects = stats["reconnects"]
             run.last_reconnect_at = now
             await self._log("warning", "reconnect", f"engine reconnect #{run.reconnects}")
+        flapping = run.flaps.update(stats, run.manual_reconnects, now)
+        if flapping and run.engine == "fast" and not run.falling_back:
+            run.falling_back = True
+            self._spawn_aux(self._fall_back(run), "fallback")
         restarts = getattr(run.ingest, "restarts", 0) if run.ingest is not None else 0
         if restarts > run.ingest_restarts:
             run.ingest_restarts = restarts
@@ -944,8 +996,9 @@ class RoomWorker:
     def _spawn(self, coro: Coroutine[Any, Any, None], name: str) -> asyncio.Task:
         return asyncio.get_running_loop().create_task(coro, name=f"room-{self.room.id}-{name}")
 
-    def _spawn_aux(self, coro: Coroutine[Any, Any, None]) -> None:
-        task = self._spawn(coro, "source-ended")
+    def _spawn_aux(self, coro: Coroutine[Any, Any, None], name: str) -> None:
+        """A task that takes the lock on its own (stop() waits for it)."""
+        task = self._spawn(coro, name)
         self._aux.add(task)
         task.add_done_callback(self._aux.discard)
 

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gran sala, en vivo | Glosa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..800;1,400..800&amp;family=Atkinson+Hyperlegible+Next:wght@400..800&amp;display=swap">
+  <link rel="stylesheet" href="../../glosa/web/static/css/glosa.css">
+  <link rel="stylesheet" href="mock.css">
+</head>
+<body class="mock">
+
+<header class="mock__head">
+  <h1>Vista de sala en el celular</h1>
+  <p>Tres estados de la misma pantalla a 390 px. El primero sigue el tema del sistema; el segundo está en claro, con el historial pausado; el tercero, en alto contraste con la letra agrandada dos pasos. Los botones A−, A+ y tema funcionan.</p>
+</header>
+
+<div class="mock__row">
+
+  <!-- 1. En vivo, tema del sistema -->
+  <figure class="mock__figure">
+    <div class="device"><div class="device__screen">
+      <div class="room">
+        <header class="room-head">
+          <div class="room-head__bar">
+            <div class="room-head__brand">
+              <a class="wordmark" href="index.html" aria-label="Glosa, todas las salas">glosa<span class="nib" aria-hidden="true"></span></a>
+              <a class="room-head__rooms" href="index.html">Cambiar de sala</a>
+            </div>
+            <span class="status status--live">En vivo</span>
+          </div>
+          <h1 class="room-head__name">Gran sala</h1>
+          <p class="room-head__talk talk-title" lang="en">What your Kubernetes control plane really costs</p>
+          <p class="room-head__meta talk-meta">
+            <span>Priya Raman</span>
+            <span class="direction" aria-label="Del inglés al español">
+              <abbr title="inglés">EN</abbr>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <abbr title="español">ES</abbr>
+            </span>
+          </p>
+        </header>
+
+        <main class="room__stage" aria-label="Subtítulos en español">
+          <div class="transcript" lang="es">
+            <ol class="history" role="log" aria-label="Lo que ya se dijo">
+              <li class="line">
+                <time class="line__time" datetime="14:02">14:02</time>
+                <p class="line__text">Les voy a contar cómo bajamos la factura a la mitad sin migrar de nube.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:03">14:03</time>
+                <p class="line__text">Empecemos por lo incómodo: la factura de la nube del mes pasado.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:04">14:04</time>
+                <p class="line__text">Teníamos tres clusters por región y nadie sabía muy bien por qué.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:05">14:05</time>
+                <p class="line__text">El control plane de Kubernetes costó esto, solo en marzo: casi cuatro mil dólares.</p>
+              </li>
+            </ol>
+            <div class="line line--live" aria-live="off">
+              <time class="line__time" datetime="14:06">14:06</time>
+              <p class="line__text"><span class="phrase">La mitad se fue en etcd y en logs de auditoría que nadie leía.</span> <span class="phrase phrase--open">Así que lo primero que hicimos fue apagar</span></p>
+            </div>
+          </div>
+        </main>
+
+        <nav class="controls" aria-label="Lectura">
+          <label class="control control--select">
+            <span class="visually-hidden">Idioma de los subtítulos</span>
+            <select>
+              <option selected>Español</option>
+              <option>English (original)</option>
+            </select>
+          </label>
+          <div class="control-group" role="group" aria-label="Tamaño de letra">
+            <button class="control" type="button" data-action="size" data-step="-1" aria-label="Achicar letra"><span class="control__a control__a--small">A</span>−</button>
+            <button class="control" type="button" data-action="size" data-step="1" aria-label="Agrandar letra"><span class="control__a control__a--big">A</span>+</button>
+          </div>
+          <button class="control" type="button" data-action="theme" aria-label="Tema del sistema. Cambiar tema">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg>
+          </button>
+        </nav>
+      </div>
+    </div></div>
+    <figcaption>En vivo. La frase en curso va tenue y con la pluma al final.</figcaption>
+  </figure>
+
+  <!-- 2. Claro, historial pausado -->
+  <figure class="mock__figure">
+    <div class="device"><div class="device__screen">
+      <div class="room" data-theme="light">
+        <header class="room-head">
+          <div class="room-head__bar">
+            <div class="room-head__brand">
+              <a class="wordmark" href="index.html" aria-label="Glosa, todas las salas">glosa<span class="nib" aria-hidden="true"></span></a>
+              <a class="room-head__rooms" href="index.html">Cambiar de sala</a>
+            </div>
+            <span class="status status--live">En vivo</span>
+          </div>
+          <h1 class="room-head__name">Gran sala</h1>
+          <p class="room-head__talk talk-title" lang="en">What your Kubernetes control plane really costs</p>
+          <p class="room-head__meta talk-meta">
+            <span>Priya Raman</span>
+            <span class="direction" aria-label="Del inglés al español">
+              <abbr title="inglés">EN</abbr>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <abbr title="español">ES</abbr>
+            </span>
+          </p>
+        </header>
+
+        <main class="room__stage" aria-label="Subtítulos en español">
+          <div class="transcript" lang="es">
+            <ol class="history" role="log" aria-label="Lo que ya se dijo">
+              <li class="line">
+                <time class="line__time" datetime="14:00">14:00</time>
+                <p class="line__text">Hola, ¿se escucha bien atrás? Perfecto.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:01">14:01</time>
+                <p class="line__text">Soy Priya, trabajo en plataforma y hace dos años que miro facturas de nube más que código.</p>
+              </li>
+              <li class="line">
+                <p class="line__text">Esta charla es la versión honesta de un postmortem de costos.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:02">14:02</time>
+                <p class="line__text">Les voy a contar cómo bajamos la factura a la mitad sin migrar de nube.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:03">14:03</time>
+                <p class="line__text">Empecemos por lo incómodo: la factura de la nube del mes pasado.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:04">14:04</time>
+                <p class="line__text">Teníamos tres clusters por región y nadie sabía muy bien por qué.</p>
+              </li>
+              <li class="line">
+                <p class="line__text">Cada equipo había pedido el suyo en 2022 y nunca lo devolvió.</p>
+              </li>
+              <li class="line">
+                <time class="line__time" datetime="14:05">14:05</time>
+                <p class="line__text">El control plane de Kubernetes costó esto, solo en marzo: casi cuatro mil dólares.</p>
+              </li>
+            </ol>
+            <div class="line line--live" aria-live="off">
+              <time class="line__time" datetime="14:06">14:06</time>
+              <p class="line__text"><span class="phrase">La mitad se fue en etcd y en logs de auditoría que nadie leía.</span> <span class="phrase phrase--open">Así que lo primero que hicimos fue apagar</span></p>
+            </div>
+          </div>
+        </main>
+
+        <nav class="controls" aria-label="Lectura">
+          <button class="to-live controls__to-live" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v11M4 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Volver al vivo
+          </button>
+          <label class="control control--select">
+            <span class="visually-hidden">Idioma de los subtítulos</span>
+            <select>
+              <option selected>Español</option>
+              <option>English (original)</option>
+            </select>
+          </label>
+          <div class="control-group" role="group" aria-label="Tamaño de letra">
+            <button class="control" type="button" data-action="size" data-step="-1" aria-label="Achicar letra"><span class="control__a control__a--small">A</span>−</button>
+            <button class="control" type="button" data-action="size" data-step="1" aria-label="Agrandar letra"><span class="control__a control__a--big">A</span>+</button>
+          </div>
+          <button class="control" type="button" data-action="theme" aria-label="Tema: claro. Cambiar tema">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg>
+          </button>
+        </nav>
+      </div>
+    </div></div>
+    <figcaption>Al subir para releer se pausa el auto-scroll y aparece “Volver al vivo”.</figcaption>
+  </figure>
+
+  <!-- 3. Alto contraste, letra más grande, charla en castellano -->
+  <figure class="mock__figure">
+    <div class="device"><div class="device__screen">
+      <div class="room" data-theme="contrast" style="--caption-scale: 1.3">
+        <header class="room-head">
+          <div class="room-head__bar">
+            <div class="room-head__brand">
+              <a class="wordmark" href="index.html" aria-label="Glosa, todas las salas">glosa<span class="nib" aria-hidden="true"></span></a>
+              <a class="room-head__rooms" href="index.html">Cambiar de sala</a>
+            </div>
+            <span class="status status--live">En vivo</span>
+          </div>
+          <h1 class="room-head__name">Sala Abasto</h1>
+          <p class="room-head__talk talk-title">Observabilidad sin casarse con nadie: OpenTelemetry en producción</p>
+          <p class="room-head__meta talk-meta">
+            <span>Martina Ruiz</span>
+            <span class="direction" aria-label="En español, idioma original"><abbr title="español">ES</abbr></span>
+          </p>
+        </header>
+
+        <main class="room__stage" aria-label="Subtítulos en español">
+          <div class="transcript" lang="es">
+            <ol class="history" role="log" aria-label="Lo que ya se dijo">
+              <li class="line">
+                <time class="line__time" datetime="14:05">14:05</time>
+                <p class="line__text">Si cambiás de proveedor, el collector se queda y cambia el exporter.</p>
+              </li>
+            </ol>
+            <div class="line line--live" aria-live="off">
+              <time class="line__time" datetime="14:06">14:06</time>
+              <p class="line__text"><span class="phrase">El sampling lo hacemos en el collector, no en cada servicio,</span> <span class="phrase phrase--open">porque ahí ya tenemos la traza completa</span></p>
+            </div>
+          </div>
+        </main>
+
+        <nav class="controls" aria-label="Lectura">
+          <label class="control control--select">
+            <span class="visually-hidden">Idioma de los subtítulos</span>
+            <select>
+              <option selected>Español (original)</option>
+              <option>English</option>
+            </select>
+          </label>
+          <div class="control-group" role="group" aria-label="Tamaño de letra">
+            <button class="control" type="button" data-action="size" data-step="-1" aria-label="Achicar letra"><span class="control__a control__a--small">A</span>−</button>
+            <button class="control" type="button" data-action="size" data-step="1" aria-label="Agrandar letra"><span class="control__a control__a--big">A</span>+</button>
+          </div>
+          <button class="control" type="button" data-action="theme" aria-label="Tema: alto contraste. Cambiar tema">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg>
+          </button>
+        </nav>
+      </div>
+    </div></div>
+    <figcaption>Alto contraste: la frase en curso cambia a amarillo en vez de apagarse.</figcaption>
+  </figure>
+
+</div>
+
+<script src="mock.js"></script>
+</body>
+</html>

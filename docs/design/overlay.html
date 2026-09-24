@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Overlay para OBS | Glosa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..800;1,400..800&amp;family=Atkinson+Hyperlegible+Next:wght@400..800&amp;display=swap">
+  <link rel="stylesheet" href="../../glosa/web/static/css/glosa.css">
+  <link rel="stylesheet" href="mock.css">
+</head>
+<body class="mock">
+
+<header class="mock__head">
+  <h1>Overlay para la transmisión</h1>
+  <p>Fuente de navegador en OBS o vMix: <code>/overlay/gran-sala?lang=es&amp;lines=2&amp;size=48</code>. El fondo a cuadros simula la transparencia; cada cuadro es un lienzo de 1920 × 1080 a escala. La caja no cambia de tamaño: el texto nuevo entra por el renglón de abajo y el de arriba sale, como en los subtítulos de la tele.</p>
+</header>
+
+<div class="mock__row">
+
+  <figure class="mock__figure" style="inline-size: min(100%, 72rem)">
+    <div class="stage-16x9 checker">
+      <span class="stage__tag">Gran sala, español, 2 renglones, 48 px</span>
+      <div class="overlay" lang="es">
+        <div class="overlay__window">
+          <p class="overlay__text"><span class="phrase">El control plane de Kubernetes costó esto, solo en marzo: casi cuatro mil dólares.</span> <span class="phrase">La mitad se fue en etcd y en logs de auditoría que nadie leía.</span> <span class="phrase phrase--open">Así que lo primero que hicimos fue apagar</span></p>
+        </div>
+      </div>
+    </div>
+    <figcaption>Colores de Glosa. La frase en curso va más tenue, igual que en el celular.</figcaption>
+  </figure>
+
+  <figure class="mock__figure" style="inline-size: min(100%, 72rem)">
+    <!-- Ejemplo de marca del evento: la configuración pisa las variables de marca. -->
+    <div class="stage-16x9 checker" style="--brand-primary: #007673; --brand-accent: #00ACA8">
+      <span class="stage__tag">Sala Abasto, inglés, con la marca del evento</span>
+      <div class="overlay" lang="en">
+        <div class="overlay__window">
+          <p class="overlay__text"><span class="phrase">If you switch vendors, the collector stays and only the exporter changes.</span> <span class="phrase">We do the sampling in the collector, not in every service,</span> <span class="phrase phrase--open">because that’s where we already have the whole trace</span></p>
+        </div>
+      </div>
+    </div>
+    <figcaption>Con <code>--brand-accent</code> del evento (un turquesa de ejemplo): solo cambia el filete y la pluma.</figcaption>
+  </figure>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Producción | Glosa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..800;1,400..800&amp;family=Atkinson+Hyperlegible+Next:wght@400..800&amp;display=swap">
+  <link rel="stylesheet" href="../../glosa/web/static/css/glosa.css">
+</head>
+<body>
+
+<div class="admin">
+  <header class="admin__bar">
+    <a class="wordmark" href="index.html" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
+    <h1 class="admin__title">Producción</h1>
+    <span class="event-name">Nerdearla 2026</span>
+    <time class="admin__clock" datetime="2026-09-24T14:06:31-03:00">14:06:31</time>
+    <ul class="admin__summary" aria-label="Resumen de salas">
+      <li class="status status--live">2 en vivo</li>
+      <li class="status status--degraded">1 degradada</li>
+      <li class="status status--down">1 caída</li>
+      <li class="status status--idle">1 inactiva</li>
+    </ul>
+    <div class="admin__user">
+      <span>3 operadores conectados</span>
+      <button class="btn btn--quiet" type="button">Salir</button>
+    </div>
+  </header>
+
+  <main class="admin__main">
+    <section class="panel" aria-labelledby="salas">
+      <div class="panel__head">
+        <h2 class="panel__title" id="salas">Salas</h2>
+        <p class="panel__note">Agenda importada de Nerdearla: 156 charlas en 5 salas. <a href="#">Editar agenda</a></p>
+      </div>
+
+      <div class="console">
+
+        <!-- Gran sala: en vivo -->
+        <article class="strip strip--live" aria-labelledby="s1">
+          <header class="strip__head">
+            <h3 class="strip__name" id="s1">Gran sala</h3>
+            <span class="status status--live">En vivo</span>
+            <div class="segmented" role="group" aria-label="Modo">
+              <button type="button" aria-pressed="true">Auto</button>
+              <button type="button" aria-pressed="false">Manual</button>
+            </div>
+          </header>
+          <div class="strip__talk">
+            <cite class="talk-title" lang="en">What your Kubernetes control plane really costs</cite>
+            <span class="talk-meta">Priya Raman, 14:00 a 14:40</span>
+            <span class="strip__tags"><span class="direction">EN <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> ES</span><span class="chip">motor rápido</span></span>
+          </div>
+          <div class="vu" style="--level: 0.66; --peak: 0.78">
+            <span class="vu__label">Audio</span>
+            <span class="vu__track" role="meter" aria-label="Nivel de audio" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-20" aria-valuetext="−20 dBFS"><span class="vu__peak"></span></span>
+            <span class="vu__value">−20 dB</span>
+          </div>
+          <dl class="metrics">
+            <div class="metric"><dt>Retraso <small>(mediana 5 min)</small></dt><dd>2,4 s</dd></div>
+            <div class="metric"><dt>Calidad</dt><dd><span class="quality quality--good" style="--q: 0.86" aria-label="Calidad 0,86, buena"><span class="quality__bar"></span>0,86</span></dd></div>
+            <div class="metric"><dt>Costo</dt><dd>US$ 14,20</dd></div>
+          </dl>
+          <div class="strip__actions">
+            <button class="btn" type="button">Reconectar</button>
+            <button class="btn btn--danger" type="button">Terminar charla</button>
+          </div>
+        </article>
+
+        <!-- Auditorio: degradado -->
+        <article class="strip strip--degraded" aria-labelledby="s2">
+          <header class="strip__head">
+            <h3 class="strip__name" id="s2">Auditorio</h3>
+            <span class="status status--degraded">Degradada</span>
+            <div class="segmented" role="group" aria-label="Modo">
+              <button type="button" aria-pressed="true">Auto</button>
+              <button type="button" aria-pressed="false">Manual</button>
+            </div>
+            <p class="strip__reason">Retraso de 6,1 s, arriba del umbral de 5 s.</p>
+          </header>
+          <div class="strip__talk">
+            <cite class="talk-title" lang="en">Shipping LLM features without a GPU budget</cite>
+            <span class="talk-meta">Tom Whitfield, 13:50 a 14:30</span>
+            <span class="strip__tags"><span class="direction">EN <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> ES</span><span class="chip">motor glosario</span></span>
+          </div>
+          <div class="vu" style="--level: 0.58; --peak: 0.7">
+            <span class="vu__label">Audio</span>
+            <span class="vu__track" role="meter" aria-label="Nivel de audio" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-25" aria-valuetext="−25 dBFS"><span class="vu__peak"></span></span>
+            <span class="vu__value">−25 dB</span>
+          </div>
+          <dl class="metrics">
+            <div class="metric metric--warn"><dt>Retraso <small>(mediana 5 min)</small></dt><dd>6,1 s</dd></div>
+            <div class="metric"><dt>Calidad</dt><dd><span class="quality quality--fair" style="--q: 0.64" aria-label="Calidad 0,64, dudosa"><span class="quality__bar"></span>0,64</span></dd></div>
+            <div class="metric"><dt>Costo</dt><dd>US$ 12,35</dd></div>
+          </dl>
+          <div class="strip__actions">
+            <button class="btn" type="button">Reconectar</button>
+            <button class="btn btn--danger" type="button">Terminar charla</button>
+          </div>
+        </article>
+
+        <!-- Sala Abasto: en vivo, audio caliente -->
+        <article class="strip strip--live" aria-labelledby="s3">
+          <header class="strip__head">
+            <h3 class="strip__name" id="s3">Sala Abasto</h3>
+            <span class="status status--live">En vivo</span>
+            <div class="segmented" role="group" aria-label="Modo">
+              <button type="button" aria-pressed="true">Auto</button>
+              <button type="button" aria-pressed="false">Manual</button>
+            </div>
+          </header>
+          <div class="strip__talk">
+            <cite class="talk-title">Observabilidad sin casarse con nadie: OpenTelemetry en producción</cite>
+            <span class="talk-meta">Martina Ruiz, 14:00 a 14:40</span>
+            <span class="strip__tags"><span class="direction">ES <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> EN</span><span class="chip">motor glosario</span></span>
+          </div>
+          <div class="vu" style="--level: 0.93; --peak: 0.97">
+            <span class="vu__label">Audio</span>
+            <span class="vu__track" role="meter" aria-label="Nivel de audio" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-4" aria-valuetext="−4 dBFS"><span class="vu__peak"></span></span>
+            <span class="vu__value">−4 dB</span>
+          </div>
+          <dl class="metrics">
+            <div class="metric"><dt>Retraso <small>(mediana 5 min)</small></dt><dd>1,9 s</dd></div>
+            <div class="metric"><dt>Calidad</dt><dd><span class="quality quality--good" style="--q: 0.91" aria-label="Calidad 0,91, buena"><span class="quality__bar"></span>0,91</span></dd></div>
+            <div class="metric"><dt>Costo</dt><dd>US$ 9,95</dd></div>
+          </dl>
+          <div class="strip__actions">
+            <button class="btn" type="button">Reconectar</button>
+            <button class="btn btn--danger" type="button">Terminar charla</button>
+          </div>
+        </article>
+
+        <!-- Sala Talleres: caída -->
+        <article class="strip strip--down" aria-labelledby="s4">
+          <header class="strip__head">
+            <h3 class="strip__name" id="s4">Sala Talleres</h3>
+            <span class="status status--down">Caída</span>
+            <div class="segmented" role="group" aria-label="Modo">
+              <button type="button" aria-pressed="false">Auto</button>
+              <button type="button" aria-pressed="true">Manual</button>
+            </div>
+            <p class="strip__reason">Fuente caída: ffmpeg terminó 5 veces seguidas. Pasó a manual.</p>
+          </header>
+          <div class="strip__talk">
+            <cite class="talk-title">Taller: tu primer operador de Kubernetes en Go</cite>
+            <span class="talk-meta">Lucía Quiroga, 13:30 a 15:00</span>
+            <span class="strip__tags"><span class="direction">ES</span><span class="chip">motor glosario</span></span>
+          </div>
+          <div class="vu" style="--level: 0; --peak: 0">
+            <span class="vu__label">Audio</span>
+            <span class="vu__track" role="meter" aria-label="Nivel de audio" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" aria-valuetext="Sin señal"></span>
+            <span class="vu__value">—</span>
+            <span class="vu__alarm status status--down">Sin audio hace 1 min 12 s</span>
+          </div>
+          <dl class="metrics">
+            <div class="metric"><dt>Retraso <small>(mediana 5 min)</small></dt><dd>—</dd></div>
+            <div class="metric"><dt>Calidad</dt><dd><span class="quality quality--none">sin datos</span></dd></div>
+            <div class="metric"><dt>Costo</dt><dd>US$ 5,30</dd></div>
+          </dl>
+          <div class="strip__actions">
+            <button class="btn btn--primary" type="button">Reconectar</button>
+            <button class="btn" type="button">Cambiar fuente</button>
+            <button class="btn btn--danger" type="button">Terminar charla</button>
+          </div>
+        </article>
+
+        <!-- Sala Comunidad: inactiva -->
+        <article class="strip strip--idle" aria-labelledby="s5">
+          <header class="strip__head">
+            <h3 class="strip__name" id="s5">Sala Comunidad</h3>
+            <span class="status status--idle">Inactiva</span>
+            <div class="segmented" role="group" aria-label="Modo">
+              <button type="button" aria-pressed="true">Auto</button>
+              <button type="button" aria-pressed="false">Manual</button>
+            </div>
+            <p class="strip__reason">Abre sola a las 15:29, un minuto antes de la próxima charla.</p>
+          </header>
+          <div class="strip__talk">
+            <cite class="talk-title">Cómo se organiza una Nerdearla con 300 voluntarios</cite>
+            <span class="talk-meta">Ana Sosa y Pablo Díaz, 15:30 a 16:10</span>
+            <span class="strip__tags"><span class="direction">ES</span><span class="chip">motor glosario</span></span>
+          </div>
+          <div class="vu" style="--level: 0; --peak: 0">
+            <span class="vu__label">Audio</span>
+            <span class="vu__track" role="meter" aria-label="Nivel de audio" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" aria-valuetext="Sala inactiva"></span>
+            <span class="vu__value">—</span>
+          </div>
+          <dl class="metrics">
+            <div class="metric"><dt>Retraso <small>(mediana 5 min)</small></dt><dd>—</dd></div>
+            <div class="metric"><dt>Calidad</dt><dd><span class="quality quality--none">sin datos</span></dd></div>
+            <div class="metric"><dt>Costo</dt><dd>US$ 0,00</dd></div>
+          </dl>
+          <div class="strip__actions">
+            <button class="btn btn--primary" type="button">Iniciar charla
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="btn" type="button">Probar con audio</button>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <div class="admin__lower">
+      <section class="panel log" aria-labelledby="registro">
+        <div class="panel__head">
+          <h2 class="panel__title" id="registro">Registro de eventos</h2>
+          <p class="panel__note">Los últimos 7 de 214</p>
+        </div>
+        <table class="log__table">
+          <thead>
+            <tr><th scope="col">Hora</th><th scope="col">Sala</th><th scope="col">Nivel</th><th scope="col">Evento</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="log__time">14:06:12</td><td class="log__room">Auditorio</td><td><span class="level level--warn">Aviso</span></td>
+              <td>Retraso mediano de 6,1 s en los últimos 5 min (umbral 5 s).</td>
+            </tr>
+            <tr class="log__row--error">
+              <td class="log__time">14:05:48</td><td class="log__room">Sala Talleres</td><td><span class="level level--error">Error</span></td>
+              <td>Fuente caída: ffmpeg terminó 5 veces seguidas. La sala pasó a manual.</td>
+            </tr>
+            <tr>
+              <td class="log__time">14:05:31</td><td class="log__room">Sala Talleres</td><td><span class="level level--warn">Aviso</span></td>
+              <td>Sin audio hace 30 s durante una charla.</td>
+            </tr>
+            <tr>
+              <td class="log__time">14:05:02</td><td class="log__room">Gran sala</td><td><span class="level">Info</span></td>
+              <td>Relevo de sesión n.º 6 completado: 280 ms sin texto.</td>
+            </tr>
+            <tr>
+              <td class="log__time">14:04:40</td><td class="log__room">Auditorio</td><td><span class="level level--warn">Aviso</span></td>
+              <td>Error 429 de la API: reintento en 4 s.</td>
+            </tr>
+            <tr>
+              <td class="log__time">14:03:15</td><td class="log__room">Sala Abasto</td><td><span class="level">Info</span></td>
+              <td>Glosario cargado: 48 términos (OpenTelemetry, collector, exporter…).</td>
+            </tr>
+            <tr>
+              <td class="log__time">14:00:00</td><td class="log__room">Gran sala</td><td><span class="level">Info</span></td>
+              <td>Charla iniciada en automático con el motor rápido.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel budget" style="--spent: 0.348; --warn-at: 0.8" aria-labelledby="costo">
+        <div class="panel__head">
+          <h2 class="panel__title" id="costo">Costo del evento</h2>
+        </div>
+        <p class="budget__figure"><span class="budget__spent">US$ 41,80</span> <span class="budget__of">de US$ 120,00 de presupuesto</span></p>
+        <div class="budget__bar" role="meter" aria-label="Presupuesto usado" aria-valuemin="0" aria-valuemax="120" aria-valuenow="41.8" aria-valuetext="US$ 41,80 de 120, 35 %"></div>
+        <div class="budget__scale" aria-hidden="true"><span>US$ 0</span><span class="budget__mark">aviso, US$ 96</span></div>
+        <dl class="metrics">
+          <div class="metric"><dt>Proyección al cierre del día</dt><dd>US$ 88,40</dd></div>
+          <div class="metric"><dt>Gasto por hora, 4 salas</dt><dd>US$ 6,90</dd></div>
+        </dl>
+      </section>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

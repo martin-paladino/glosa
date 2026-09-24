@@ -8,6 +8,11 @@
 event_name: Glosa demo
 timezone: UTC
 
+branding:
+  logo_url: /static/branding/nerdearla/nerdearla-logo.svg
+  primary: "#FFBA00"
+  accent: "#00ACA8"
+
 rooms:
   - id: demo-en
     name: "Demo: English to Spanish"

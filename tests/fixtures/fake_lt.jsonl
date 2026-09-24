@@ -1,0 +1,19 @@
+{"t": 4.504, "kind": "source_delta", "text": "Great starting scenario, for", "raw_type": "server_content.input_transcription", "meta": {"lang": "en", "finished": null}}
+{"t": 4.669, "kind": "target_delta", "text": "Un gran escenario", "raw_type": "server_content.output_transcription", "meta": {"lang": "es", "finished": null}}
+{"t": 4.917, "kind": "usage", "text": "", "raw_type": "usage_metadata", "meta": {"prompt_tokens": 50, "response_tokens": 50, "total_tokens": 100}}
+{"t": 5.065, "kind": "session_resumption_update", "text": "", "raw_type": "session_resumption_update"}
+{"t": 5.185, "kind": "source_delta", "text": " sure. There's", "raw_type": "server_content.input_transcription", "meta": {"lang": "en", "finished": null}}
+{"t": 5.364, "kind": "target_delta", "text": " de inicio, sin duda.", "raw_type": "server_content.output_transcription", "meta": {"lang": "es", "finished": null}}
+{"t": 5.415, "kind": "usage", "text": "", "raw_type": "usage_metadata", "meta": {"prompt_tokens": 25, "response_tokens": 25, "total_tokens": 50}}
+{"t": 5.761, "kind": "session_resumption_update", "text": "", "raw_type": "session_resumption_update"}
+{"t": 5.793, "kind": "source_delta", "text": " also a provisioning", "raw_type": "server_content.input_transcription", "meta": {"lang": "en", "finished": null}}
+{"t": 6.011, "kind": "usage", "text": "", "raw_type": "usage_metadata", "meta": {"prompt_tokens": 25, "response_tokens": 25, "total_tokens": 50}}
+{"t": 6.12, "kind": "target_delta", "text": " También hay", "raw_type": "server_content.output_transcription", "meta": {"lang": "es", "finished": null}}
+{"t": 6.275, "kind": "session_resumption_update", "text": "", "raw_type": "session_resumption_update"}
+{"t": 6.757, "kind": "source_delta", "text": " agent that's a", "raw_type": "server_content.input_transcription", "meta": {"lang": "en", "finished": null}}
+{"t": 6.978, "kind": "usage", "text": "", "raw_type": "usage_metadata", "meta": {"prompt_tokens": 25, "response_tokens": 25, "total_tokens": 50}}
+{"t": 7.125, "kind": "target_delta", "text": " un agente de aprovisionamiento", "raw_type": "server_content.output_transcription", "meta": {"lang": "es", "finished": null}}
+{"t": 7.245, "kind": "session_resumption_update", "text": "", "raw_type": "session_resumption_update"}
+{"t": 7.729, "kind": "source_delta", "text": " possibility to build", "raw_type": "server_content.input_transcription", "meta": {"lang": "en", "finished": null}}
+{"t": 7.878, "kind": "target_delta", "text": " que es una", "raw_type": "server_content.output_transcription", "meta": {"lang": "es", "finished": null}}
+{"t": 7.937, "kind": "usage", "text": "", "raw_type": "usage_metadata", "meta": {"prompt_tokens": 25, "response_tokens": 25, "total_tokens": 50}}

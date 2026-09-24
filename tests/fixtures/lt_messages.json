@@ -1,0 +1,61 @@
+{
+  "about": "Raw Live Translate server messages (wire JSON, camelCase, as parsed by google-genai 2.25 LiveServerMessage) for gemini-3.5-live-translate-preview, target=es, echoTargetLanguage=true. Texts, language codes and token counts are copied from the T0.5 verification logs (data/verify/smoke.jsonl: EN talk; data/verify/echo_True.jsonl: ES talk into an es target). No goAway was observed in those short runs: its shape (timeLeft = protobuf Duration string) follows the SDK's LiveServerGoAway type. The modelTurn audio payload is a stand-in (output audio is discarded).",
+  "cfg": {"kind": "fast", "source_lang": "en", "target_lang": "es"},
+  "cases": [
+    {
+      "name": "input_transcription",
+      "source": "smoke.jsonl t=4.504",
+      "raw": {"serverContent": {"inputTranscription": {"text": "Great starting scenario, for", "languageCode": "en"}}},
+      "expected": [{"kind": "source_delta", "text": "Great starting scenario, for", "lang": "en", "meta": {}}]
+    },
+    {
+      "name": "output_transcription",
+      "source": "smoke.jsonl t=4.669",
+      "raw": {"serverContent": {"outputTranscription": {"text": "Un gran escenario", "languageCode": "es"}}},
+      "expected": [{"kind": "target_delta", "text": "Un gran escenario", "lang": "es", "meta": {}}]
+    },
+    {
+      "name": "output_transcription_leading_space_delta",
+      "source": "smoke.jsonl t=5.364",
+      "raw": {"serverContent": {"outputTranscription": {"text": " de inicio, sin duda.", "languageCode": "es"}}},
+      "expected": [{"kind": "target_delta", "text": " de inicio, sin duda.", "lang": "es", "meta": {}}]
+    },
+    {
+      "name": "echo_input_in_target_language",
+      "source": "echo_True.jsonl (ES audio, target es)",
+      "raw": {"serverContent": {"inputTranscription": {"text": "uno tiene el uno tiene el", "languageCode": "es"}}},
+      "expected": [{"kind": "source_delta", "text": "uno tiene el uno tiene el", "lang": "es", "meta": {}}]
+    },
+    {
+      "name": "echo_output_in_target_language",
+      "source": "echo_True.jsonl (ES audio, target es)",
+      "raw": {"serverContent": {"outputTranscription": {"text": "uno tiene el uno tiene el", "languageCode": "es"}}},
+      "expected": [{"kind": "target_delta", "text": "uno tiene el uno tiene el", "lang": "es", "meta": {}}]
+    },
+    {
+      "name": "go_away",
+      "source": "SDK LiveServerGoAway shape (not yet observed)",
+      "raw": {"goAway": {"timeLeft": "50s"}},
+      "expected": [{"kind": "go_away", "text": "", "lang": null, "meta": {"time_left_s": 50.0}}]
+    },
+    {
+      "name": "usage_metadata",
+      "source": "smoke.jsonl t=5.415 (25 prompt tokens = 1 s of audio)",
+      "raw": {"usageMetadata": {"promptTokenCount": 25, "responseTokenCount": 25, "totalTokenCount": 50}},
+      "expected": [],
+      "usd_total": 0.000613333
+    },
+    {
+      "name": "session_resumption_update",
+      "source": "smoke.jsonl t=5.065 (ignored: no session resumption, spec 3.3)",
+      "raw": {"sessionResumptionUpdate": {}},
+      "expected": []
+    },
+    {
+      "name": "model_turn_audio_is_discarded",
+      "source": "responseModalities AUDIO output",
+      "raw": {"serverContent": {"modelTurn": {"parts": [{"inlineData": {"mimeType": "audio/pcm;rate=24000", "data": "AAAAAAAAAAA="}}]}}},
+      "expected": []
+    }
+  ]
+}

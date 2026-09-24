@@ -5,10 +5,12 @@ replay buffer (Last-Event-ID resume) and per-talk history for latecomers.
 from __future__ import annotations
 
 import asyncio
+import time
 
 import pytest
 
 from glosa.captions.bus import CaptionBus
+from glosa.clock import FakeClock
 from glosa.models import CaptionMsg
 
 
@@ -87,6 +89,44 @@ async def test_circular_buffer_discards_oldest_messages() -> None:
     replayed = await _take(bus.subscribe("room1", "es", last_event_id=None), n=3)
 
     assert [m.id for m in replayed] == [3, 4, 5]
+
+
+def test_publish_sets_ts_from_injected_clock() -> None:
+    clock = FakeClock(start=10.0)
+    bus = CaptionBus(clock=clock)
+
+    msg = bus.publish("room1", "es", "append", seg=0, text="Hola")
+
+    assert msg.ts == clock.wall().timestamp()
+
+
+def test_publish_sets_ts_to_wall_clock_epoch_seconds_by_default() -> None:
+    bus = CaptionBus()
+
+    before = time.time()
+    msg = bus.publish("room1", "es", "append", seg=0, text="Hola")
+    after = time.time()
+
+    assert before <= msg.ts <= after
+
+
+async def test_subscribe_with_stale_last_event_id_replays_whole_buffer() -> None:
+    # Regression for controller Ruling 26 / Task 6 integration bug: after a
+    # server restart, ids for a (room, lang) track start over at 1. A
+    # browser reconnecting with a Last-Event-ID from before the restart can
+    # send an id higher than anything this (fresh) track has ever
+    # published. That must not be treated as "already caught up" (which
+    # would silently filter out every message) — it must fall back to a
+    # full replay of the buffer, same as last_event_id=None.
+    bus = CaptionBus()
+    for i in range(1, 6):
+        bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
+
+    replayed = await asyncio.wait_for(
+        _take(bus.subscribe("room1", "es", last_event_id=999), n=5), timeout=1.0
+    )
+
+    assert [m.id for m in replayed] == [1, 2, 3, 4, 5]
 
 
 async def test_history_returns_messages_for_a_given_talk() -> None:

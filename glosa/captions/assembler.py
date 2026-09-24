@@ -69,15 +69,26 @@ class CaptionAssembler:
                 remaining = ""
                 continue
 
-            cut = remaining.rfind(" ", 0, available + 1)
-            if cut <= 0:
-                cut = available  # no word boundary in range: hard cut
+            # remaining is longer than the room left in this segment: cut at
+            # the last space that still fits, *including* the space itself
+            # in this segment's chunk (mirrors the punctuation path, which
+            # includes the punctuation char) so a delta that starts with a
+            # space closes cleanly on it instead of hard-cutting into the
+            # following word. cut == 0 is a valid boundary (the delta's own
+            # leading space) and must not be confused with "not found".
+            space_index = remaining.rfind(" ", 0, available)
+            if space_index == -1:
+                # No space at all within budget: forced hard cut. Only
+                # reachable when a single token is longer than max_chars.
+                cut = available
+            else:
+                cut = space_index + 1
             chunk = remaining[:cut]
             self._buf += chunk
             events.append(("append", {"seg": self._seg, "text": chunk}))
             events.append(("close", {"seg": self._seg}))
             self._open = False
-            remaining = remaining[cut:].lstrip(" ")
+            remaining = remaining[cut:]
 
         return events
 

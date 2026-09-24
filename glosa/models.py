@@ -70,13 +70,20 @@ class EngineConfig:
 
 @dataclass
 class CaptionMsg:
-    """JSON payload sent to the audience over SSE. id = Last-Event-ID."""
+    """JSON payload sent to the audience over SSE. id = Last-Event-ID.
+
+    ts: wall-clock time the message was published, as epoch seconds (set by
+    CaptionBus.publish). Lets the audience view show an HH:MM margin next to
+    replayed history; None only for messages built by hand (e.g. in tests)
+    without going through the bus.
+    """
 
     id: int
     type: Literal["append", "close", "talk", "status"]
     seg: int | None = None
     text: str | None = None
     data: dict | None = None
+    ts: float | None = None
 
 
 @dataclass

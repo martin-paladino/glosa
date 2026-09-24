@@ -18,6 +18,7 @@ import pytest
 from fastapi import FastAPI, Request
 
 from glosa.captions.bus import CaptionBus
+from glosa.clock import FakeClock
 from glosa.web.sse import sse_response
 
 
@@ -58,7 +59,8 @@ async def _get_sse_text(app: FastAPI, path: str, headers: dict | None = None) ->
 
 
 async def test_sse_stream_contains_id_and_data_lines() -> None:
-    bus = CaptionBus()
+    clock = FakeClock(start=0.0)
+    bus = CaptionBus(clock=clock)
     bus.publish("room1", "es", "append", seg=0, text="Hola")
     bus.publish("room1", "es", "append", seg=0, text=" mundo")
     app = _make_app(bus, events_per_request=2)
@@ -70,7 +72,14 @@ async def test_sse_stream_contains_id_and_data_lines() -> None:
     data_lines = [line for line in body.splitlines() if line.startswith("data: ")]
     assert len(data_lines) == 2
     first_payload = json.loads(data_lines[0][len("data: ") :])
-    assert first_payload == {"id": 1, "type": "append", "seg": 0, "text": "Hola", "data": None}
+    assert first_payload == {
+        "id": 1,
+        "type": "append",
+        "seg": 0,
+        "text": "Hola",
+        "data": None,
+        "ts": clock.wall().timestamp(),
+    }
 
 
 async def test_sse_resumes_from_last_event_id_header() -> None:

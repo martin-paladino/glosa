@@ -5,7 +5,7 @@ between instances.
 
 from __future__ import annotations
 
-from glosa.models import AudioChunk, EngineConfig, EngineEvent
+from glosa.models import AudioChunk, CaptionMsg, EngineConfig, EngineEvent
 
 
 def test_engine_event_defaults() -> None:
@@ -33,3 +33,11 @@ def test_audio_chunk_fields() -> None:
     chunk = AudioChunk(pcm=b"\x00" * 3200, t=1.2)
     assert len(chunk.pcm) == 3200
     assert chunk.t == 1.2
+
+
+def test_caption_msg_ts_defaults_to_none_and_accepts_epoch_seconds() -> None:
+    unset = CaptionMsg(id=1, type="append", seg=0, text="Hola")
+    assert unset.ts is None
+
+    timestamped = CaptionMsg(id=1, type="append", seg=0, text="Hola", ts=1735000000.0)
+    assert timestamped.ts == 1735000000.0

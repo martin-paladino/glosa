@@ -64,6 +64,41 @@ def test_segment_number_increments_after_close() -> None:
     assert events == [("append", {"seg": 1, "text": "Segundo"})]
 
 
+def test_leading_space_at_max_chars_boundary_does_not_split_word() -> None:
+    # Regression for controller Ruling 26 / Task 6 integration bug: a delta
+    # that starts with a space used to hard-cut mid-word ("informatio" /
+    # "n.") instead of recognizing the leading space itself as the word
+    # boundary, once the hard-cut position landed inside the following word.
+    asm = CaptionAssembler(max_chars=20)
+    asm.on_delta("a" * 9, t=0.0)  # fills the segment to 9/20 chars
+
+    events = asm.on_delta(" information.", t=1.0)
+
+    assert events == [
+        ("append", {"seg": 0, "text": " "}),
+        ("close", {"seg": 0}),
+        ("append", {"seg": 1, "text": "information."}),
+        ("close", {"seg": 1}),
+    ]
+
+
+def test_delta_starting_with_space_never_splits_word_across_call() -> None:
+    # Same bug, phrased as an invariant: whatever gets appended across the
+    # whole call, concatenated, must reconstruct the input exactly (no
+    # characters dropped or reordered by the leading-space cut logic), and
+    # every segment that closes on a word boundary must end on a full word.
+    asm = CaptionAssembler(max_chars=200)
+    long_text = " " + "word " * 50  # leading space + 250 chars, no punctuation
+
+    events = asm.on_delta(long_text, t=0.0)
+
+    appended = [payload["text"] for kind, payload in events if kind == "append"]
+    assert "".join(appended) == long_text
+    for chunk in appended:
+        if chunk.strip():
+            assert chunk.rstrip().endswith("word") or chunk.strip() == "word"
+
+
 def test_long_delta_without_punctuation_closes_at_word_boundary() -> None:
     asm = CaptionAssembler(max_chars=200)
     long_text = "word " * 50  # 250 chars, no terminal punctuation

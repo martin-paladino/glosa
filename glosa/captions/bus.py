@@ -9,6 +9,7 @@ import asyncio
 from collections import deque
 from typing import AsyncIterator
 
+from glosa.clock import Clock, RealClock
 from glosa.models import CaptionMsg
 
 
@@ -26,11 +27,14 @@ class CaptionBus:
     """In-memory pub/sub bus for caption messages.
 
     One CaptionBus is shared across all rooms/languages for the process;
-    state is partitioned internally by (room_id, lang).
+    state is partitioned internally by (room_id, lang). clock is injectable
+    (defaults to RealClock()) so tests can control the wall-clock ts stamped
+    on each published CaptionMsg.
     """
 
-    def __init__(self, buffer_size: int = 2000) -> None:
+    def __init__(self, buffer_size: int = 2000, *, clock: Clock | None = None) -> None:
         self._buffer_size = buffer_size
+        self._clock: Clock = clock if clock is not None else RealClock()
         self._tracks: dict[tuple[str, str], _TrackState] = {}
 
     def _track(self, room_id: str, lang: str) -> _TrackState:
@@ -44,7 +48,8 @@ class CaptionBus:
     def publish(self, room_id: str, lang: str, type: str, **payload) -> CaptionMsg:
         """Create, buffer, and fan out a CaptionMsg for (room_id, lang)."""
         track = self._track(room_id, lang)
-        msg = CaptionMsg(id=track.next_id, type=type, **payload)
+        ts = self._clock.wall().timestamp()
+        msg = CaptionMsg(id=track.next_id, type=type, ts=ts, **payload)
         track.next_id += 1
 
         if type == "talk":
@@ -64,12 +69,21 @@ class CaptionBus:
         Registration happens before the buffer snapshot is read, and both
         steps run without an `await` in between, so no publish() (itself
         synchronous) can land in the gap and be missed or duplicated.
+
+        A last_event_id greater than the track's newest id is treated the
+        same as None (full replay), not as "already caught up": ids restart
+        at 1 on every process restart, so a browser reconnecting with a
+        Last-Event-ID from before a restart can hold a value higher than
+        anything the fresh track has published, which would otherwise
+        silently filter out every message that should have been replayed.
         """
         track = self._track(room_id, lang)
         queue: asyncio.Queue[CaptionMsg] = asyncio.Queue()
         track.subscribers.add(queue)
         try:
-            threshold = last_event_id if last_event_id is not None else 0
+            newest_id = track.next_id - 1
+            stale = last_event_id is not None and last_event_id > newest_id
+            threshold = 0 if (last_event_id is None or stale) else last_event_id
             backlog = [msg for msg, _talk_id in track.buffer if msg.id > threshold]
             for msg in backlog:
                 yield msg

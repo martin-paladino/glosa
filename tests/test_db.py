@@ -230,3 +230,19 @@ async def test_upsert_agenda_updates_scheduled_talks_and_leaves_live_and_done_al
 
 async def test_upsert_agenda_with_nothing_to_write(db) -> None:
     assert await db.upsert_agenda([]) == {}
+
+
+async def test_set_room_mode_persists_only_the_mode(db) -> None:
+    room = Room(
+        id="r1", slug="r1", name="Gran sala", source_type="file", source_url=None,
+        mode="auto", public_token="tok-1", default_targets=["es"],
+    )
+    await db.upsert_room(room)
+
+    await db.set_room_mode("r1", "manual")
+    await db.set_room_mode("missing", "manual")  # no such room: nothing to do
+
+    (stored,) = await db.get_rooms()
+    assert stored.mode == "manual" and stored.public_token == "tok-1"
+    with pytest.raises(ValueError):
+        await db.set_room_mode("r1", "sideways")

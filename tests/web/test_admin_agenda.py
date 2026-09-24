@@ -4,6 +4,8 @@ day, and edit one talk.
 
 Every test runs the real app (create_app + lifespan, SQLite in tmp_path) with
 rooms that have no audio source, so no pipeline runs and nothing is billed.
+The autopilot's periodic tick is pushed out of the way
+(``autopilot_interval_s``): these tests are about the agenda, not the clock.
 
 The admin cookie lives in the client's own cookie jar and every request
 carries the ``X-Glosa-Admin`` CSRF header (glosa/web/auth.py).
@@ -62,7 +64,7 @@ def _settings(tmp_path: Path, **overrides) -> Settings:
 
 @asynccontextmanager
 async def _open(settings: Settings) -> AsyncIterator[tuple[FastAPI, httpx.AsyncClient]]:
-    app = create_app(settings)
+    app = create_app(settings, autopilot_interval_s=3600)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=CSRF) as client:

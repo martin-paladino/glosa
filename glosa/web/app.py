@@ -3,9 +3,21 @@
 It mounts ``/static``, the audience pages (glosa/web/pages.py), the public
 API (glosa/web/public_api.py) and the admin panel (glosa/web/admin_api.py,
 login at ``/admin/login`` protected with ``Settings.admin_password``; see
-glosa/web/auth.py), and owns the rooms: the lifespan opens the SQLite
-database, registers every room of config.yaml, starts a free session in
-each room that has a source, and stops them all on shutdown.
+glosa/web/auth.py), and owns the rooms. The lifespan:
+
+  1. opens the SQLite database and registers every room of config.yaml,
+     keeping the mode (auto/manual) and public token already stored;
+  2. creates the Autopilot (glosa/scheduler.py, ``lead_s`` 60) and runs one
+     tick, which reopens the agenda's talk of the moment after a restart;
+  3. starts a free session in each room with a source that the autopilot
+     does not run (no agenda talks today, or manual; Ruling 33);
+  4. runs ``Autopilot.tick()`` every ``autopilot_interval_s`` (5 s) in the
+     task named ``autopilot``;
+  5. on shutdown cancels that loop (a tick in progress finishes), stops
+     every room and gives the talk-end hooks ``HOOK_GRACE_S``.
+
+Every talk that ends publishes ``talk_ended`` on ``admin_events``, then goes
+to ``create_app(on_talk_end=...)`` if given (Task 11: exports).
 
 ``app.state``:
   - ``settings``, ``clock``, ``bus`` (CaptionBus), ``db`` (Database, once
@@ -13,6 +25,7 @@ each room that has a source, and stops them all on shutdown.
   - ``admin_events``: the admin panel's in-process broadcaster
     (glosa/web/admin_events.py);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
+  - ``autopilot``: the Autopilot (once started);
   - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
     admin session cookies;
   - ``session_epoch``: an int, 0 until the first ``POST /admin/logout``,
@@ -60,8 +73,9 @@ from glosa.db import init_db
 from glosa.engines.base import EngineFactory
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
-from glosa.models import EngineConfig, Room
-from glosa.room import IngestFactory, RoomWorker
+from glosa.models import EngineConfig, Room, Talk
+from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
+from glosa.scheduler import LEAD_S, TICK_S, Autopilot
 from glosa.web import admin_api, pages, public_api
 from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
@@ -74,6 +88,8 @@ CHECKOUT_FAKE_FIXTURE = Path(__file__).resolve().parents[2] / FAKE_FIXTURE
 # On shutdown, open SSE streams are cut after this long (EventSource
 # reconnects by itself) so the lifespan can stop the rooms.
 SHUTDOWN_GRACE_S = 3
+# On shutdown, the talk-end hooks (Task 11: exports) get this long to finish.
+HOOK_GRACE_S = 5.0
 
 
 def resolve_fake_fixture(settings: Settings) -> str:
@@ -113,6 +129,8 @@ def create_app(
     clock: Clock | None = None,
     engine_factory: EngineFactory | None = None,
     ingest_factory: IngestFactory = AudioIngest,
+    on_talk_end: TalkEndHook | None = None,
+    autopilot_interval_s: float = TICK_S,
 ) -> FastAPI:
     clock = clock if clock is not None else RealClock()
     bus = CaptionBus(clock=clock)
@@ -120,10 +138,27 @@ def create_app(
     factory = engine_factory if engine_factory is not None else make_engine_factory(settings, clock)
     workers: dict[str, RoomWorker] = {}
 
+    async def talk_ended(talk: Talk) -> None:
+        """Every room's RoomWorker.on_talk_end: tell the admin panel, then
+        the caller's hook."""
+        admin_events.publish(
+            "talk_ended",
+            {
+                "room_id": talk.room_id,
+                "talk_id": talk.id,
+                "title": talk.title,
+                "free": is_free_talk(talk.id),
+                "actual_end": talk.actual_end.isoformat() if talk.actual_end is not None else None,
+            },
+        )
+        if on_talk_end is not None:
+            await on_talk_end(talk)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = await asyncio.to_thread(init_db, settings.db_path)
         app.state.db = db
+        pilot: asyncio.Task | None = None
         try:
             known = {room.id: room for room in await db.get_rooms()}
             for cfg in settings.rooms:
@@ -139,17 +174,26 @@ def create_app(
                     default_targets=list(cfg.default_targets),
                 )
                 await db.upsert_room(room)
-                workers[room.id] = RoomWorker(room, settings, bus, db, clock, factory, ingest_factory=ingest_factory)
-            for worker in workers.values():
-                if worker.has_source:
-                    await _start_free_session(worker, db)
+                workers[room.id] = RoomWorker(
+                    room, settings, bus, db, clock, factory, ingest_factory=ingest_factory, on_talk_end=talk_ended
+                )
+            autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
+            app.state.autopilot = autopilot
+            await _boot_rooms(autopilot, workers, db)
+            pilot = asyncio.create_task(autopilot.run(autopilot_interval_s), name="autopilot")
             yield
         finally:
+            if pilot is not None:  # first, so no tick starts a room while they stop
+                pilot.cancel()
+                (result,) = await asyncio.gather(pilot, return_exceptions=True)
+                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                    log.error("autopilot loop failed", exc_info=result)
             rooms = list(workers.values())
             results = await asyncio.gather(*(w.stop() for w in rooms), return_exceptions=True)
             for worker, result in zip(rooms, results, strict=True):
                 if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
                     log.error("room %s: stop failed", worker.room.id, exc_info=result)
+            await asyncio.gather(*(w.drain_hooks(HOOK_GRACE_S) for w in rooms), return_exceptions=True)
             workers.clear()
             db.close()
 
@@ -178,6 +222,27 @@ def create_app(
     app.include_router(admin_api.api_router)
     app.include_router(pages.router)
     return app
+
+
+async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db) -> None:
+    """First the autopilot's tick, which reopens whatever the agenda says is
+    on now (the server restarted mid-talk, spec §6); then the free session
+    (Task 5) of every room with a source that the autopilot does not run
+    (Ruling 33: no agenda talks today, or manual)."""
+    try:
+        await autopilot.tick()
+    except Exception:
+        log.exception("autopilot: the boot tick failed")
+    for worker in workers.values():
+        if not worker.has_source or worker.talk is not None:
+            continue
+        try:
+            owned = await autopilot.in_charge(worker.room.id)
+        except Exception:
+            log.exception("room %s: could not ask the autopilot", worker.room.id)
+            owned = False
+        if not owned:
+            await _start_free_session(worker, db)
 
 
 async def _start_free_session(worker: RoomWorker, db) -> None:

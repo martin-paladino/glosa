@@ -68,6 +68,18 @@ The CSV columns are those of `agenda.example.csv`: `sala, inicio, fin, titulo, s
 
 **Browse and edit:** `GET /api/admin/talks?room=<id>&day=YYYY-MM-DD` (default: today), `GET /api/admin/talks/<id>`, and `PUT /api/admin/talks/<id>` with any of `title, speakers, language, targets, engine, start, end, abstract, tags, glossary` (a live talk only takes `title`, `targets` and `glossary`).
 
+**Autopilot.** Each room is in `auto` (the default) or `manual` mode, stored in the database so it survives a restart. In `auto`, a room with agenda talks today follows the clock: each talk opens a minute before its start and closes at its end (when the next one's minute of lead arrives first, the current one closes then), and between talks the room is idle. A room with no talks today keeps its free session. In `manual`, the autopilot leaves the room alone. After a restart, the talk the agenda says is on reopens by itself.
+
+| Endpoint (`POST /api/admin/rooms/<id>/...`) | What it does |
+|---|---|
+| `mode` `{"mode": "auto"\|"manual"}` | Switch modes. Back to `auto`, the room follows the agenda again right away. |
+| `start-talk` `{"talk_id": "..."}` | End the current talk and open this one now. The room goes `manual`. |
+| `end-talk` | End the current talk; the room goes idle and `manual`. |
+| `reconnect` | Open a new engine session for the running talk (the mode stays). |
+| `start` / `stop` | Start (free session or current talk) or stop the room. The room goes `manual`. |
+
+`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk.
+
 ## How it scales
 
 - **One instance comfortably handles about 10-20 rooms captioned at once.** The bottleneck is the number of concurrent Gemini Live sessions and their network I/O (each room keeps 1-2 sessions open for the session-handoff overlap), not CPU: ffmpeg, voice detection and segmentation are cheap per room.

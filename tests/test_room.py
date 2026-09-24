@@ -778,3 +778,141 @@ async def test_live_translate_room_smoke(tmp_path: Path) -> None:
     print("\nLIVE es segments:", [s.text for s in saved])
     print("LIVE cost usd:", await database.total_cost())
     database.close()
+
+
+# ------------------------------------------------------- on_talk_end, reconnect (T9)
+
+
+class HookRecorder:
+    """on_talk_end: records each ended talk (id, status, actual_end)."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.ended: list[tuple[str, str, object]] = []
+        self.fail = fail
+
+    async def __call__(self, talk) -> None:
+        await asyncio.sleep(0)
+        self.ended.append((talk.id, talk.status, talk.actual_end))
+        if self.fail:
+            raise RuntimeError("export exploded")
+
+
+def _agenda_talk(talk_id: str, room_id: str = "r1"):
+    from datetime import datetime, timezone
+
+    from glosa.models import Talk
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    return Talk(
+        id=talk_id, room_id=room_id, title=f"Talk {talk_id}", speakers=[], language="en", targets=["es"],
+        engine="fast", start=start, end=start + timedelta(hours=1), abstract="", tags=[], glossary=[],
+        status="scheduled", actual_start=None, actual_end=None,
+    )
+
+
+async def test_on_talk_end_runs_for_every_way_a_talk_ends(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    hook = HookRecorder()
+    ingests = IngestFactory(seconds=2.0)  # each source plays 2 s, then ends by itself
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5,
+                     on_talk_end=hook)
+
+    await worker.start(_agenda_talk("a"))
+    await run_for(clock, 0.5)
+    await worker.start(_agenda_talk("b"))  # replaces a
+    await run_for(clock, 0.5)
+    await worker.stop()  # ends b
+    await worker.start(_agenda_talk("c"))
+    await run_for(clock, 4.0)  # c's source ends: the talk ends by itself
+    await worker.drain_hooks()
+
+    assert [talk_id for talk_id, _, _ in hook.ended] == ["a", "b", "c"]
+    assert all(status == "done" and actual_end is not None for _, status, actual_end in hook.ended)
+    assert not _live_tasks()
+
+
+async def test_a_failing_on_talk_end_is_logged_and_breaks_nothing(db, caplog: pytest.LogCaptureFixture) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    hook = HookRecorder(fail=True)
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory(),
+                     on_talk_end=hook)
+
+    await worker.start(_agenda_talk("a"))
+    await run_for(clock, 0.5)
+    await worker.start(_agenda_talk("b"))
+    await run_for(clock, 0.5)
+    await worker.drain_hooks()
+
+    assert [talk_id for talk_id, _, _ in hook.ended] == ["a"]
+    assert worker.talk is not None and worker.talk.id == "b"  # the new talk runs anyway
+    assert "export exploded" in caplog.text
+    await worker.stop()
+    await worker.drain_hooks()
+
+
+async def test_the_hook_runs_in_the_background(db) -> None:
+    """stop() does not wait for a slow hook (the autopilot's tick must not)."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def slow(talk) -> None:
+        started.set()
+        await gate.wait()
+
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory(), on_talk_end=slow)
+    await worker.start(_agenda_talk("a"))
+    await run_for(clock, 0.5)
+
+    await asyncio.wait_for(worker.stop(), 5)
+    await asyncio.wait_for(started.wait(), 1)
+    gate.set()
+    await asyncio.wait_for(worker.drain_hooks(), 1)
+
+
+async def test_drain_hooks_cancels_a_hook_that_outlives_its_grace(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+
+    async def forever(talk) -> None:
+        await asyncio.Event().wait()
+
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory(), on_talk_end=forever)
+    await worker.start(None)
+    await run_for(clock, 0.5)
+    await worker.stop()
+
+    await asyncio.wait_for(worker.drain_hooks(timeout=0.05), 2)
+    assert not _live_tasks()
+
+
+async def test_reconnect_asks_the_running_relay_for_a_new_session(db, monkeypatch: pytest.MonkeyPatch) -> None:  # 9.4
+    from glosa.engines.relay import SessionRelay
+
+    calls: list[str] = []
+    real = SessionRelay.reconnect
+
+    async def spy(self, reason: str) -> None:
+        calls.append(reason)
+        await real(self, reason)
+
+    monkeypatch.setattr(SessionRelay, "reconnect", spy)
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, FAKE_LT)
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.reconnect("manual")  # nothing running: a no-op
+    assert calls == []
+
+    await worker.start(None)
+    await run_for(clock, 1.0)
+    await worker.reconnect("manual")
+    await run_for(clock, 1.0)
+
+    assert calls == ["manual"]
+    assert len(factory.configs) == 2  # a new engine session was opened
+    await worker.stop()

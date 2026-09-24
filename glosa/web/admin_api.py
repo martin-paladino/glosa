@@ -16,7 +16,23 @@
     ``slug`` -- they're equal today, but that's an implementation detail of
     ``create_app``, not a contract). ``start`` turns a room with no
     configured source (``RoomWorker.start()``'s ``ValueError``) into a 409
-    with a readable detail instead of a 500.
+    with a readable detail instead of a 500. Both switch the room to
+    ``manual`` first (Ruling 34), or the autopilot's next tick would undo
+    them.
+
+The autopilot's controls (Task 9, glosa/scheduler.py on
+``app.state.autopilot``); each replies ``{"status": "ok", "mode", "room":
+RoomStatus}``:
+
+  - ``POST .../rooms/{id}/mode`` ``{"mode": "auto"|"manual"}``: persisted;
+    back to ``auto`` ticks the room at once;
+  - ``POST .../rooms/{id}/start-talk`` ``{"talk_id"}``: end the current talk
+    and open that one (manual); 404 no such talk, 409 another room's talk,
+    a free session or no source;
+  - ``POST .../rooms/{id}/end-talk``: the room goes idle (manual);
+  - ``POST .../rooms/{id}/reconnect``: a new engine session, mode unchanged;
+  - ``GET /api/admin/rooms``: every room's id, name, mode, status, current
+    talk (``now``) and next agenda talk (``next``, free sessions aside).
 
 The agenda (Task 8), JSON only (the panel is Task 12's):
 
@@ -183,21 +199,106 @@ def logout(request: Request):
 # ---- room control -------------------------------------------------------------
 
 
+class ModeIn(BaseModel):
+    mode: Literal["auto", "manual"]
+
+
+class StartTalkIn(BaseModel):
+    talk_id: str
+
+
+@api_router.get("/rooms")
+async def list_rooms(request: Request) -> list[dict]:
+    """Every room with its mode, status, current talk and next agenda talk."""
+    autopilot = request.app.state.autopilot
+    rooms = []
+    for worker in _workers(request):
+        room_id = worker.room.id
+        nxt = await autopilot.next_talk(room_id)
+        rooms.append(
+            {
+                "id": room_id,
+                "name": worker.room.name,
+                "mode": autopilot.mode(room_id),
+                "status": asdict(worker.status()),
+                "now": worker.view()["now"],
+                "next": talk_json(nxt) if nxt is not None else None,
+            }
+        )
+    return rooms
+
+
 @api_router.post("/rooms/{room_id}/start")
 async def start_room(room_id: str, request: Request) -> dict:
+    """Start the room (its current talk again, or the free session). Takes
+    the room off the autopilot (Ruling 34)."""
     worker = _worker(request, room_id)
+    await request.app.state.autopilot.set_mode(room_id, "manual")
     try:
         await worker.start()
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"status": "ok", "room": asdict(worker.status())}
+    return _control_reply(request, worker)
 
 
 @api_router.post("/rooms/{room_id}/stop")
 async def stop_room(room_id: str, request: Request) -> dict:
+    """Stop the room. Takes it off the autopilot (Ruling 34)."""
     worker = _worker(request, room_id)
+    await request.app.state.autopilot.set_mode(room_id, "manual")
     await worker.stop()
-    return {"status": "ok", "room": asdict(worker.status())}
+    return _control_reply(request, worker)
+
+
+@api_router.post("/rooms/{room_id}/mode")
+async def set_room_mode(room_id: str, body: ModeIn, request: Request) -> dict:
+    """``auto`` or ``manual``, persisted. Back to ``auto``, the room is
+    ticked at once: the agenda rules again now, not up to 5 s later."""
+    worker = _worker(request, room_id)
+    autopilot = request.app.state.autopilot
+    await autopilot.set_mode(room_id, body.mode)
+    if body.mode == "auto":
+        await autopilot.tick(room_id)
+    return _control_reply(request, worker)
+
+
+@api_router.post("/rooms/{room_id}/start-talk")
+async def start_talk(room_id: str, body: StartTalkIn, request: Request) -> dict:
+    """Open an agenda talk now, ending the current one; the room goes manual.
+    404: no such talk; 409: another room's talk, a free session, or no
+    audio source."""
+    worker = _worker(request, room_id)
+    try:
+        await request.app.state.autopilot.start_talk(room_id, body.talk_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=f"no talk {body.talk_id!r}") from exc
+    return _control_reply(request, worker)
+
+
+@api_router.post("/rooms/{room_id}/end-talk")
+async def end_talk(room_id: str, request: Request) -> dict:
+    """End the room's talk now (the room goes idle and manual)."""
+    worker = _worker(request, room_id)
+    await request.app.state.autopilot.end_talk(room_id)
+    return _control_reply(request, worker)
+
+
+@api_router.post("/rooms/{room_id}/reconnect")
+async def reconnect_room(room_id: str, request: Request) -> dict:
+    """A new engine session for the running talk; the mode stays."""
+    worker = _worker(request, room_id)
+    await request.app.state.autopilot.reconnect(room_id)
+    return _control_reply(request, worker)
+
+
+def _control_reply(request: Request, worker: RoomWorker) -> dict:
+    return {
+        "status": "ok",
+        "mode": request.app.state.autopilot.mode(worker.room.id),
+        "room": asdict(worker.status()),
+    }
 
 
 # ---- agenda -------------------------------------------------------------------

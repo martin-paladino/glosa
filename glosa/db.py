@@ -179,6 +179,13 @@ class Database:
         )
         await self._run(lambda con: con.execute(sql, [row[c] for c in cols]))
 
+    async def set_room_mode(self, room_id: str, mode: str) -> None:
+        """Persist a room's autopilot mode ("auto" | "manual"); a room that
+        is not stored is left alone."""
+        if mode not in ("auto", "manual"):
+            raise ValueError(f"unknown room mode: {mode!r}")
+        await self._run(lambda con: con.execute("UPDATE rooms SET mode = ? WHERE id = ?", (mode, room_id)))
+
     async def get_rooms(self) -> list[Room]:
         rows = await self._run(lambda con: con.execute("SELECT * FROM rooms ORDER BY rowid").fetchall())
         return [

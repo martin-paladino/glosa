@@ -4,8 +4,9 @@ downstream on the text (glosa.text.translator).
 
 One instance is one Live API session, configured as
 ``inputAudioTranscription{mode: VERBATIM, languageCodes: [source_lang],
-customVocabulary: <up to 100 terms of cfg.vocabulary>}``. VERBATIM because
-SMART mode ignores the custom vocabulary. No response modality is needed.
+customVocabulary: <up to 100 terms of cfg.vocabulary>}``: stripped, and
+deduped ignoring case before the cap. VERBATIM because SMART mode ignores
+the custom vocabulary. No response modality is needed.
 
 What the server sends (probe of samples/es_clip.opus, 2026-09-24; the
 recording is samples/fixtures/tr_es.jsonl):
@@ -38,9 +39,10 @@ Events:
 Same contract as LiveTranslateEngine for the relay: ``connect()`` never
 raises (a failure comes out of ``events()`` as ``error`` then ``closed``);
 ``events()`` always ends with exactly one ``closed``; errors are classified
-the same way (402/payment stop, 1007/1008 hard unless the 1008 reason
-mentions GoAway, 429/5xx/network retryable) and nothing is an error after
-our own ``close()`` or on a normal close (1000). ``close()`` is idempotent
+by the same shared policy (``glosa.engines._gemini_live.classify_error``:
+402/payment stop, 1007/1008 hard unless the 1008 reason mentions GoAway,
+429/5xx/network retryable) and nothing is an error after our own
+``close()`` or on a normal close (1000). ``close()`` is idempotent
 and safe during the handshake; call it after ``closed``.
 
 Cost: priced at ``price_per_min`` per minute of audio actually sent (the
@@ -60,15 +62,7 @@ from google.genai import types
 from websockets.exceptions import ConnectionClosed
 
 from glosa.clock import Clock
-from glosa.engines.live_translate import (
-    _GOAWAY_ABORT,
-    _NON_RETRYABLE_WS,
-    _NORMAL_CLOSE,
-    _PAYMENT_HINTS,
-    AUDIO_MIME,
-    _duration_s,
-    _error_code,
-)
+from glosa.engines._gemini_live import AUDIO_MIME, NORMAL_CLOSE, classify_error, duration_s, error_code, vocabulary
 from glosa.models import AudioChunk, EngineConfig, EngineEvent
 
 log = logging.getLogger(__name__)
@@ -102,7 +96,7 @@ class TranscribeLiveEngine:
         self._usd_unreported = 0.0
 
     def _vocabulary(self) -> list[str] | None:
-        terms = list(dict.fromkeys(t.strip() for t in self.cfg.vocabulary if t.strip()))
+        terms = vocabulary(self.cfg.vocabulary)
         if len(terms) > MAX_VOCABULARY:
             log.warning(
                 "transcribe: %d vocabulary terms, only the first %d are sent", len(terms), MAX_VOCABULARY
@@ -181,7 +175,7 @@ class TranscribeLiveEngine:
                         for event in self._map_message(msg):
                             yield event
             except Exception as exc:
-                if not self._closing and _error_code(exc) != _NORMAL_CLOSE:
+                if not self._closing and error_code(exc) != NORMAL_CLOSE:
                     yield self._classify_error(exc)
         self._ended = True
         yield self._with_usage(EngineEvent(kind="closed", t_recv=self._clock.now()))
@@ -212,33 +206,15 @@ class TranscribeLiveEngine:
                 lang = final.language_code or self.cfg.source_lang
                 events.append(EngineEvent(kind="source_final", text=final.text or "", lang=lang, t_recv=now))
         if msg.go_away is not None:
-            time_left_s = _duration_s(msg.go_away.time_left)
+            time_left_s = duration_s(msg.go_away.time_left)
             events.append(EngineEvent(kind="go_away", t_recv=now, meta={"time_left_s": time_left_s}))
         if events:
             self._with_usage(events[0])
         return events
 
     def _classify_error(self, exc: BaseException) -> EngineEvent:
-        """Same policy as LiveTranslateEngine._classify_error."""
-        code = _error_code(exc)
-        reason = str(exc) or exc.__class__.__name__
-        if code == 402 or any(hint in reason.lower() for hint in _PAYMENT_HINTS):
-            meta: dict = {"code": 402, "retryable": False, "payment": True}
-        elif code in (429, 503) or 500 <= code < 600:
-            meta = {"code": code, "retryable": True}
-        elif code == _GOAWAY_ABORT and "goaway" in reason.lower():
-            meta = {"code": code, "retryable": True}
-        elif 400 <= code < 500 or code in _NON_RETRYABLE_WS:
-            meta = {"code": code, "retryable": False}
-        else:  # 1011 internal error, 1006 abnormal closure, 0 = network/unknown
-            meta = {"code": code, "retryable": True}
-        event = EngineEvent(
-            kind="error",
-            text=f"{exc.__class__.__name__}: {reason}",
-            t_recv=self._clock.now(),
-            meta=meta,
-        )
-        return self._with_usage(event)
+        """glosa.engines._gemini_live.classify_error, carrying the usage."""
+        return self._with_usage(classify_error(exc, self._clock.now()))
 
     def _with_usage(self, event: EngineEvent) -> EngineEvent:
         if self._usd_unreported > 0:

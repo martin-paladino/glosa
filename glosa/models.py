@@ -36,6 +36,15 @@ class VadEvent:
 class EngineEvent:
     """One event emitted by an Engine (Live Translate, transcribe-live, fake, ...).
 
+    Text kinds:
+      - "source_delta": source-language text. Normally APPENDED to the open
+        segment (Live Translate). With meta["interim"] = True (transcribe-live)
+        its text is the open segment's WHOLE text so far: it REPLACES the
+        open segment, it is not appended.
+      - "source_final": the open segment's final text (it replaces and closes
+        it); "" means it was not speech after all.
+      - "target_delta": translated text, appended.
+
     meta conventions:
       - kind == "error": {"code": int, "retryable": bool}, plus
         {"payment": True} when credit is exhausted (a 402-style stop).

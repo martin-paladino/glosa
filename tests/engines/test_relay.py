@@ -781,6 +781,21 @@ async def test_end_utterance_reaches_only_the_confirmed_active_session(steady: P
     assert standby.end_utterance_at == []
 
 
+async def test_after_a_rotation_end_utterance_reaches_only_the_new_active_session(steady: Path) -> None:
+    h = Harness([Plan(steady)])
+    await h.start()
+    await h.run_until(530, vad=talking(0, pauses=[520]))  # standby at 510 s, switch at the 520 s pause
+    old, new = h.engines
+    assert switch_time(old) == pytest.approx(520.0)  # the relay's own end_utterance on retiring it
+
+    await h.relay.end_utterance()  # the room's call on its next pause
+    await settle()
+
+    assert old.end_utterance_at == [pytest.approx(520.0)]  # nothing more for the draining session
+    assert new.end_utterance_at == [pytest.approx(530.0)]
+    await h.stop()
+
+
 # ---------------------------------------------------------------- event stream
 
 

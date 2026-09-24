@@ -16,8 +16,10 @@ Contract for the relay (T3):
   ``target_delta``, ``go_away`` with ``meta["time_left_s"]``) and always ends
   with exactly one ``closed``. An exception ends the stream with ``error``
   (``meta = {"code", "retryable"}``, plus ``"payment": True`` for credit
-  exhaustion) and then ``closed``. Nothing is reported as an error after our
-  own ``close()`` or on a normal websocket close (1000).
+  exhaustion; the policy is ``glosa.engines._gemini_live.classify_error``,
+  shared with the transcribe engine) and then ``closed``. Nothing is
+  reported as an error after our own ``close()`` or on a normal websocket
+  close (1000).
 - Call ``close()`` after observing ``closed`` (or when retiring the engine)
   to release the connection. ``close()`` is safe at any time, including
   while ``connect()`` is still in its handshake.
@@ -33,28 +35,16 @@ import contextlib
 from typing import Any, AsyncIterator
 
 from google import genai
-from google.genai import errors, types
+from google.genai import types
 from websockets.exceptions import ConnectionClosed
 
 from glosa.clock import Clock
+from glosa.engines._gemini_live import AUDIO_MIME, NORMAL_CLOSE, classify_error, duration_s, error_code
 from glosa.models import AudioChunk, EngineConfig, EngineEvent
 
 MODEL = "gemini-3.5-live-translate-preview"
-AUDIO_MIME = "audio/pcm;rate=16000"
 # Measured in T0.5: 975 prompt tokens for 40 s of audio, 3225 for 130 s.
 AUDIO_TOKENS_PER_S = 25.0
-
-_NORMAL_CLOSE = 1000
-# Websocket close codes that won't get better by retrying: 1007 invalid
-# argument, 1008 policy violation (model not found / not supported for
-# bidiGenerateContent, config rejected). Exception: a 1008 whose reason
-# mentions GoAway is the server killing a session kept past its GoAway
-# (observed at 591 s in the 25-min T0.5 run); a fresh session works.
-_NON_RETRYABLE_WS = {1007, 1008}
-_GOAWAY_ABORT = 1008
-# Prepaid billing reports exhausted credit as a 429 RESOURCE_EXHAUSTED with
-# this wording; it must stop like a 402, not retry like a rate limit.
-_PAYMENT_HINTS = ("prepayment", "credits are depleted", "payment required", "payment_required")
 
 
 class LiveTranslateEngine:
@@ -144,7 +134,7 @@ class LiveTranslateEngine:
                         for event in self._map_message(msg):
                             yield event
             except Exception as exc:
-                if not self._closing and _error_code(exc) != _NORMAL_CLOSE:
+                if not self._closing and error_code(exc) != NORMAL_CLOSE:
                     yield self._classify_error(exc)
         yield self._with_usage(EngineEvent(kind="closed", t_recv=self._clock.now()))
 
@@ -167,7 +157,7 @@ class LiveTranslateEngine:
                 lang = tgt.language_code or self.cfg.target_lang
                 events.append(EngineEvent(kind="target_delta", text=tgt.text, lang=lang, t_recv=now))
         if msg.go_away is not None:
-            time_left_s = _duration_s(msg.go_away.time_left)
+            time_left_s = duration_s(msg.go_away.time_left)
             events.append(EngineEvent(kind="go_away", t_recv=now, meta={"time_left_s": time_left_s}))
         if msg.usage_metadata is not None and msg.usage_metadata.prompt_token_count:
             usd = msg.usage_metadata.prompt_token_count / AUDIO_TOKENS_PER_S / 60 * self._price_per_min
@@ -178,25 +168,8 @@ class LiveTranslateEngine:
         return events
 
     def _classify_error(self, exc: BaseException) -> EngineEvent:
-        code = _error_code(exc)
-        reason = str(exc) or exc.__class__.__name__
-        if code == 402 or any(hint in reason.lower() for hint in _PAYMENT_HINTS):
-            meta: dict = {"code": 402, "retryable": False, "payment": True}
-        elif code in (429, 503) or 500 <= code < 600:
-            meta = {"code": code, "retryable": True}
-        elif code == _GOAWAY_ABORT and "goaway" in reason.lower():
-            meta = {"code": code, "retryable": True}
-        elif 400 <= code < 500 or code in _NON_RETRYABLE_WS:
-            meta = {"code": code, "retryable": False}
-        else:  # 1011 internal error, 1006 abnormal closure, 0 = network/unknown
-            meta = {"code": code, "retryable": True}
-        event = EngineEvent(
-            kind="error",
-            text=f"{exc.__class__.__name__}: {reason}",
-            t_recv=self._clock.now(),
-            meta=meta,
-        )
-        return self._with_usage(event)
+        """glosa.engines._gemini_live.classify_error, carrying the usage."""
+        return self._with_usage(classify_error(exc, self._clock.now()))
 
     def _with_usage(self, event: EngineEvent) -> EngineEvent:
         if self._usd_unreported > 0:
@@ -204,17 +177,3 @@ class LiveTranslateEngine:
             self._usd_unreported = 0.0
         return event
 
-
-def _error_code(exc: BaseException) -> int:
-    if isinstance(exc, errors.APIError):  # includes websocket closes, see google.genai.live
-        return exc.code if isinstance(exc.code, int) else 0
-    if isinstance(exc, ConnectionClosed):
-        return exc.rcvd.code if exc.rcvd is not None else 1006
-    return 0
-
-
-def _duration_s(value: str | None) -> float:
-    """Protobuf Duration as JSON ("50s", "1.5s") -> seconds; unknown -> 0."""
-    if not value:
-        return 0.0
-    return float(value.rstrip("s"))

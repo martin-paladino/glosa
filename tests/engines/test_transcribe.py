@@ -298,6 +298,16 @@ async def test_vocabulary_drops_blanks_and_duplicates_without_a_warning(caplog: 
     assert caplog.text == ""
 
 
+async def test_vocabulary_dedupes_ignoring_case_before_the_cap(caplog: pytest.LogCaptureFixture) -> None:
+    terms = [f"term{i}" for i in range(80)] + [f"TERM{i}" for i in range(80)]  # 160 entries, 80 terms
+
+    with caplog.at_level(logging.WARNING, logger="glosa.engines.transcribe"):
+        _, live = await _connected(EngineConfig(kind="glossary", source_lang="es", target_lang=None, vocabulary=terms))
+
+    assert live.calls[0]["config"].input_audio_transcription.custom_vocabulary == terms[:80]
+    assert caplog.text == ""  # nothing was cut
+
+
 async def test_no_vocabulary_sends_none() -> None:
     _, live = await _connected(EngineConfig(kind="glossary", source_lang="en", target_lang=None))
     tr = live.calls[0]["config"].input_audio_transcription
@@ -359,46 +369,15 @@ async def test_price_per_min_is_configurable_and_defaults_to_0_009() -> None:
 # -------------------------------------------------------------------- errors
 
 
-@pytest.mark.parametrize(
-    ("exc", "expected_meta"),
-    [
-        (errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}), {"code": 429, "retryable": True}),
-        (errors.ServerError(503, {"error": {"code": 503, "status": "UNAVAILABLE"}}), {"code": 503, "retryable": True}),
-        (errors.ClientError(402, {"error": {"code": 402, "message": "Payment required"}}), {"code": 402, "retryable": False, "payment": True}),
-        (errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT"}}), {"code": 400, "retryable": False}),
-        (
-            errors.ClientError(429, {"error": {"code": 429, "message": "Your prepayment credits are depleted."}}),
-            {"code": 402, "retryable": False, "payment": True},
-        ),
-        (errors.APIError(1011, "Internal error encountered.", None), {"code": 1011, "retryable": True}),
-        (errors.APIError(1007, "Request contains an invalid argument.", None), {"code": 1007, "retryable": False}),
-        (
-            errors.APIError(
-                1008,
-                "Connection aborted because the client failed to close the connection after receiving"
-                " a GoAway signal once the session durat",
-                None,
-            ),
-            {"code": 1008, "retryable": True},
-        ),
-        (
-            errors.APIError(
-                1008,
-                "models/gemini-x is not found for API version v1beta, or is not supported for bidiGenerateContent.",
-                None,
-            ),
-            {"code": 1008, "retryable": False},
-        ),
-        (ConnectionResetError("reset by peer"), {"code": 0, "retryable": True}),
-    ],
-    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-other", "network"],
-)
-def test_classify_error_like_live_translate(exc: Exception, expected_meta: dict) -> None:
-    ev = _engine(FakeClock(start=3.0))._classify_error(exc)
-    assert ev.kind == "error"
-    assert ev.meta == expected_meta
-    assert ev.t_recv == 3.0
-    assert ev.text
+def test_classify_error_like_live_translate_uses_the_shared_policy_and_carries_the_usage() -> None:
+    """The cases are in tests/engines/test_gemini_live.py (one policy for both engines)."""
+    engine = _engine(FakeClock(start=3.0))
+    engine._usd_unreported = 0.25
+    ev = engine._classify_error(errors.APIError(1011, "Internal error encountered.", None))
+    assert (ev.kind, ev.t_recv) == ("error", 3.0)
+    assert ev.meta == {"code": 1011, "retryable": True, "usd": 0.25}
+    assert ev.text == "APIError: 1011 None. Internal error encountered."
+
 
 
 # -------------------------------------------------------------- session loop

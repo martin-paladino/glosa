@@ -96,6 +96,10 @@
           <button class="control" type="button" data-action="size" data-step="-1" aria-label="{{ tr('smaller') }}" title="{{ tr('smaller') }} (−)">A−</button>
           <button class="control" type="button" data-action="size" data-step="1" aria-label="{{ tr('larger') }}" title="{{ tr('larger') }} (+)">A+</button>
         </div>
+        <button class="control" type="button" data-action="theme" aria-label="{{ tr('theme').format(name=tr('theme_system')) }}" title="{{ tr('theme').format(name=tr('theme_system')) }}">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg>
+          <span class="control__word">{{ tr("theme_button") }}</span>
+        </button>
         <button class="control control--fullscreen" type="button" data-action="fullscreen" aria-label="{{ tr('fullscreen') }} (F)" title="{{ tr('fullscreen') }} (F)">
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>

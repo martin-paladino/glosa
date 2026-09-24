@@ -34,12 +34,19 @@ class LatencyTracker:
 
     Delay = the last target_delta (on_output) received before a gap of
     >=0.7s without further output, minus the pause (on_pause) that preceded
-    that utterance. The gap is detected when a *later* on_output() call
-    arrives after that pause - a pure, event-driven tracker has no clock of
-    its own to notice a gap while nothing is happening, so an utterance
-    that never resumes (e.g. the very last one in a talk) is only
-    finalized once something else comes in after it; wiring an end-of-talk
-    flush is left to the caller (a later task).
+    that utterance's output. Each pause is consumed by exactly one
+    measurement: a pause becomes the anchor for the next output stretch
+    only once (on the first on_output() after it), and an output stretch
+    that starts with no unconsumed pause available does not produce a
+    measurement at all - it is simply not attributable to any utterance.
+
+    The >=0.7s gap can be noticed two ways:
+      - on_output(): when a *later* output arrives after the gap has
+        already passed (the common case while a room stays busy);
+      - tick(t): RoomWorker calls this periodically (and at end of talk)
+        so a stretch still gets closed even if no further output ever
+        arrives - otherwise the last utterance in a talk would never be
+        finalized.
 
     p50() is computed only over closed (finalized) samples whose closing
     time falls within the last window_s seconds, relative to the most
@@ -48,14 +55,14 @@ class LatencyTracker:
 
     def __init__(self, window_s: float = 300.0) -> None:
         self.window_s = window_s
-        self._last_pause: float | None = None
+        self._unconsumed_pause: float | None = None
         self._pending_pause: float | None = None
         self._last_output: float | None = None
         self._samples: list[tuple[float, float]] = []  # (closed_at, latency_s)
         self._latest_t: float = 0.0
 
     def on_pause(self, t: float) -> None:
-        self._last_pause = t
+        self._unconsumed_pause = t
         self._latest_t = max(self._latest_t, t)
 
     def on_output(self, t: float) -> None:
@@ -64,11 +71,30 @@ class LatencyTracker:
         if self._last_output is not None and t - self._last_output >= _OUTPUT_GAP_S:
             self._close_stretch()
 
-        if self._pending_pause is None:
-            self._pending_pause = self._last_pause
-
+        self._arm_pending()
         self._last_output = t
         self._prune()
+
+    def tick(self, t: float) -> None:
+        """Periodic/end-of-talk check: close the pending measurement if t is
+        already >=0.7s past the last output, even though no further output
+        has arrived to notice that gap on its own. Idempotent - safe to
+        call repeatedly (e.g. once a second) and a no-op once nothing is
+        pending or the gap hasn't been reached yet.
+        """
+        self._latest_t = max(self._latest_t, t)
+        if self._last_output is not None and t - self._last_output >= _OUTPUT_GAP_S:
+            self._close_stretch()
+        self._prune()
+
+    def _arm_pending(self) -> None:
+        """Attach the most recent not-yet-used pause to the in-progress
+        measurement, if there is one and no measurement is already open.
+        Consumes _unconsumed_pause so it can back at most one measurement.
+        """
+        if self._pending_pause is None and self._unconsumed_pause is not None:
+            self._pending_pause = self._unconsumed_pause
+            self._unconsumed_pause = None
 
     def _close_stretch(self) -> None:
         if self._pending_pause is not None and self._last_output is not None:
@@ -79,6 +105,12 @@ class LatencyTracker:
     def _prune(self) -> None:
         cutoff = self._latest_t - self.window_s
         self._samples = [(t, latency) for t, latency in self._samples if t >= cutoff]
+
+    def samples(self) -> list[tuple[float, float]]:
+        """Closed (finalized) samples currently in the window, as
+        (closed_at, latency_s) pairs - exposed mainly for tests/debugging.
+        """
+        return list(self._samples)
 
     def p50(self) -> float | None:
         values = sorted(latency for _t, latency in self._samples)
@@ -133,13 +165,11 @@ class RoomHealth:
     room signals (RoomWorker/the relay/VAD are responsible for producing
     those signals; this only applies the truth table).
 
-    Note: the spec's yellow rules also mention "hubo una reconexion en los
-    ultimos 60s" (a reconnection in the last 60s). That needs tracking
-    reconnection history over time, which isn't part of this pure
-    function's given signature (latency_p50, quality_avg, level_db,
-    stall_active, source_down, payment_blocked, talk_active) - it belongs
-    to whatever stateful component calls evaluate() once wired up
-    (RoomWorker, a later task), not to this pure classifier.
+    Precedence: idle (no talk) > red (stall_active / source_down /
+    payment_blocked) > yellow (latency, quality, level+talk_active, or a
+    recent reconnect) > green. Red always wins over a recent reconnect -
+    an active stall/source-down/payment-blocked condition is worse than
+    "merely degraded".
     """
 
     @staticmethod
@@ -151,6 +181,7 @@ class RoomHealth:
         source_down: bool,
         payment_blocked: bool,
         talk_active: bool,
+        recent_reconnect: bool = False,
     ) -> tuple[Literal["green", "yellow", "red", "idle"], str]:
         if not talk_active:
             return "idle", "no talk in progress"
@@ -171,5 +202,7 @@ class RoomHealth:
                 "yellow",
                 f"level {level_db:.1f}dB below {_LEVEL_YELLOW_DB:.0f}dB with active talk",
             )
+        if recent_reconnect:
+            return "yellow", "degraded: recent reconnect in the last 60s"
 
         return "green", "ok"

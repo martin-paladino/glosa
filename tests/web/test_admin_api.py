@@ -71,10 +71,18 @@ def _worker(room_id: str, slug: str, name: str, *, now: dict | None = None, stat
     return worker
 
 
+def _autopilot() -> MagicMock:
+    autopilot = MagicMock()
+    autopilot.set_mode = AsyncMock()
+    autopilot.mode.return_value = "manual"
+    return autopilot
+
+
 def _make_app(workers: dict | None = None, settings: Settings | None = None) -> FastAPI:
     app = FastAPI()
     app.state.settings = settings if settings is not None else _settings()
     app.state.workers = workers if workers is not None else {}
+    app.state.autopilot = _autopilot()
     app.state.admin_secret = new_admin_secret()
     app.state.session_epoch = 0
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -165,7 +173,8 @@ def test_admin_page_loads_the_design_system_and_its_own_js() -> None:
 
 def test_start_calls_the_worker_and_reports_its_status() -> None:
     worker = _worker("r1", "r1", "Sala Uno", status=_status(state="green", talk_id="free-r1", cost_usd=0.01))
-    client = _client(_make_app(workers={"r1": worker}))
+    app = _make_app(workers={"r1": worker})
+    client = _client(app)
 
     response = client.post("/api/admin/rooms/r1/start", headers=CSRF)
 
@@ -173,17 +182,22 @@ def test_start_calls_the_worker_and_reports_its_status() -> None:
     worker.start.assert_awaited_once_with()
     assert response.json()["room"]["state"] == "green"
     assert response.json()["room"]["talk_id"] == "free-r1"
+    # Ruling 34: an operator's start takes the room off the autopilot
+    app.state.autopilot.set_mode.assert_awaited_once_with("r1", "manual")
+    assert response.json()["mode"] == "manual"
 
 
 def test_stop_calls_the_worker_and_reports_its_status() -> None:
     worker = _worker("r1", "r1", "Sala Uno")
-    client = _client(_make_app(workers={"r1": worker}))
+    app = _make_app(workers={"r1": worker})
+    client = _client(app)
 
     response = client.post("/api/admin/rooms/r1/stop", headers=CSRF)
 
     assert response.status_code == 200
     worker.stop.assert_awaited_once_with()
     worker.start.assert_not_awaited()
+    app.state.autopilot.set_mode.assert_awaited_once_with("r1", "manual")  # Ruling 34
 
 
 def test_start_translates_a_missing_source_into_a_409() -> None:

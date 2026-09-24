@@ -114,6 +114,27 @@ def test_engine_mode_fake_and_room_language_from_yaml(env_file: Path, tmp_path: 
     assert settings.rooms[0].language == "es"
 
 
+def test_room_agenda_names_and_the_default_english_engine(env_file: Path, tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "default_engine_en: glossary\n"
+        "rooms:\n"
+        "  - id: main\n"
+        "    name: Main Stage\n"
+        "    agenda_names: [gran-sala, Gran sala]\n"
+        "  - id: side\n"
+        "    name: Side\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings.load(env_path=str(env_file), config_path=str(config))
+
+    assert settings.rooms[0].agenda_names == ["gran-sala", "Gran sala"]
+    assert settings.rooms[1].agenda_names == []
+    assert settings.default_engine_en == "glossary"
+    assert Settings.load(env_path=str(env_file), config_path=str(tmp_path / "none.yaml")).default_engine_en == "fast"
+
+
 def test_engine_mode_rejects_unknown_values(env_file: Path, tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text("engine_mode: turbo\n", encoding="utf-8")

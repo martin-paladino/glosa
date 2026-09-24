@@ -2,8 +2,8 @@
 into glosa.models.Talk objects that drive the autopilot (glosa/scheduler.py).
 
 This package holds only the pure parsing logic (glosa/agenda/csv_import.py,
-glosa/agenda/nerdearla_import.py). The admin endpoints and edit UI that
-consume these parsers are built later, once the DB and web app exist.
+glosa/agenda/nerdearla_import.py). The admin endpoints that import and edit
+the agenda are in glosa/web/admin_api.py.
 """
 
 from __future__ import annotations

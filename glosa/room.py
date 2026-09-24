@@ -55,6 +55,13 @@ Free session (MVP, no agenda)
     ``free-<room id>-<YYYYmmddTHHMMSS>`` in the event timezone (Ruling 27),
     so exports never mix runs; its ``start`` is in that timezone too.
 
+Talk end hook
+    ``on_talk_end(talk)`` (optional) runs as a background task each time a
+    talk ends, whatever ended it: ``stop()``, a ``start()`` that replaces
+    it, or its source finishing. The talk comes ``done``, with its
+    ``actual_end``. A failing hook is logged and changes nothing; ``stop()``
+    does not wait for it (``drain_hooks()`` does, for shutdown).
+
 Clock
     Timers (idle close, status, cost batching) run on ``clock.sleep``, so
     the clock must really wait: RealClock, or a test clock the test drives.
@@ -79,7 +86,7 @@ from glosa.captions.assembler import CaptionAssembler
 from glosa.captions.bus import CaptionBus
 from glosa.clock import Clock
 from glosa.config import Settings
-from glosa.db import Database
+from glosa.db import FREE_TALK_PREFIX, Database
 from glosa.engines.base import EngineFactory
 from glosa.engines.relay import SessionRelay
 from glosa.metrics import LatencyTracker, RoomHealth
@@ -95,9 +102,12 @@ LEVEL_WINDOW_CHUNKS = 50  # health uses the loudest chunk of the last 5 s
 RECENT_RECONNECT_S = 60.0
 CONSUMER_GRACE_S = 10.0
 FREE_SESSION_TITLE = "Sesión libre"
+FREE_SESSION_PREFIX = FREE_TALK_PREFIX  # free session ids: free-<room id>-<YYYYmmddTHHMMSS>
 FREE_SESSION_HOURS = 12
 MIN_LEVEL_DB = -96.0
 SILENCE = bytes(CHUNK_BYTES)
+# A Talk's agenda fields (the admin can edit them); the rest is runtime state.
+AGENDA_FIELDS = ("title", "speakers", "language", "targets", "engine", "start", "end", "abstract", "tags", "glossary")
 COST_COMPONENT = "live_translate"
 
 
@@ -109,6 +119,14 @@ class Ingest(Protocol):
 
 
 IngestFactory = Callable[[str, str, bool, Clock], Ingest]
+# Called, as a background task, with each talk that ends (Task 11: exports).
+TalkEndHook = Callable[[Talk], Awaitable[None]]
+
+
+def is_free_talk(talk_id: str) -> bool:
+    """Whether ``talk_id`` is a free session's (``RoomWorker.free_talk()``),
+    not an agenda talk: the agenda and the autopilot ignore those."""
+    return talk_id.startswith(FREE_SESSION_PREFIX)
 
 
 def target_lang(language: str, targets: list[str]) -> str:
@@ -188,6 +206,7 @@ class RoomWorker:
         ingest_factory: IngestFactory = AudioIngest,
         realtime: bool = True,
         tail_s: float = TAIL_S,
+        on_talk_end: TalkEndHook | None = None,
     ) -> None:
         self.room = room
         self._settings = settings
@@ -215,6 +234,8 @@ class RoomWorker:
         self._cost_usd = 0.0
         self._lock = asyncio.Lock()
         self._aux: set[asyncio.Task] = set()
+        self._on_talk_end = on_talk_end
+        self._hooks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------ public API
 
@@ -256,6 +277,27 @@ class RoomWorker:
             self._source_down = None
             run.audio = self._spawn(self._audio_loop(run, "file", path, True), "audio")
             await self._log("info", "source_change", f"playing file {path}")
+
+    async def reconnect(self, reason: str) -> None:
+        """The admin's "Reconectar": replace the running engine session now
+        (``SessionRelay.reconnect(reason)``; also lifts a halted relay). A
+        no-op when no talk is running."""
+        run = self._run
+        if run is not None:
+            await run.relay.reconnect(reason)
+
+    async def drain_hooks(self, timeout: float | None = None) -> None:
+        """Wait for the ``on_talk_end`` hooks still running; after
+        ``timeout`` s, cancel the rest. For shutdown: ``stop()`` itself never
+        waits for them."""
+        pending = set(self._hooks)
+        if not pending:
+            return
+        _, late = await asyncio.wait(pending, timeout=timeout)
+        for task in late:
+            log.error("room %s: talk-end hook still running after %s s: cancelled", self.room.id, timeout)
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
     def langs(self) -> list[str]:
         if self.talk is not None:
@@ -322,7 +364,7 @@ class RoomWorker:
     def free_talk(self) -> Talk:
         """A new free session (Ruling 27: one id per run)."""
         now = self._clock.wall().astimezone(self._tz)
-        base = f"free-{self.room.id}-{now:%Y%m%dT%H%M%S}"
+        base = f"{FREE_SESSION_PREFIX}{self.room.id}-{now:%Y%m%dT%H%M%S}"
         talk_id, n = base, 2
         while talk_id in self._free_ids:  # two runs within one second
             talk_id, n = f"{base}-{n}", n + 1
@@ -357,6 +399,8 @@ class RoomWorker:
         if self.talk is not None and (talk is None or talk.id != self.talk.id):
             await self._end_talk()
         talk = talk or self.talk or self.free_talk()
+        if talk is self.talk:  # the running talk again: an admin may have edited it since
+            await self._reload_agenda_fields(talk)
         wall = self._clock.wall()
         if talk.actual_start is None:
             talk.actual_start = wall
@@ -390,6 +434,16 @@ class RoomWorker:
         run.audio = self._spawn(self._audio_loop(run, source_type, source_url, realtime), "audio")
         log.info("room %s: talk %s started (%s -> %s)", self.room.id, talk.id, talk.language, target)
         await self._log("info", "talk_start", f"{talk.id}: {talk.title} ({talk.language} -> {target})")
+
+    async def _reload_agenda_fields(self, talk: Talk) -> None:
+        """Take ``talk``'s agenda fields from the database, so the insert
+        that (re)starts it never writes an out-of-date copy back over an
+        admin's edit (glosa/web/admin_api.py PUT /api/admin/talks)."""
+        stored = await self._db_call(self._db.get_talk(talk.id))
+        if stored is None:
+            return
+        for name in AGENDA_FIELDS:
+            setattr(talk, name, getattr(stored, name))
 
     async def _teardown(self, run: _Run) -> None:
         """Stop the pipeline of ``run``: audio, relay, event consumer, ticker.
@@ -435,6 +489,16 @@ class RoomWorker:
             self._bus.publish(self.room.id, lang, "talk", data=ended)
         log.info("room %s: talk %s ended", self.room.id, talk.id)
         await self._log("info", "talk_end", talk.id)
+        if self._on_talk_end is not None:
+            task = self._spawn(self._run_hook(self._on_talk_end, talk), "talk-end")
+            self._hooks.add(task)
+            task.add_done_callback(self._hooks.discard)
+
+    async def _run_hook(self, hook: TalkEndHook, talk: Talk) -> None:
+        try:
+            await hook(talk)
+        except Exception:
+            log.exception("room %s: talk-end hook failed for %s", self.room.id, talk.id)
 
     async def _source_ended(self, run: _Run, audio: asyncio.Task | None, error: str | None) -> None:
         async with self._lock:

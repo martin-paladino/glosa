@@ -49,6 +49,39 @@ Secrets live only in `.env` (gitignored) and are read from that file directly, n
 - **Admin** (`/admin`): log in with `ADMIN_PASSWORD`, see every room's state and current talk, start/stop each one. (A fuller production console — audio levels, quality, cost, an event log — lands in a later milestone; this is the minimum needed to run the MVP.)
 - **Docker**: `docker-compose.yml` builds the same app, mounts `.env` and persists `data/` (the SQLite database: agenda, captions, cost) across restarts.
 
+## Agenda & autopilot
+
+Load the event's agenda once and the rooms follow it. Every endpoint below needs the admin session cookie (log in at `/admin`) and the `X-Glosa-Admin: 1` header.
+
+**Import** with `POST /api/admin/agenda/import` (multipart form):
+
+- `file`: a CSV or Nerdearla's sessions JSON, **or** `url`: the server fetches it (http/https only), e.g. `https://backstage.nerdearla.com/api/sessions/?event_id=<uuid>`;
+- `format` (optional): `csv` or `nerdearla`, guessed from the name or the content;
+- `room_map` (optional): JSON `{"agenda room name": "room id"}`. By default a talk goes to the room whose `id`, `name` or `agenda_names` (config.yaml) matches its room.
+
+```bash
+curl -b 'glosa_admin=<cookie>' -H 'X-Glosa-Admin: 1' -F file=@agenda.example.csv http://localhost:8000/api/admin/agenda/import
+# {"imported": 5, "skipped": [], "removed": []}
+```
+
+The CSV columns are those of `agenda.example.csv`: `sala, inicio, fin, titulo, speakers, idioma, destinos, motor, abstract, tags, glosario`. Times are local to `timezone` unless they carry an offset; `speakers`, `destinos`, `tags` and `glosario` are `;`-separated; `idioma` is `es` or `en`; a blank `motor` means `glossary` for Spanish and `default_engine_en` for English; a glossary entry is `Term` (kept as is) or `term=translation`. A malformed row rejects the whole file with its row number. Importing again updates the talks that are still scheduled and never touches one that is live or done. It also drops, for each room and day the new file covers, the scheduled talks it no longer lists (cancelled, or re-titled or moved, which changes a CSV talk's id); they come back in `removed`.
+
+**Browse and edit:** `GET /api/admin/talks?room=<id>&day=YYYY-MM-DD` (default: today), `GET /api/admin/talks/<id>`, `PUT /api/admin/talks/<id>` with any of `title, speakers, language, targets, engine, start, end, abstract, tags, glossary` (a live talk only takes `title`, `targets` and `glossary`; new targets apply the next time the talk starts), and `DELETE /api/admin/talks/<id>` (scheduled talks only).
+
+**Autopilot.** Each room is in `auto` (the default) or `manual` mode, stored in the database so it survives a restart. In `auto`, a room with agenda talks today follows the clock: each talk opens a minute before its start and closes at its end (when the next one's minute of lead arrives first, the current one closes then), and between talks the room is idle. If the operator opened the next talk early and then hands the room back to `auto`, that talk keeps going through its slot. A room with no talks today keeps its free session. In `manual`, the autopilot leaves the room alone.
+
+After a restart, an `auto` room reopens the talk the agenda says is on, and a `manual` room resumes the talk it was running when the server died (other manual rooms stay idle, with no free session). Known limitation: which talks already ended inside their slot is remembered only in memory, so after a restart a talk that was ended early (say, the speaker finished ahead of time) reopens if its slot is still on; switch the room to `manual` if that happens.
+
+| Endpoint (`POST /api/admin/rooms/<id>/...`) | What it does |
+|---|---|
+| `mode` `{"mode": "auto"\|"manual"}` | Switch modes. Back to `auto`, the room follows the agenda again right away. |
+| `start-talk` `{"talk_id": "..."}` | End the current talk and open this one now. The room goes `manual`. |
+| `end-talk` | End the current talk; the room goes idle and `manual`. |
+| `reconnect` | Open a new engine session for the running talk (the mode stays). |
+| `start` / `stop` | Start (free session or current talk) or stop the room. The room goes `manual`. |
+
+`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk.
+
 ## How it scales
 
 - **One instance comfortably handles about 10-20 rooms captioned at once.** The bottleneck is the number of concurrent Gemini Live sessions and their network I/O (each room keeps 1-2 sessions open for the session-handoff overlap), not CPU: ffmpeg, voice detection and segmentation are cheap per room.

@@ -8,12 +8,13 @@ auditorio) and 1 English (gran-sala).
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
 
 from glosa.agenda import AgendaError
-from glosa.agenda.nerdearla_import import parse_nerdearla
+from glosa.agenda.nerdearla_import import parse_nerdearla, parse_nerdearla_report
 
 FIXTURE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "nerdearla_sessions.json"
 ROOM_MAP = {"gran-sala": "main", "auditorio": "track-2"}
@@ -150,3 +151,70 @@ def test_missing_title_raises_agenda_error() -> None:
 
     assert exc_info.value.row == 1
     assert "title" in exc_info.value.reason
+
+
+def test_report_lists_a_skipped_session_for_an_unmapped_room() -> None:
+    data = _fixture()  # auditorio session (1250744) has no entry below
+
+    talks, skipped = parse_nerdearla_report(data, {"gran-sala": "main"}, tz="America/Argentina/Buenos_Aires")
+
+    assert {t.id for t in talks} == {"1341066", "1286278"}
+    assert len(skipped) == 1
+    entry = skipped[0]
+    assert entry.source_id == "1250744"
+    assert entry.title == "Cuando mi Agente Perdió la Paciencia: Seguridad en IA"
+    assert "unmapped room" in entry.reason
+    assert "auditorio" in entry.reason
+
+
+def test_report_lists_a_skipped_session_for_an_unsupported_language() -> None:
+    data = _fixture()
+    data["sessions"].append(
+        {
+            "id": "9999999",
+            "title": "Almuerzo / Lunch break",
+            "description": "",
+            "tags": "",
+            "room": "gran-sala",
+            "location_name": "Gran sala",
+            "start": "2026-09-24 12:50",
+            "end": "2026-09-24 13:30",
+            "language": None,
+            "speakers": [],
+        }
+    )
+
+    talks, skipped = parse_nerdearla_report(data, ROOM_MAP, tz="America/Argentina/Buenos_Aires")
+
+    assert len(talks) == 3
+    assert len(skipped) == 1
+    entry = skipped[0]
+    assert entry.source_id == "9999999"
+    assert entry.title == "Almuerzo / Lunch break"
+    assert "unsupported language" in entry.reason
+    assert "None" in entry.reason
+
+
+def test_parse_nerdearla_logs_one_warning_when_sessions_are_skipped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    data = _fixture()  # auditorio session is unmapped below -> 1 skip
+
+    with caplog.at_level(logging.WARNING, logger="glosa.agenda.nerdearla_import"):
+        talks = parse_nerdearla(data, {"gran-sala": "main"}, tz="America/Argentina/Buenos_Aires")
+
+    assert {t.id for t in talks} == {"1341066", "1286278"}
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "skipped 1 of 3" in warnings[0].getMessage()
+    assert "unmapped room" in warnings[0].getMessage()
+
+
+def test_parse_nerdearla_logs_nothing_when_nothing_is_skipped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="glosa.agenda.nerdearla_import"):
+        talks = parse_nerdearla(_fixture(), ROOM_MAP, tz="America/Argentina/Buenos_Aires")
+
+    assert len(talks) == 3
+    assert caplog.records == []

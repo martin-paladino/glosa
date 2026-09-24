@@ -13,12 +13,9 @@
 
 {% block title %}{{ tr("room_title").format(room=room.name) }} | Glosa{% endblock %}
 
-{% block styles %}
-  <link rel="stylesheet" href="/static/css/room.css">
-{%- endblock %}
-
 {% block head %}
   <script src="/static/js/room.js" defer></script>
+  <script src="/static/js/clock.js" defer></script>
 {%- endblock %}
 
 {% block body %}
@@ -26,21 +23,24 @@
   <header class="room-head">
     <div class="room-head__bar">
       <div class="room-head__brand">
-        <a class="wordmark" href="/{{ lang_suffix }}" aria-label="{{ tr('all_rooms') }}">glosa<span class="nib" aria-hidden="true"></span></a>
+        <a class="wordmark" href="/{{ lang_suffix }}" aria-label="{{ tr('all_rooms') }}">glosa</a>
         {%- if logo_url %}
         <img class="event-logo room-head__event" src="{{ logo_url }}" alt="{{ event_name }}">
         {%- else %}
         <span class="room-head__event event-name">{{ event_name }}</span>
         {%- endif %}
-        <a class="room-head__rooms" href="/{{ lang_suffix }}">{{ tr("change_room") }}</a>
       </div>
+      <a class="room-head__rooms" href="/{{ lang_suffix }}">{{ tr("change_room") }}</a>
+    </div>
+    <div class="room-head__umd">
+      <h1 class="room-head__name">{{ room.name }}</h1>
       {%- if room.live %}
       <span class="status status--live" data-status data-state="live" role="status">{{ tr("live") }}</span>
       {%- else %}
       <span class="status status--idle" data-status data-state="idle" role="status">{{ tr("between_talks") }}</span>
       {%- endif %}
+      <time class="clock" data-clock hidden></time>
     </div>
-    <h1 class="room-head__name">{{ room.name }}</h1>
     {%- if room.now %}
     <p class="room-head__talk talk-title" data-talk-title lang="{{ room.now.language }}">{{ room.now.title }}</p>
     <p class="room-head__meta talk-meta" data-talk-meta>
@@ -101,11 +101,12 @@
       </select>
     </label>
     <div class="control-group" role="group" aria-label="{{ tr('font_size') }}">
-      <button class="control" type="button" data-action="size" data-step="-1" aria-label="{{ tr('smaller') }}" title="{{ tr('smaller') }} (−)"><span class="control__a control__a--small">A</span>−</button>
-      <button class="control" type="button" data-action="size" data-step="1" aria-label="{{ tr('larger') }}" title="{{ tr('larger') }} (+)"><span class="control__a control__a--big">A</span>+</button>
+      <button class="control" type="button" data-action="size" data-step="-1" aria-label="{{ tr('smaller') }}" title="{{ tr('smaller') }} (−)">A−</button>
+      <button class="control" type="button" data-action="size" data-step="1" aria-label="{{ tr('larger') }}" title="{{ tr('larger') }} (+)">A+</button>
     </div>
     <button class="control" type="button" data-action="theme" aria-label="{{ tr('theme').format(name=tr('theme_system')) }}" title="{{ tr('theme').format(name=tr('theme_system')) }}">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg>
+      <span class="control__word">{{ tr("theme_button") }}</span>
     </button>
     <button class="control control--fullscreen" type="button" data-action="fullscreen" aria-label="{{ tr('fullscreen') }} (F)" title="{{ tr('fullscreen') }} (F)">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>

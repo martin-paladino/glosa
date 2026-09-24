@@ -2,14 +2,10 @@
 
 {% block title %}{{ tr("room_not_found") }} | Glosa{% endblock %}
 
-{% block styles %}
-  <link rel="stylesheet" href="/static/css/room.css">
-{%- endblock %}
-
 {% block body %}
 <div class="index">
   <header class="index__head">
-    <a class="wordmark" href="/{{ lang_suffix }}" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
+    <a class="wordmark" href="/{{ lang_suffix }}" aria-label="Glosa">glosa</a>
   </header>
   <section class="index__intro">
     <h1 class="index__title">{{ tr("room_not_found") }}</h1>

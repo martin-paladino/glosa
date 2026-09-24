@@ -83,6 +83,13 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # Fix round 2, #2: pydantic's default ValidationError repr echoes
+        # the rejected (or, for an unrelated field, the whole merged) input
+        # back verbatim -- for Settings that can be a secret straight out
+        # of .env. hide_input_in_errors replaces it with a redaction marker
+        # everywhere pydantic renders one, including Settings.load()'s
+        # ConfigError below.
+        hide_input_in_errors=True,
     )
 
     # --- secrets, from .env only ---

@@ -8,20 +8,32 @@
     ``Settings.admin_password`` (constant time) and sets the signed session
     cookie (``glosa.web.auth``), or raises 401 for a wrong password (after
     a 1s sleep -- a cheap brake on brute-forcing it).
-  - ``POST /admin/logout``: clears the session cookie.
+  - ``POST /admin/logout``: clears the session cookie and, since one
+    ``ADMIN_PASSWORD`` is shared by everyone with it, invalidates every
+    other outstanding session too (``app.state.sessions_valid_after``).
   - ``POST /api/admin/rooms/{room_id}/start`` / ``.../stop``: call through
     to that room's ``RoomWorker``, keyed by its config ``id`` (not its
     ``slug`` -- they're equal today, but that's an implementation detail of
-    ``create_app``, not a contract). Both require the session cookie
-    (``glosa.web.auth.require_admin``) and the ``X-Glosa-Admin`` header
-    (``glosa.web.auth.require_csrf_header``); ``start`` turns a room with no
+    ``create_app``, not a contract). ``start`` turns a room with no
     configured source (``RoomWorker.start()``'s ``ValueError``) into a 409
     with a readable detail instead of a 500.
 
+Two routers, on purpose (fix round 1 wired ``require_admin``/
+``require_csrf_header`` per route; fix round 2 moved them here): ``router``
+carries the page/login/logout routes, unprotected by either (login can't
+require a session it's there to create; logout only clears one); ``api_router``
+is ``APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin),
+Depends(require_csrf_header)])``, so *every* route added to it -- today's
+start/stop, and whatever ``/api/admin/*`` route comes later -- gets both
+checks (401 before 403, same order as before) without having to remember
+to add them by hand.
+
 ``create_app()`` (glosa/web/app.py) provides ``app.state.workers`` (room id
 -> RoomWorker, keyed the same way as ``app.state.settings.rooms``),
-``app.state.settings`` and ``app.state.admin_secret`` (a fresh per-process
-key, ``glosa.web.auth.new_admin_secret()``).
+``app.state.settings``, ``app.state.admin_secret`` (a fresh per-process
+key, ``glosa.web.auth.new_admin_secret()``) and ``app.state.sessions_valid_after``
+(a float, 0.0 until the first logout), and mounts both ``router`` and
+``api_router``.
 
 The room list's visual state reuses the four-state vocabulary
 (live/degraded/down/idle) already defined in glosa.css for the "Sala de
@@ -36,6 +48,7 @@ MVP's bare minimum: name, state, detail, current talk, Start/Stop.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -55,7 +68,14 @@ from glosa.web.auth import (
     verify_password,
 )
 
+# Pages, login and logout: no auth dependency (login can't require the
+# session it's about to create; logout only ever needs to clear one).
 router = APIRouter()
+
+# Every state-changing admin API route: both checks apply automatically to
+# anything mounted here, present or future (fix round 2, #3). 401 (require_admin)
+# runs before 403 (require_csrf_header), same order fix round 1 used per route.
+api_router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin), Depends(require_csrf_header)])
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -107,6 +127,11 @@ async def login(request: Request, password: str = Form(...)):
 
 @router.post("/admin/logout", include_in_schema=False)
 def logout(request: Request):
+    # Fix round 2, #4: bump the floor every session's issued_at must clear,
+    # so a copy of the cookie taken before logout stops working too, not
+    # just the one this browser is deleting -- one shared ADMIN_PASSWORD
+    # means "log out" should mean "every session", not "this browser".
+    request.app.state.sessions_valid_after = time.time()
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(COOKIE_NAME, path="/")
     return response
@@ -115,13 +140,8 @@ def logout(request: Request):
 # ---- room control -------------------------------------------------------------
 
 
-@router.post("/api/admin/rooms/{room_id}/start")
-async def start_room(
-    room_id: str,
-    request: Request,
-    _admin: None = Depends(require_admin),
-    _csrf: None = Depends(require_csrf_header),
-) -> dict:
+@api_router.post("/rooms/{room_id}/start")
+async def start_room(room_id: str, request: Request) -> dict:
     worker = _worker(request, room_id)
     try:
         await worker.start()
@@ -130,13 +150,8 @@ async def start_room(
     return {"status": "ok", "room": asdict(worker.status())}
 
 
-@router.post("/api/admin/rooms/{room_id}/stop")
-async def stop_room(
-    room_id: str,
-    request: Request,
-    _admin: None = Depends(require_admin),
-    _csrf: None = Depends(require_csrf_header),
-) -> dict:
+@api_router.post("/rooms/{room_id}/stop")
+async def stop_room(room_id: str, request: Request) -> dict:
     worker = _worker(request, room_id)
     await worker.stop()
     return {"status": "ok", "room": asdict(worker.status())}

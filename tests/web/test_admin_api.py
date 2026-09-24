@@ -76,8 +76,10 @@ def _make_app(workers: dict | None = None, settings: Settings | None = None) -> 
     app.state.settings = settings if settings is not None else _settings()
     app.state.workers = workers if workers is not None else {}
     app.state.admin_secret = new_admin_secret()
+    app.state.sessions_valid_after = 0.0
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(admin_api.router)
+    app.include_router(admin_api.api_router)
     return app
 
 
@@ -211,6 +213,22 @@ def test_start_with_a_bad_cookie_is_401() -> None:
     worker = _worker("r1", "r1", "Sala Uno")
     client = _client(_make_app(workers={"r1": worker}), authenticated=False)
     client.cookies.set(COOKIE_NAME, "garbage")
+
+    response = client.post("/api/admin/rooms/r1/start", headers=CSRF)
+
+    assert response.status_code == 401
+    worker.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "bad_issued_at", ["1" + "0" * 400, "9" * 5000, ""], ids=["400-digit", "5000-digit", "empty"]
+)
+def test_start_with_a_crafted_cookie_is_401_not_500(bad_issued_at: str) -> None:
+    # Fix round 2, #1: an unbounded issued_at used to crash verify_session
+    # (OverflowError / ValueError), which FastAPI turned into a 500 here.
+    worker = _worker("r1", "r1", "Sala Uno")
+    client = _client(_make_app(workers={"r1": worker}), authenticated=False)
+    client.cookies.set(COOKIE_NAME, f"{bad_issued_at}.deadbeef")
 
     response = client.post("/api/admin/rooms/r1/start", headers=CSRF)
 

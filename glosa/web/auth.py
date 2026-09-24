@@ -35,12 +35,28 @@ can't set custom headers, so this blocks cross-site form-based CSRF even
 though the cookie is ``SameSite=Lax`` rather than ``Strict``.  ``admin.js``
 sends it on every fetch; the login/logout forms don't need it (they don't
 carry a session yet, or are simply clearing one).
+
+Logging out clears the browser's cookie, but a *copy* of that cookie (taken
+before logout) would otherwise still verify -- the token itself doesn't
+change. ``app.state.sessions_valid_after`` closes that: logout bumps it to
+"now", and ``verify_session`` rejects any token whose ``issued_at`` is
+older, so every outstanding session -- not just the one browser that logged
+out -- stops working at once (fine for a single shared admin password).
+
+``issued_at`` is parsed with a strict, length-bounded pattern
+(``[0-9]{1,12}``), not ``str.isdigit()``: that also accepts non-ASCII digit
+characters ``int()`` then rejects, and places no bound on length, so a
+crafted cookie could make ``int(issued_at)`` raise (Python's
+integer-string-conversion limit) or make the later ``now - int(...)``
+subtraction raise ``OverflowError`` converting a huge int to a float --
+either would have reached the caller as an unhandled 500.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import time
 
@@ -52,6 +68,12 @@ CSRF_HEADER = "x-glosa-admin"
 CSRF_HEADER_VALUE = "1"
 
 _SECRET_BYTES = 32
+# A unix timestamp never needs more than 12 digits (that's the year 33658);
+# bounding it here means `int(issued_at)` can never be huge enough to
+# overflow the later float subtraction, and never long enough to hit
+# Python's integer-string-conversion limit either -- both of which an
+# unbounded `str.isdigit()` check let through (fix round 2, #1).
+_ISSUED_AT_RE = re.compile(r"[0-9]{1,12}")
 
 
 def new_admin_secret() -> bytes:
@@ -76,17 +98,40 @@ def sign_session(admin_secret: bytes, admin_password: str, *, issued_at: float |
 
 
 def verify_session(
-    admin_secret: bytes, admin_password: str, token: str | None, *, now: float | None = None
+    admin_secret: bytes,
+    admin_password: str,
+    token: str | None,
+    *,
+    now: float | None = None,
+    valid_after: float = 0.0,
 ) -> bool:
     """Whether ``token`` (a cookie value) is a valid, unexpired session for
-    ``admin_password`` signed with ``admin_secret``."""
+    ``admin_password`` signed with ``admin_secret``, issued at or after
+    ``valid_after`` (``app.state.sessions_valid_after``: logout bumps this
+    to "now", so a copy of an already-logged-out cookie stops working even
+    though nothing about the token itself changed)."""
     if not admin_password or not token:
         return False
     issued_at, sep, mac = token.partition(".")
-    if not sep or not issued_at.isdigit() or not mac:
+    # A strict, length-bounded pattern -- not str.isdigit(), which also
+    # accepts non-ASCII digit characters int() then rejects, and which lets
+    # an attacker hand us an arbitrarily long digit string (int() on one
+    # over Python's conversion limit raises ValueError; under that limit but
+    # still huge, the subtraction below raises OverflowError converting it
+    # to a float). Either used to reach the caller as an unhandled 500.
+    if not sep or not mac or not _ISSUED_AT_RE.fullmatch(issued_at):
+        return False
+    try:
+        issued_at_s = int(issued_at)
+    except (ValueError, OverflowError):
+        return False  # defense in depth; _ISSUED_AT_RE should already rule this out
+    if issued_at_s < valid_after:
         return False
     now = time.time() if now is None else now
-    age = now - int(issued_at)
+    try:
+        age = now - issued_at_s
+    except OverflowError:
+        return False
     if age < -5 or age > COOKIE_MAX_AGE_S:  # small tolerance for clock skew, not for replay
         return False
     expected = _session_mac(admin_secret, admin_password, issued_at)
@@ -111,10 +156,14 @@ def cookie_is_secure(request: Request) -> bool:
 
 
 def is_authenticated(request: Request) -> bool:
-    """Whether ``request`` carries a valid admin session cookie."""
+    """Whether ``request`` carries a valid, not-since-logged-out admin
+    session cookie."""
     settings = request.app.state.settings
     secret = request.app.state.admin_secret
-    return verify_session(secret, settings.admin_password, request.cookies.get(COOKIE_NAME))
+    valid_after = getattr(request.app.state, "sessions_valid_after", 0.0)
+    return verify_session(
+        secret, settings.admin_password, request.cookies.get(COOKIE_NAME), valid_after=valid_after
+    )
 
 
 def require_admin(request: Request) -> None:

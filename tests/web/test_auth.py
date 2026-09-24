@@ -25,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
@@ -35,6 +35,7 @@ from glosa.web.auth import (
     COOKIE_NAME,
     new_admin_secret,
     require_admin,
+    require_csrf_header,
     sign_session,
     verify_password,
     verify_session,
@@ -56,8 +57,10 @@ def _make_app(settings: Settings | None = None, workers: dict | None = None) -> 
     app.state.settings = settings if settings is not None else _settings()
     app.state.workers = workers if workers is not None else {}
     app.state.admin_secret = new_admin_secret()
+    app.state.sessions_valid_after = 0.0
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(admin_api.router)
+    app.include_router(admin_api.api_router)
     return app
 
 
@@ -178,6 +181,25 @@ def test_logout_clears_the_cookie(client: TestClient) -> None:
     assert admin.headers["location"] == "/admin/login"
 
 
+def test_logout_invalidates_a_copy_of_the_token_too(client: TestClient) -> None:
+    # Fix round 2, #4: logout must invalidate every outstanding session for
+    # the one shared ADMIN_PASSWORD, not just delete this browser's cookie
+    # -- a copy taken before logout (a different browser, a saved bookmark
+    # with the cookie baked in, whatever) must stop working too.
+    client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    stolen_token = client.cookies.get(COOKIE_NAME)
+    assert stolen_token
+
+    client.post("/admin/logout")
+
+    other_client = TestClient(client.app, follow_redirects=False)
+    other_client.cookies.set(COOKIE_NAME, stolen_token)
+    response = other_client.get("/admin")
+
+    assert response.status_code in (302, 303, 307)
+    assert response.headers["location"] == "/admin/login"
+
+
 # ---- signing helpers (Ruling 36: <issued_at>.<hmac>, per-process secret) --
 
 
@@ -224,6 +246,54 @@ def test_verify_session_rejects_a_non_ascii_cookie_without_raising() -> None:
     assert not verify_session(secret, ADMIN_PASSWORD, "1000.ééé")
 
 
+# ---- fix round 2, #1: a crafted issued_at must never crash verify_session --
+
+
+def test_verify_session_rejects_a_400_digit_issued_at_without_crashing() -> None:
+    # now - int(issued_at) would OverflowError (int too large to convert to
+    # float) with the old bare isdigit() check.
+    secret = new_admin_secret()
+
+    assert not verify_session(secret, ADMIN_PASSWORD, f"{'1' + '0' * 400}.deadbeef")
+
+
+def test_verify_session_rejects_an_issued_at_past_the_int_string_limit() -> None:
+    # int() on a 5000-digit string raises ValueError on its own (Python's
+    # integer-string conversion limit), independent of the subtraction.
+    secret = new_admin_secret()
+
+    assert not verify_session(secret, ADMIN_PASSWORD, f"{'9' * 5000}.deadbeef")
+
+
+def test_verify_session_rejects_a_unicode_digit_issued_at() -> None:
+    # "²" (superscript two) passes str.isdigit() but int() rejects it.
+    secret = new_admin_secret()
+
+    assert not verify_session(secret, ADMIN_PASSWORD, "².deadbeef")
+
+
+def test_verify_session_rejects_an_empty_issued_at() -> None:
+    secret = new_admin_secret()
+
+    assert not verify_session(secret, ADMIN_PASSWORD, ".deadbeef")
+
+
+@pytest.mark.parametrize(
+    "bad_issued_at", ["1" + "0" * 400, "9" * 5000, ""], ids=["400-digit", "5000-digit", "empty"]
+)
+def test_admin_with_a_crafted_cookie_redirects_not_crashes(client: TestClient, bad_issued_at: str) -> None:
+    # The unicode-digit case (test_verify_session_rejects_a_unicode_digit_issued_at
+    # above) isn't repeated here: it's a valid attack over a raw HTTP socket,
+    # but httpx's own cookie jar refuses to even construct a non-ASCII
+    # Cookie header, so there's no way to reach it through this client.
+    client.cookies.set(COOKIE_NAME, f"{bad_issued_at}.deadbeef")
+
+    response = client.get("/admin")
+
+    assert response.status_code in (302, 303, 307)
+    assert response.headers["location"] == "/admin/login"
+
+
 def test_verify_password_accepts_only_the_right_one() -> None:
     assert verify_password(ADMIN_PASSWORD, ADMIN_PASSWORD)
     assert not verify_password("wrong", ADMIN_PASSWORD)
@@ -259,4 +329,36 @@ def test_require_admin_dependency_needs_a_valid_cookie() -> None:
     good = sign_session(app.state.admin_secret, ADMIN_PASSWORD)
     client.cookies.set(COOKIE_NAME, good)
     ok = client.get("/protected")
+    assert ok.status_code == 200 and ok.json() == {"ok": True}
+
+
+def test_a_router_built_with_both_dependencies_protects_any_route_on_it() -> None:
+    # Fix round 2, #3: admin_api.api_router is built exactly this way
+    # (APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin),
+    # Depends(require_csrf_header)])) so any future route added to it is
+    # covered automatically. This rebuilds the same pattern independently,
+    # on a dummy route, rather than adding one to the real router.
+    dummy_router = APIRouter(
+        prefix="/api/admin", dependencies=[Depends(require_admin), Depends(require_csrf_header)]
+    )
+
+    @dummy_router.post("/dummy")
+    def dummy() -> dict:
+        return {"ok": True}
+
+    app = FastAPI()
+    app.state.settings = _settings()
+    app.state.admin_secret = new_admin_secret()
+    app.state.sessions_valid_after = 0.0
+    app.include_router(dummy_router)
+    client = TestClient(app)
+
+    no_cookie = client.post("/api/admin/dummy", headers=CSRF)
+    assert no_cookie.status_code == 401  # require_admin first
+
+    client.cookies.set(COOKIE_NAME, sign_session(app.state.admin_secret, ADMIN_PASSWORD))
+    no_csrf = client.post("/api/admin/dummy")
+    assert no_csrf.status_code == 403  # require_csrf_header second
+
+    ok = client.post("/api/admin/dummy", headers=CSRF)
     assert ok.status_code == 200 and ok.json() == {"ok": True}

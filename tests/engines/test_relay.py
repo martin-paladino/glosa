@@ -156,7 +156,13 @@ class SpyFactory:
 
 
 class Harness:
-    """A relay fed one 100 ms chunk per tick, with VAD events at given times."""
+    """A relay fed one 100 ms chunk per tick, with VAD events at given times.
+
+    Each chunk is fed with ``voiced`` = EnergyVad's ``in_speech``: True from a
+    ``speech_start`` until its ``pause``, or until an ``"end"`` entry. "end"
+    is not a VadEvent: it marks a short utterance ending, for which EnergyVad
+    emits nothing.
+    """
 
     def __init__(self, plans: list[Plan], **relay_kw: object) -> None:
         self.clock = DrivenClock()
@@ -167,6 +173,7 @@ class Harness:
         self.events: list[EngineEvent] = []
         self.reconnects: list[tuple[float, str]] = []
         self._tick = 0
+        self._in_speech = False
         real_reconnect = self.relay.reconnect
 
         async def spy_reconnect(reason: str) -> None:
@@ -198,22 +205,25 @@ class Harness:
             t = k / 10
             self.clock.set(t)
             for kind in vad_at.get(k, ()):
-                self.relay.on_vad(VadEvent(kind=kind, t=t))  # type: ignore[arg-type]
+                self._in_speech = kind == "speech_start"
+                if kind != "end":
+                    self.relay.on_vad(VadEvent(kind=kind, t=t))  # type: ignore[arg-type]
             if k in actions:
                 await actions[k]()
-            await self.relay.feed(AudioChunk(pcm=PCM, t=t))
+            await self.relay.feed(AudioChunk(pcm=PCM, t=t), voiced=self._in_speech)
             self.fed.append(t)
             await settle()
             self._tick += 1
 
-    async def stop(self) -> None:
+    async def stop(self, collect: bool = True) -> None:
         task = asyncio.create_task(self.relay.stop())
         await settle()
         while not task.done():  # wake replaying engines so they can see their close()
             self.clock.advance(1.0)
             await settle()
         await task
-        self.events = [ev async for ev in self.relay.events()]
+        if collect:
+            self.events = [ev async for ev in self.relay.events()]
 
 
 def talking(start: float = 0.0, pauses: list[float] = (), resume_after: float = 0.5):  # type: ignore[assignment]
@@ -385,13 +395,14 @@ async def test_go_away_switches_at_the_next_pause(tmp_path: Path) -> None:
 
 async def test_real_recording_rotates_before_the_server_kill() -> None:
     """Replays the real 10-min Live Translate session (GoAway at 540.7 s, killed
-    with 1008 at 591 s). That recording also has a real 9.2 s output hiccup
-    right after connect (5.1 -> 14.3 s) that every replayed session repeats,
-    so the watchdog is widened to 10 s to look at rotation alone."""
-    h = Harness([Plan(REAL_RECORDING)], stall_timeout=10.0)
+    with 1008 at 591 s), with the default 8 s watchdog. The recording has a
+    real 9.2 s output hiccup right after its first words (5.1 -> 14.3 s,
+    speaker talking), and every replayed session repeats it: at connect and
+    right after the rotation. The first-output grace (15 s) must absorb both."""
+    h = Harness([Plan(REAL_RECORDING)])
     await h.start()
     pauses = [float(p) for p in range(25, 600, 10)]
-    await h.run_until(600, vad=talking(15, pauses=pauses))
+    await h.run_until(600, vad=talking(0, pauses=pauses))
     await h.stop()
 
     old, new = h.engines
@@ -399,6 +410,7 @@ async def test_real_recording_rotates_before_the_server_kill() -> None:
     assert switch_time(old) == pytest.approx(515.0)  # first pause after 510 s
     assert old.close_calls[0] == pytest.approx(520.0)  # long before its GoAway and kill
     assert not any(ev.kind == "go_away" for ev in old.emitted)
+    assert h.reconnects == []  # no false stall at connect or after the rotation
     assert h.relay.stats == {"rotations": 1, "reconnects": 0, "errors": {}}
     targets = [ev.t_recv for ev in h.events if ev.kind == "target_delta"]
     gaps = [b - a for a, b in itertools.pairwise(targets) if a >= 20]
@@ -433,7 +445,7 @@ async def test_no_chunk_is_ever_sent_to_two_sessions(tmp_path: Path) -> None:  #
         assert max(earlier.sent) < min(later.sent)  # a clean hand-over, in order
     for e in h.engines:
         assert e.sent == sorted(e.sent)
-    assert h.reconnects == [(pytest.approx(438.0), "stall"), (pytest.approx(500.0), "manual")]
+    assert h.reconnects == [(pytest.approx(438.1), "stall"), (pytest.approx(500.0), "manual")]
     assert h.relay.stats == {"rotations": 1, "reconnects": 3, "errors": {1011: 1}}
     assert h.factory.max_in_flight == 1
 
@@ -447,12 +459,13 @@ async def test_stall_reconnects_after_stall_timeout_of_unanswered_speech(steady:
     await h.run_until(80, vad=talking(0))
     await h.stop()
 
-    assert h.reconnects == [(pytest.approx(38.0), "stall")]  # last output at 30 s + 8 s
+    # Last output at 30.0 s; first unanswered voiced chunk 30.1 s; + 8 s.
+    assert h.reconnects == [(pytest.approx(38.1), "stall")]
     assert h.relay.stats["reconnects"] == 1
     hung, fresh = h.engines
-    assert max(hung.sent) == pytest.approx(37.9)
-    assert min(fresh.sent) == pytest.approx(38.0)
-    assert hung.close_calls[0] == pytest.approx(43.0)  # drained, then closed
+    assert max(hung.sent) == pytest.approx(38.0)
+    assert min(fresh.sent) == pytest.approx(38.1)
+    assert hung.close_calls[0] == pytest.approx(43.1)  # drained, then closed
     assert_no_chunk_in_two_sessions(h)
 
 
@@ -474,13 +487,55 @@ async def test_watchdog_ignores_silence_and_speech_that_just_resumed(tmp_path: P
 
 async def test_watchdog_fires_on_unanswered_speech_even_across_pauses(tmp_path: Path) -> None:
     steady = write_fixture(tmp_path, "steady")
-    h = Harness([Plan(steady, fail_after_s=10), Plan(steady)])
+    h = Harness([Plan(steady, fail_after_s=20), Plan(steady)])
     await h.start()
-    # Short utterances with pauses in between; the model says nothing after 10 s.
-    await h.run_until(30, vad=talking(0, pauses=[12, 14.5, 17]))
+    # Short utterances with pauses in between; the model says nothing after 20 s.
+    await h.run_until(40, vad=talking(0, pauses=[22, 24.5, 27]))
     await h.stop()
 
-    assert h.reconnects == [(pytest.approx(18.0), "stall")]
+    assert h.reconnects == [(pytest.approx(28.1), "stall")]
+
+
+async def test_answered_short_utterance_does_not_start_a_reconnect_loop(tmp_path: Path) -> None:
+    # Review finding 1: a 20 s utterance, then a 0.8 s "Thanks!" at 30 s
+    # (EnergyVad emits no pause for it) answered at 31 s, then silence.
+    talk = write_fixture(tmp_path, "talk", deltas=[float(k) for k in range(1, 21)] + [31.0, 5000.0])
+    silent = write_fixture(tmp_path, "silent", deltas=[5000.0])
+    h = Harness([Plan(talk), Plan(silent)])
+    await h.start()
+    await h.run_until(120, vad=[(0, "speech_start"), (20.4, "pause"), (30.0, "speech_start"), (30.8, "end")])
+    await h.stop()
+
+    assert h.reconnects == []
+    assert len(h.engines) == 1
+
+
+async def test_after_a_stall_reconnect_only_new_voice_can_stall_again(tmp_path: Path) -> None:
+    mute = write_fixture(tmp_path, "mute", deltas=[5000.0])  # never says a word
+    steady = write_fixture(tmp_path, "steady")
+    h = Harness([Plan(steady, fail_after_s=20), Plan(mute), Plan(steady)])
+    await h.start()
+    # Talking until 27 s, then silence until 100 s, then talking again.
+    await h.run_until(140, vad=[(0, "speech_start"), (27, "pause"), (100, "speech_start")])
+    await h.stop()
+
+    # 20.1 + 8 s -> stall (voice until 26.9 s). The new session never
+    # answers, but there is no voice until 100 s: the next stall is 15 s
+    # (first-output grace) after that.
+    assert h.reconnects == [(pytest.approx(28.1), "stall"), (pytest.approx(115.0), "stall")]
+
+
+async def test_draining_output_does_not_vouch_for_the_new_session(tmp_path: Path, steady: Path) -> None:
+    # Forced switch at 570 s into a session that never answers. The old one
+    # keeps talking while it drains (571-574 s), but only the active
+    # session's output counts: stall after the 15 s first-output grace.
+    mute = write_fixture(tmp_path, "mute", deltas=[5000.0])
+    h = Harness([Plan(steady), Plan(mute), Plan(steady)])
+    await h.start()
+    await h.run_until(590, vad=talking(0))
+    await h.stop()
+
+    assert h.reconnects == [(pytest.approx(585.1), "stall")]
 
 
 # --------------------------------------------------------- failures and backoff
@@ -612,6 +667,63 @@ async def test_active_death_with_a_ready_standby_switches_to_it_at_once(tmp_path
     assert h.relay.stats == {"rotations": 0, "reconnects": 1, "errors": {1011: 1}}
 
 
+@pytest.fixture
+def err503(tmp_path: Path) -> Path:
+    return write_fixture(tmp_path, "err503", deltas=[], extra=[error_record(0, 503, True)])
+
+
+async def test_failing_standby_during_a_pause_does_not_retire_the_active_session(
+    err503: Path, steady: Path
+) -> None:
+    # Review finding 2: the speaker is in a pause when the standby "connects",
+    # but the standby reports 503 on its first read.
+    h = Harness([Plan(steady)] + [Plan(err503)] * 3 + [Plan(steady)])
+    await h.start()
+    await h.run_until(580, vad=[(0, "speech_start"), (509, "pause"), (511.5, "speech_start")])
+    await h.stop()
+
+    old, *failed, new = h.engines
+    assert [e.connect_started_at for e in failed] == pytest.approx([510.0, 511.0, 513.0])
+    assert all(e.sent == [] and e.end_utterance_at == [] for e in failed)
+    assert new.connect_started_at == pytest.approx(517.0)
+    assert switch_time(old) == pytest.approx(570.0)  # speaking again since 511.5: forced
+    assert sorted(t for e in h.engines for t in e.sent) == h.fed  # nothing lost
+    assert h.relay.stats == {"rotations": 1, "reconnects": 0, "errors": {503: 3}}
+
+
+async def test_failing_standby_at_the_force_deadline_does_not_retire_the_active_session(
+    err429: Path, steady: Path
+) -> None:
+    h = Harness([Plan(steady), Plan(err429), Plan(steady)], standby_at=570, force_at=570)
+    await h.start()
+    await h.run_until(580, vad=talking(0))
+    await h.stop()
+
+    old, failed, new = h.engines
+    assert failed.sent == []
+    assert switch_time(old) == pytest.approx(571.0)  # the retry, 1 s later
+    assert max(old.sent) == pytest.approx(571.0)  # routed before the retry came up
+    assert min(new.sent) == pytest.approx(571.1)
+    assert sorted(t for e in h.engines for t in e.sent) == h.fed
+
+
+async def test_failed_first_connect_does_not_swallow_buffered_audio(err429: Path, steady: Path) -> None:
+    h = Harness([Plan(err429), Plan(steady)])
+    await h.relay.start()
+    await asyncio.sleep(0)  # connect() has returned; its events() were not read yet
+    await h.relay.feed(AudioChunk(pcm=PCM, t=0.0), voiced=True)
+    h.fed.append(0.0)
+    h._tick = 1
+    await settle()
+    await h.run_until(5, vad=talking(0.1))
+    await h.stop()
+
+    failed, good = h.engines
+    assert failed.sent == []
+    assert good.connect_started_at == pytest.approx(1.0)
+    assert good.sent == h.fed  # 0.0-1.0 s were held, then sent to the good session
+
+
 # ------------------------------------------------------- connect timeout, in-flight
 
 
@@ -662,3 +774,55 @@ async def test_events_merge_active_and_draining_sessions_only(steady: Path) -> N
     emitted = sum(ev.meta.get("usd", 0.0) for e in h.engines for ev in e.emitted)
     forwarded = sum(ev.meta.get("usd", 0.0) for ev in h.events)
     assert forwarded == pytest.approx(emitted)  # usd increments are never dropped
+
+
+async def test_events_can_be_consumed_while_feeding(steady: Path) -> None:
+    h = Harness([Plan(steady)])
+    got: list[EngineEvent] = []
+
+    async def consume() -> None:
+        async for ev in h.relay.events():
+            got.append(ev)
+
+    consumer = asyncio.create_task(consume())
+    await h.start()
+    await h.run_until(300, vad=talking(0))
+    assert got and got[-1].t_recv == pytest.approx(300.0)  # delivered as they happen
+    await h.run_until(530, vad=talking(300.5, pauses=[520]))
+    await h.stop(collect=False)
+    await asyncio.wait_for(consumer, 1.0)  # the stream ends after stop()
+
+    assert got[-1].kind == "closed"
+    assert {ev.meta.get("session") for ev in got if ev.kind in TEXT_KINDS} == {1, 2}
+
+
+# --------------------------------------------------------------------- stop()
+
+
+async def test_stop_closes_active_standby_and_draining_sessions(tmp_path: Path, steady: Path) -> None:
+    # 1 is draining (switched at 520 s), 2 is active and got a GoAway at 521 s,
+    # 3 is its standby.
+    second = write_fixture(tmp_path, "second", extra=[go_away_record(11, 50)])
+    h = Harness([Plan(steady), Plan(second), Plan(steady)])
+    await h.start()
+    await h.run_until(522, vad=talking(0, pauses=[520]))
+    draining, active, standby = h.engines
+    assert standby.connected_at == pytest.approx(521.0)
+    await h.stop()
+
+    assert draining.close_calls[0] == pytest.approx(522.0)  # before its 525 s drain end
+    assert active.close_calls and standby.close_calls
+    assert h.events[-1].kind == "closed"
+
+
+async def test_stop_closes_a_session_that_is_still_connecting(steady: Path) -> None:
+    h = Harness([Plan(steady), Plan(steady, connect_hangs=True)])
+    await h.start()
+    await h.run_until(512, vad=talking(0))
+    active, connecting = h.engines
+    assert connecting.connect_started_at == pytest.approx(510.0)
+    await h.stop()
+
+    assert connecting.connected_at is None
+    assert connecting.close_calls and active.close_calls
+    assert h.factory.in_flight == 0

@@ -42,16 +42,25 @@ Rotation
 Stall watchdog
     Voice that no output has followed for ``stall_timeout`` s (spec §6: "voz
     sin texto de salida durante más de 8 s") calls ``reconnect("stall")``.
-    The clock starts at the first voice (VAD ``speech_start``) after the last
-    ``source_delta``/``target_delta``/``source_final`` of the active session.
-    If output arrives while the speaker is still talking, the clock restarts
-    from that moment. A pause resets it only when the unanswered stretch was
-    under 1 s: that stretch is the VAD's own 400 ms end-of-speech tail, which
-    the engine has nothing to say about.
-    Limitation: EnergyVad emits nothing when a sub-1.5 s blip (a cough)
-    ends. A lone blip followed by 8 s of silence and no output therefore
-    looks like a stall. The reconnect that follows is harmless: no audio is
-    lost.
+    Voice is the real per-chunk activity the caller passes to
+    ``feed(chunk, voiced=vad.in_speech)``. It is not inferred from VAD
+    events, because EnergyVad emits no ``pause`` after an utterance shorter
+    than 1.5 s. Output is any text from the active session. The rules
+    (warm-up grace of ``first_output_grace_s`` = 15 s, the VAD's 400 ms tail,
+    re-arming only on new voice after a reconnect) live in
+    ``glosa.engines.watchdog.StallWatchdog``.
+
+Connecting
+    A connected engine is used, as the active session or as the standby,
+    only after its first ``events()`` read has had a chance to run and
+    reported no ``error``/``closed``. Both engines report a failed connect
+    as the first thing ``events()`` yields, without waiting on the network:
+    LiveTranslateEngine keeps the exception from ``connect()``, and
+    FakeEngine replays an error at t=0. So a dead standby never retires a
+    healthy session, and held-back audio is never flushed into a failed one.
+    Until then the attempt still counts as the one connection in flight.
+    A session that fails later, after a network round trip, is handled like
+    any other death.
 
 Failures (the engines never raise: they report ``error`` then ``closed``)
     - Retryable errors, a connect that takes longer than
@@ -63,7 +72,8 @@ Failures (the engines never raise: they report ``error`` then ``closed``)
       s. The flag clears on the first output of a later session.
     - Non-retryable errors (400, bad config, ...) set ``halted``: no more
       automatic attempts until ``reconnect()`` (the admin's "Reconectar").
-    - At most one connection attempt is ever in flight.
+    - At most one connection attempt is ever in flight, confirmation
+      included.
     - If the active session dies while a standby is ready, the standby takes
       over at once.
     - While no session can take audio, the last ``buffer_s`` s of chunks are
@@ -85,17 +95,19 @@ Events
 Stats
     ``stats["rotations"]`` counts planned hand-overs (age or GoAway).
     ``stats["reconnects"]`` counts unplanned ones: ``reconnect()`` calls
-    (stall, manual) and the death of an established session, meaning one
-    that had produced output. A connect that fails before any output is not
-    a lost stream. It shows up only in ``stats["errors"]``, which counts
-    every error by code (0 = timeout, network, or unknown).
+    (stall, manual) and deaths of the active session. A failed connect never
+    becomes active (see Connecting), so it counts only in
+    ``stats["errors"]``, which counts every error by code (0 = timeout,
+    network, or unknown).
 
 Timers
-    The relay never sleeps. Every deadline (standby, force, drain,
-    backoff, payment retry, connect timeout, watchdog) is checked against
-    ``clock.now()`` whenever a chunk is fed (every ~100 ms), a VAD event
-    arrives, or an engine event arrives. It is deterministic under FakeClock
-    and never moves a shared clock.
+    The relay never sleeps. Every deadline (standby, force, drain, backoff,
+    payment retry, connect timeout, watchdog) is checked against
+    ``clock.now()`` on each ``feed()`` call, that is every ~100 ms of audio.
+    A ``pause``, a ``go_away``, a session's death or a standby coming up can
+    also switch sessions at once. Nothing else advances the timers. So if
+    audio stops flowing, the deadlines wait for the next ``feed()``. The
+    relay is deterministic under FakeClock and never moves a shared clock.
 """
 
 from __future__ import annotations
@@ -111,6 +123,7 @@ from typing import Any, Literal
 
 from glosa.clock import Clock
 from glosa.engines.base import Engine, EngineFactory
+from glosa.engines.watchdog import StallWatchdog
 from glosa.models import AudioChunk, EngineConfig, EngineEvent, VadEvent
 
 log = logging.getLogger(__name__)
@@ -120,7 +133,9 @@ PAYMENT_RETRY_S = 30.0
 GO_AWAY_URGENT_S = 20.0  # less notice than this: switch as soon as possible
 GO_AWAY_MARGIN_S = 15.0  # otherwise switch this long before the server's deadline
 STOP_GRACE_S = 2.0  # stop(): how long to wait for the sessions' final events
-_VAD_TAIL_S = 1.0  # unanswered "voice" shorter than this before a pause is VAD tail
+# Loop turns a new session's first events() read gets to report a failed
+# connect (FakeEngine needs 2: one sleep(0), then the yield).
+_CONFIRM_TURNS = 5
 _TEXT_KINDS = frozenset({"source_delta", "target_delta", "source_final"})
 
 _Role = Literal["connecting", "standby", "active", "draining", "dead"]
@@ -135,11 +150,18 @@ class _Session:
     close_at: float | None = None  # while draining: when to close() it
     closing: bool = False
     saw_closed: bool = False
-    produced: bool = False  # has forwarded output: an established stream
+    send_error_logged: bool = False
 
 
 def _error_event(t: float, code: int, retryable: bool, text: str) -> EngineEvent:
     return EngineEvent(kind="error", text=text, t_recv=t, meta={"code": code, "retryable": retryable})
+
+
+async def _next_event(stream: AsyncIterator[EngineEvent]) -> EngineEvent | None:
+    try:
+        return await anext(stream)
+    except StopAsyncIteration:
+        return None
 
 
 class SessionRelay:
@@ -152,7 +174,7 @@ class SessionRelay:
         # per 100 ms chunk, in stream order:
         for ev in vad.process(chunk):
             relay.on_vad(ev)
-        await relay.feed(chunk)
+        await relay.feed(chunk, voiced=vad.in_speech)
         # elsewhere: async for ev in relay.events(): ...
         await relay.stop()
 
@@ -168,6 +190,7 @@ class SessionRelay:
         force_at: float = 570.0,
         stall_timeout: float = 8.0,
         *,
+        first_output_grace_s: float = 15.0,
         connect_timeout: float = 10.0,
         drain_s: float = 5.0,
         buffer_s: float = 2.0,
@@ -182,6 +205,7 @@ class SessionRelay:
         self.standby_at = standby_at
         self.force_at = force_at
         self.stall_timeout = stall_timeout
+        self.first_output_grace_s = first_output_grace_s
         self.connect_timeout = connect_timeout
         self.drain_s = drain_s
         self.buffer_s = buffer_s
@@ -211,9 +235,8 @@ class SessionRelay:
         self._standby_deadline = math.inf
         self._force_deadline = math.inf
 
-        self._speaking = False
         self._in_pause = False
-        self._unanswered_since: float | None = None
+        self._watchdog = StallWatchdog(stall_timeout, first_output_grace_s)
 
         self._out: asyncio.Queue[EngineEvent] = asyncio.Queue()
         self._final: EngineEvent | None = None
@@ -231,10 +254,15 @@ class SessionRelay:
         self._started = True
         self._maybe_connect()
 
-    async def feed(self, chunk: AudioChunk) -> None:
-        """Send one chunk to the active session (exactly one session, ever)."""
+    async def feed(self, chunk: AudioChunk, voiced: bool = False) -> None:
+        """Send one chunk to the active session (exactly one session, ever).
+
+        ``voiced``: the VAD's ``in_speech`` for this chunk, for the watchdog.
+        """
         if self._stopped:
             return
+        if voiced:
+            self._watchdog.on_voice(self._clock.now())
         await self._poll()
         self._pending.append(chunk)
         while self._pending and self._active is not None:
@@ -245,22 +273,16 @@ class SessionRelay:
                 self._pending.popleft()
 
     def on_vad(self, ev: VadEvent) -> None:
-        """Take a VAD event. Its timing is read from the clock, not ev.t
-        (ev.t is on the room's audio clock)."""
+        """Take a VAD event: a ``pause`` is where a rotation may switch.
+        Its timing is read from the clock, not ev.t (ev.t is on the room's
+        audio clock)."""
         if self._stopped:
             return
-        now = self._clock.now()
         if ev.kind == "speech_start":
-            self._speaking = True
             self._in_pause = False
-            if self._unanswered_since is None:
-                self._unanswered_since = now
         elif ev.kind == "pause":
-            self._speaking = False
             self._in_pause = True
-            if self._unanswered_since is not None and now - self._unanswered_since < _VAD_TAIL_S:
-                self._unanswered_since = None
-            self._maybe_switch(now)
+            self._maybe_switch(self._clock.now())
 
     async def reconnect(self, reason: str) -> None:
         """Replace the active session now ("stall", "manual", ...). A ready
@@ -278,7 +300,7 @@ class SessionRelay:
             self._promote_standby()
         elif old is not None:
             self._active = None
-            self._unanswered_since = None
+            self._watchdog.reset(self._clock.now())
             self._retire(old)
         self._maybe_connect()
 
@@ -328,11 +350,7 @@ class SessionRelay:
                 s.close_at = None
                 self._spawn(self._close_engine(s), f"close-{s.seq}")
         self._maybe_connect(now)
-        if (
-            self._active is not None
-            and self._unanswered_since is not None
-            and now - self._unanswered_since >= self.stall_timeout
-        ):
+        if self._active is not None and self._watchdog.stalled(now):
             await self.reconnect("stall")
 
     # ------------------------------------------------------------ switching
@@ -364,7 +382,7 @@ class SessionRelay:
         self._rotation_due = False
         self._standby_deadline = s.connected_at + self.standby_at
         self._force_deadline = s.connected_at + self.force_at
-        self._unanswered_since = self._clock.now() if self._speaking else None
+        self._watchdog.reset(self._clock.now())
 
     def _retire(self, s: _Session) -> None:
         s.role = "draining"
@@ -424,10 +442,17 @@ class SessionRelay:
         if self._connecting is not s or self._stopped:
             await self._close_engine(s)
             return
+        s.connected_at = self._clock.now()  # the server's clock starts here
+        # Still `_connecting`: the pump confirms it (or reports its failure).
+        self._spawn(self._pump(s), f"pump-{s.seq}", self._pumps)
+
+    def _confirm(self, s: _Session) -> None:
+        """The session's first read showed no failure: put it to use."""
+        if self._connecting is not s or self._stopped:
+            return  # abandoned (timeout) or stopping
         self._connecting = None
         self._connect_task = None
         now = self._clock.now()
-        s.connected_at = now
         if self._active is None:
             self._activate(s)
         elif self._standby is None:
@@ -435,9 +460,8 @@ class SessionRelay:
             self._standby = s
         else:  # nothing needs it any more
             s.role = "dead"
-            await self._close_engine(s)
+            self._spawn(self._close_engine(s), f"close-{s.seq}")
             return
-        self._spawn(self._pump(s), f"pump-{s.seq}", self._pumps)
         self._maybe_switch(now)
 
     def _abandon_connect(self, now: float) -> None:
@@ -456,6 +480,9 @@ class SessionRelay:
         """A session that was (or was about to be) in use is gone: schedule
         the next attempt, and hand the audio to the standby if there is one."""
         role, s.role = s.role, "dead"
+        if self._connecting is s:  # failed while being confirmed
+            self._connecting = None
+            self._connect_task = None
         if self._stopped or role in ("draining", "dead"):
             return
         now = self._clock.now()
@@ -472,9 +499,7 @@ class SessionRelay:
             self._next_attempt_at = None
         if role == "active":
             self._active = None
-            self._unanswered_since = None
-            if s.produced:  # a failed connect is an error, not a lost stream
-                self.stats["reconnects"] += 1
+            self.stats["reconnects"] += 1
             if self._standby is not None:
                 self._promote_standby()
         elif role == "standby":
@@ -484,9 +509,26 @@ class SessionRelay:
     # ------------------------------------------------------------ events
 
     async def _pump(self, s: _Session) -> None:
+        stream = s.engine.events()
+        first = asyncio.get_running_loop().create_task(_next_event(stream), name=f"relay-first-{s.seq}")
         try:
-            async for ev in s.engine.events():
+            # A failed connect shows up on the first read, at once: give it
+            # a few loop turns before putting the session to use.
+            for _ in range(_CONFIRM_TURNS):
+                if first.done():
+                    break
+                await asyncio.sleep(0)
+            if not first.done() or (
+                first.exception() is None
+                and first.result() is not None
+                and first.result().kind not in ("error", "closed")  # type: ignore[union-attr]
+            ):
+                self._confirm(s)
+            ev = await first
+            if ev is not None:
                 self._on_event(s, ev)
+                async for ev in stream:
+                    self._on_event(s, ev)
             if not s.saw_closed:  # the stream must end with `closed`; act as if it did
                 self._on_event(s, EngineEvent(kind="closed", t_recv=self._clock.now()))
         except asyncio.CancelledError:
@@ -497,6 +539,9 @@ class SessionRelay:
                 now = self._clock.now()
                 self._on_event(s, _error_event(now, 0, True, f"events() raised {exc!r}"))
                 self._on_event(s, EngineEvent(kind="closed", t_recv=now))
+        finally:
+            if not first.done():
+                first.cancel()
         await self._close_engine(s)
 
     def _on_event(self, s: _Session, ev: EngineEvent) -> None:
@@ -505,7 +550,7 @@ class SessionRelay:
             self._carry(ev)
             if s in self._draining:
                 self._draining.remove(s)
-            if s.role in ("active", "standby"):
+            if s.role in ("connecting", "active", "standby"):
                 log.warning("relay: session %d closed unexpectedly", s.seq)
                 self._fail(s, retryable=True, payment=False)
             s.role = "dead"
@@ -520,9 +565,8 @@ class SessionRelay:
             self._on_go_away(ev)
             return
         if ev.kind in _TEXT_KINDS and s.role in ("active", "draining"):
-            s.produced = True
             if s.role == "active":
-                self._unanswered_since = self._clock.now() if self._speaking else None
+                self._watchdog.on_output(self._clock.now())
             if s.seq > self._last_failed_seq:  # a session opened after the last failure works
                 self._failures = 0
                 self.payment_blocked = False
@@ -556,7 +600,9 @@ class SessionRelay:
         try:
             await s.engine.send_audio(chunk)
         except Exception:  # its events() will say why the session is gone
-            log.exception("relay: session %d send_audio failed", s.seq)
+            if not s.send_error_logged:  # once per session, not every 100 ms
+                s.send_error_logged = True
+                log.exception("relay: session %d send_audio failed", s.seq)
 
     async def _end_utterance(self, s: _Session) -> None:
         try:

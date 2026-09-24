@@ -1,50 +1,67 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Overlay para OBS | Glosa</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..800;1,400..800&amp;family=Atkinson+Hyperlegible+Next:wght@400..800&amp;display=swap">
-  <link rel="stylesheet" href="../../glosa/web/static/css/glosa.css">
-  <link rel="stylesheet" href="mock.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overlay para OBS | Glosa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&amp;family=B612:wght@400;700&amp;family=Martian+Mono:wdth,wght@75,400&amp;display=swap">
+<link rel="stylesheet" href="../../glosa/web/static/css/glosa.css">
+<style>
+  /* Solo para la maqueta: cada cuadro es un lienzo de 1920 × 1080 a escala.
+     El overlay real (Tarea 14) es una página con <body class="overlay-page">. */
+  body { padding: 24px 16px 48px; }
+  .sheet { display: grid; gap: 28px; max-inline-size: 72rem; margin-inline: auto; }
+  .sheet > header { display: grid; gap: 8px; }
+  .sheet h1 { font: 750 var(--step-4)/1.1 var(--font-label); font-stretch: 80%; }
+  .sheet > header p { max-inline-size: 44em; font-size: var(--step-1); line-height: 1.45; color: var(--ink-2); }
+  .sheet code { font: 400 0.9em var(--font-tc); font-stretch: 75%; color: var(--ink); }
+  figure { display: grid; gap: 8px; margin: 0; }
+  figcaption { font-size: var(--step-0); color: var(--ink-3); }
+  .frame {
+    container-type: inline-size;
+    position: relative;
+    aspect-ratio: 16 / 9;
+    display: grid;
+    place-items: end center;
+    padding: 0 5% 5.5%;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  .frame .overlay { --overlay-size: calc(var(--px) / 1920 * 100cqi); }
+  .checker { background: repeating-conic-gradient(#C9CED3 0 25%, #F2F4F5 0 50%) 0 0 / 32px 32px; }
+  .video { background: linear-gradient(160deg, #FFFFFF 0 45%, #D9DDE0 45% 60%, #6E7B86 60%); }
+</style>
 </head>
-<body class="mock">
+<body>
+<main class="sheet">
+  <header>
+    <h1>Overlay para la transmisión</h1>
+    <p>Fuente de navegador en OBS o vMix: <code>/overlay/gran-sala?lang=es&amp;lines=2&amp;size=48</code>. Sin cromo: dos renglones de B612 en una caja semitransparente de tamaño fijo. El texto nuevo entra por el renglón de abajo y el de arriba sale, como en los subtítulos de la tele. La caja no cambia de tamaño mientras llega texto.</p>
+  </header>
 
-<header class="mock__head">
-  <h1>Overlay para la transmisión</h1>
-  <p>Fuente de navegador en OBS o vMix: <code>/overlay/gran-sala?lang=es&amp;lines=2&amp;size=48</code>. El fondo a cuadros simula la transparencia; cada cuadro es un lienzo de 1920 × 1080 a escala. La caja no cambia de tamaño: el texto nuevo entra por el renglón de abajo y el de arriba sale, como en los subtítulos de la tele.</p>
-</header>
-
-<div class="mock__row">
-
-  <figure class="mock__figure" style="inline-size: min(100%, 72rem)">
-    <div class="stage-16x9 checker">
-      <span class="stage__tag">Gran sala, español, 2 renglones, 48 px</span>
-      <div class="overlay" lang="es">
+  <figure>
+    <div class="frame checker" style="--px: 48">
+      <div class="overlay" lang="es" style="--overlay-lines: 2">
         <div class="overlay__window">
           <p class="overlay__text"><span class="phrase">El control plane de Kubernetes costó esto, solo en marzo: casi cuatro mil dólares.</span> <span class="phrase">La mitad se fue en etcd y en logs de auditoría que nadie leía.</span> <span class="phrase phrase--open">Así que lo primero que hicimos fue apagar</span></p>
         </div>
       </div>
     </div>
-    <figcaption>Colores de Glosa. La frase en curso va más tenue, igual que en el celular.</figcaption>
+    <figcaption>2 renglones, 48 px, sobre fondo transparente (a cuadros). La frase en curso va en gris claro, sin cursor.</figcaption>
   </figure>
 
-  <figure class="mock__figure" style="inline-size: min(100%, 72rem)">
-    <!-- Ejemplo de marca del evento: la configuración pisa las variables de marca. -->
-    <div class="stage-16x9 checker" style="--brand-primary: #007673; --brand-accent: #00ACA8">
-      <span class="stage__tag">Sala Abasto, inglés, con la marca del evento</span>
-      <div class="overlay" lang="en">
+  <figure>
+    <div class="frame video" style="--px: 40">
+      <div class="overlay" lang="en" style="--overlay-lines: 3">
         <div class="overlay__window">
           <p class="overlay__text"><span class="phrase">If you switch vendors, the collector stays and only the exporter changes.</span> <span class="phrase">We do the sampling in the collector, not in every service,</span> <span class="phrase phrase--open">because that’s where we already have the whole trace</span></p>
         </div>
       </div>
     </div>
-    <figcaption>Con <code>--brand-accent</code> del evento (un turquesa de ejemplo): solo cambia el filete y la pluma.</figcaption>
+    <figcaption><code>lines=3&amp;size=40</code> sobre video claro: la caja al 78 % de negro deja el texto blanco en 11,7:1 y la frase en curso en 7:1 aun sobre blanco.</figcaption>
   </figure>
-
-</div>
-
+</main>
 </body>
 </html>

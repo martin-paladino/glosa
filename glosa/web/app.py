@@ -3,7 +3,8 @@
 It mounts ``/static``, the audience pages (glosa/web/pages.py), the public
 API (glosa/web/public_api.py) and the admin panel (glosa/web/admin_api.py,
 login at ``/admin/login`` protected with ``Settings.admin_password``; see
-glosa/web/auth.py), and owns the rooms. The lifespan:
+glosa/web/auth.py; its live feed is glosa/web/admin_stream.py), and owns the
+rooms. The lifespan:
 
   1. opens the SQLite database and registers every room of config.yaml,
      keeping the mode (auto/manual) and public token already stored;
@@ -80,7 +81,7 @@ from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
-from glosa.web import admin_api, pages, public_api
+from glosa.web import admin_api, admin_stream, pages, public_api
 from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
 
@@ -224,6 +225,7 @@ def create_app(
     app.include_router(public_api.router)
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)
+    app.include_router(admin_stream.stream_router)  # SSE: the session cookie only, no CSRF header
     app.include_router(pages.router)
     return app
 

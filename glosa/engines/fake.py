@@ -11,7 +11,9 @@ object per line:
   ``clock.now() - <time of connect()>`` reaches it (FakeClock.sleep just
   advances time, so tests run instantly and deterministically).
 - ``source_delta`` / ``target_delta`` / ``source_final`` pass through
-  (``target_final`` becomes ``target_delta``: EngineEvent has no target_final);
+  (``target_final`` becomes ``target_delta``: EngineEvent has no target_final),
+  keeping ``meta.interim`` (a transcribe-live interim that rewrites the open
+  segment, see glosa.engines.transcribe);
   ``go_away`` takes ``meta.time_left_s`` or parses ``meta.time_left_raw``
   ("50s"); ``error`` takes ``meta.code`` / ``meta.retryable`` (/ ``payment``)
   and ends the session, as a real error does. Anything else (usage,
@@ -102,6 +104,7 @@ class FakeEngine:
                 text=rec.get("text", ""),
                 lang=meta.get("lang") or default_lang,
                 t_recv=now,
+                meta={"interim": True} if meta.get("interim") else {},
             )
         if kind == "go_away":
             return EngineEvent(kind="go_away", t_recv=now, meta={"time_left_s": _time_left_s(meta)})

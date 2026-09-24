@@ -1,0 +1,19 @@
+# Secrets: never baked into the image (mounted at runtime instead, see
+# docker-compose.yml).
+.env
+
+# Local data and environment, not part of the image.
+data/
+.venv/
+samples/long/
+.superpowers/
+
+# Standard excludes: irrelevant to the image, keep the build context small.
+.git/
+.github/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+.DS_Store
+docs/

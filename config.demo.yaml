@@ -1,0 +1,26 @@
+# Demo configuration: 2 rooms captioning the bundled sample clips
+# (samples/en_clip.opus, samples/es_clip.opus) at real time, with the real
+# engine (Ruling: addendum T7). Used by `make demo`; needs GEMINI_API_KEY
+# in .env (~$0.10 for the two ~90s clips). `make demo-fake`
+# (config.demo-fake.yaml) is the same rooms with engine_mode: fake, at no
+# cost. Neither ever touches the event's own config.yaml.
+
+event_name: Glosa demo
+timezone: UTC
+
+rooms:
+  - id: demo-en
+    name: "Demo: English to Spanish"
+    source_type: file
+    source_url: samples/en_clip.opus
+    language: en
+    default_targets: [es]
+  - id: demo-es
+    name: "Demo: Spanish to English"
+    source_type: file
+    source_url: samples/es_clip.opus
+    language: es
+    default_targets: [en]
+
+engine_mode: live
+db_path: data/demo.db

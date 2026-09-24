@@ -1,0 +1,18 @@
+services:
+  glosa:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Settings.load() reads secrets from a real .env FILE (python-dotenv),
+      # not from the process environment (glosa/config.py deliberately
+      # ignores it, so loading never depends on whatever a shell happens to
+      # export) -- env_file above alone would not be enough, so .env is also
+      # bind-mounted at the path Settings.load() reads by default.
+      - ./.env:/app/.env:ro
+      # Captions, the agenda and cost tracking (SQLite, data/glosa.db by
+      # default) survive a restart or a rebuild.
+      - ./data:/app/data
+    restart: unless-stopped

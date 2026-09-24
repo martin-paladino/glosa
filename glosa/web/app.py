@@ -1,10 +1,11 @@
 """create_app(settings): the Glosa web app.
 
-It mounts ``/static``, the audience pages (glosa/web/pages.py) and the
-public API (glosa/web/public_api.py), and owns the rooms: the lifespan
-opens the SQLite database, registers every room of config.yaml, starts a
-free session in each room that has a source, and stops them all on
-shutdown.
+It mounts ``/static``, the audience pages (glosa/web/pages.py), the public
+API (glosa/web/public_api.py) and the admin panel (glosa/web/admin_api.py,
+login at ``/admin/login`` protected with ``Settings.admin_password``; see
+glosa/web/auth.py), and owns the rooms: the lifespan opens the SQLite
+database, registers every room of config.yaml, starts a free session in
+each room that has a source, and stops them all on shutdown.
 
 ``app.state``:
   - ``settings``, ``bus`` (CaptionBus), ``db`` (Database, once started);
@@ -49,7 +50,7 @@ from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room
 from glosa.room import RoomWorker
-from glosa.web import pages, public_api
+from glosa.web import admin_api, pages, public_api
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ def create_app(
     }
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(public_api.router)
+    app.include_router(admin_api.router)
     app.include_router(pages.router)
     return app
 

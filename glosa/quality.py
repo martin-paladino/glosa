@@ -17,11 +17,16 @@ feeding add() from there) is a later task; this module is pure.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Sequence
 
 from typesafe_sdk import AsyncTypeSafeClient, Noul
+
+logger = logging.getLogger(__name__)
 
 FIDELITY_QUESTION = (
     "The Spanish text is a faithful translation of the English text: "
@@ -30,6 +35,13 @@ FIDELITY_QUESTION = (
 
 _QUESTION_KEY = "fidelity"
 _MODEL = "jev-latest"
+_WARNING_INTERVAL_S = 60.0  # rate-limit "Jev call failed" warnings to at most one per this long
+
+# Indirection so tests can control just this clock (e.g. to test the warning
+# rate limit) without also skewing asyncio's own internal timing, which reads
+# time.monotonic() directly for the event loop clock that asyncio.timeout()
+# relies on.
+_monotonic = time.monotonic
 
 
 @dataclass
@@ -75,6 +87,10 @@ class QualityMeter:
     client: dependency injection for tests (a TypeSafeClient-shaped object
         with an async system_one()); ignored when api_key is falsy, so a
         no-key meter never calls out even if a client is passed in.
+
+    failures: count of score() calls that errored or timed out (Jev is
+        optional, so these never raise into the caller; they just return
+        None and bump this counter for observability).
     """
 
     def __init__(self, api_key: str | None, window: int = 10, *, client: object | None = None) -> None:
@@ -84,19 +100,43 @@ class QualityMeter:
         else:
             self._client = None
         self._scores: deque[float] = deque(maxlen=window)
+        self.failures = 0
+        self._last_warning_at: float | None = None
 
-    async def score(self, src: str, tgt: str) -> float | None:
+    async def score(self, src: str, tgt: str, *, timeout_s: float = 3.0) -> float | None:
         """Ask Jev whether tgt is a faithful translation of src. Returns the
         Noul probability (0..1), or None when the meter has no key.
+
+        Jev is optional: "si falla, el medidor de calidad se apaga y todo lo
+        demás sigue". Any error from the call, or a response slower than
+        timeout_s (the meter is only useful fast; a slow answer is as good
+        as none), is swallowed, counted in `failures`, and logged (at most
+        one warning per _WARNING_INTERVAL_S, to avoid flooding logs during
+        an outage). Cancellation (the caller shutting the room down) is not
+        a "failure" and always propagates.
         """
         if self._client is None:
             return None
-        response = await self._client.system_one(
-            state={"english": src, "spanish": tgt},
-            questions={_QUESTION_KEY: Noul(instructions=FIDELITY_QUESTION)},
-            model=_MODEL,
-        )
-        return response.answers[_QUESTION_KEY].noul
+        try:
+            async with asyncio.timeout(timeout_s):
+                response = await self._client.system_one(
+                    state={"english": src, "spanish": tgt},
+                    questions={_QUESTION_KEY: Noul(instructions=FIDELITY_QUESTION)},
+                    model=_MODEL,
+                )
+            return response.answers[_QUESTION_KEY].noul
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # Jev is optional: never break the pipeline
+            self.failures += 1
+            self._log_failure(exc)
+            return None
+
+    def _log_failure(self, exc: Exception) -> None:
+        now = _monotonic()
+        if self._last_warning_at is None or now - self._last_warning_at >= _WARNING_INTERVAL_S:
+            logger.warning("Jev quality check failed, quality meter degraded: %s", exc)
+            self._last_warning_at = now
 
     def add(self, p: float | None) -> None:
         """Feed one score into the rolling window. None (no key, or no

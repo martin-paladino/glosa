@@ -7,13 +7,16 @@ TYPESAFE_API_KEY is set in /Users/mpaladino/repos/glosa/.env.
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from dotenv import dotenv_values
+from typesafe_sdk import TypeSafeAPIConnectionError
 
+import glosa.quality as quality
 from glosa.quality import FIDELITY_QUESTION, ClosedSegment, QualityMeter, find_matching_source
 
 MAIN_REPO_ENV = Path("/Users/mpaladino/repos/glosa/.env")
@@ -153,6 +156,91 @@ async def test_score_then_add_feeds_the_rolling_average() -> None:
 
     assert meter.avg() == pytest.approx(0.9)
     assert client.system_one.await_count == 3
+
+
+# ---------------------------------------------------- failure isolation (review fix 1)
+
+
+async def test_score_returns_none_and_counts_failure_on_client_error() -> None:
+    client = AsyncMock()
+    client.system_one.side_effect = TypeSafeAPIConnectionError("boom")
+    meter = QualityMeter(api_key="test-key", client=client)
+
+    result = await meter.score("en", "es")
+
+    assert result is None
+    assert meter.failures == 1
+
+
+async def test_score_times_out_and_counts_failure() -> None:
+    async def hang(*args: object, **kwargs: object) -> None:
+        await asyncio.sleep(10)
+
+    client = AsyncMock()
+    client.system_one.side_effect = hang
+    meter = QualityMeter(api_key="test-key", client=client)
+
+    result = await meter.score("en", "es", timeout_s=0.05)
+
+    assert result is None
+    assert meter.failures == 1
+
+
+async def test_score_lets_cancellation_propagate() -> None:
+    client = AsyncMock()
+    client.system_one.side_effect = asyncio.CancelledError()
+    meter = QualityMeter(api_key="test-key", client=client)
+
+    with pytest.raises(asyncio.CancelledError):
+        await meter.score("en", "es")
+
+    assert meter.failures == 0  # cancellation is not a "failed call"
+
+
+async def test_score_still_returns_the_probability_on_success() -> None:
+    # A prior failure must not poison later successful calls.
+    client = AsyncMock()
+    client.system_one.side_effect = [
+        TypeSafeAPIConnectionError("boom"),
+        SimpleNamespace(answers={"fidelity": SimpleNamespace(noul=0.77)}),
+    ]
+    meter = QualityMeter(api_key="test-key", client=client)
+
+    first = await meter.score("en", "es")
+    second = await meter.score("en", "es")
+
+    assert first is None
+    assert second == pytest.approx(0.77)
+    assert meter.failures == 1
+
+
+async def test_score_logs_a_warning_on_failure(caplog: pytest.LogCaptureFixture) -> None:
+    client = AsyncMock()
+    client.system_one.side_effect = TypeSafeAPIConnectionError("boom")
+    meter = QualityMeter(api_key="test-key", client=client)
+
+    with caplog.at_level(logging.WARNING, logger="glosa.quality"):
+        await meter.score("en", "es")
+
+    assert any("boom" in record.getMessage() for record in caplog.records)
+
+
+async def test_score_rate_limits_repeated_failure_warnings(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ticks = iter([0.0, 30.0, 61.0])  # 2nd failure at +30s (suppressed), 3rd at +61s (logged)
+    monkeypatch.setattr(quality, "_monotonic", lambda: next(ticks))
+    client = AsyncMock()
+    client.system_one.side_effect = TypeSafeAPIConnectionError("boom")
+    meter = QualityMeter(api_key="test-key", client=client)
+
+    with caplog.at_level(logging.WARNING, logger="glosa.quality"):
+        await meter.score("en", "es")
+        await meter.score("en", "es")
+        await meter.score("en", "es")
+
+    assert meter.failures == 3
+    assert len(caplog.records) == 2  # the middle one, at +30s, was rate-limited
 
 
 async def test_aclose_closes_a_client_it_created_itself() -> None:

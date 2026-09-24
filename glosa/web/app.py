@@ -12,8 +12,10 @@ each room that has a source, and stops them all on shutdown.
   - ``workers``: room id -> RoomWorker, in config.yaml order;
   - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
     admin session cookies;
-  - ``sessions_valid_after``: 0.0 until the first ``POST /admin/logout``,
-    which bumps it to "now" and so invalidates every outstanding session;
+  - ``session_epoch``: an int, 0 until the first ``POST /admin/logout``,
+    which increments it and so invalidates every outstanding session
+    (Ruling 43: mixed into each session token's HMAC, not compared as a
+    timestamp);
   - ``rooms_view()``: the rooms as the pages see them (task-6 contract);
   - ``branding``: {"event_name", "primary", "accent", "logo_url"}.
 
@@ -153,9 +155,9 @@ def create_app(
     # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
     # invalidates every outstanding admin session cookie.
     app.state.admin_secret = new_admin_secret()
-    # Bumped to "now" by POST /admin/logout: invalidates every outstanding
-    # session at once (fix round 2, #4), not just the browser that logged out.
-    app.state.sessions_valid_after = 0.0
+    # Incremented by POST /admin/logout: invalidates every outstanding
+    # session at once (Ruling 43), not just the browser that logged out.
+    app.state.session_epoch = 0
     app.state.rooms_view = lambda: [w.view() for w in workers.values()]
     app.state.branding = {
         "event_name": settings.event_name,

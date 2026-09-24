@@ -10,7 +10,7 @@
     a 1s sleep -- a cheap brake on brute-forcing it).
   - ``POST /admin/logout``: clears the session cookie and, since one
     ``ADMIN_PASSWORD`` is shared by everyone with it, invalidates every
-    other outstanding session too (``app.state.sessions_valid_after``).
+    other outstanding session too (``app.state.session_epoch``, Ruling 43).
   - ``POST /api/admin/rooms/{room_id}/start`` / ``.../stop``: call through
     to that room's ``RoomWorker``, keyed by its config ``id`` (not its
     ``slug`` -- they're equal today, but that's an implementation detail of
@@ -31,9 +31,9 @@ to add them by hand.
 ``create_app()`` (glosa/web/app.py) provides ``app.state.workers`` (room id
 -> RoomWorker, keyed the same way as ``app.state.settings.rooms``),
 ``app.state.settings``, ``app.state.admin_secret`` (a fresh per-process
-key, ``glosa.web.auth.new_admin_secret()``) and ``app.state.sessions_valid_after``
-(a float, 0.0 until the first logout), and mounts both ``router`` and
-``api_router``.
+key, ``glosa.web.auth.new_admin_secret()``) and ``app.state.session_epoch``
+(an int, 0 until the first logout increments it), and mounts both
+``router`` and ``api_router``.
 
 The room list's visual state reuses the four-state vocabulary
 (live/degraded/down/idle) already defined in glosa.css for the "Sala de
@@ -48,7 +48,6 @@ MVP's bare minimum: name, state, detail, current talk, Start/Stop.
 from __future__ import annotations
 
 import asyncio
-import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -115,7 +114,9 @@ async def login(request: Request, password: str = Form(...)):
     response = RedirectResponse("/admin", status_code=303)
     response.set_cookie(
         COOKIE_NAME,
-        sign_session(request.app.state.admin_secret, settings.admin_password),
+        sign_session(
+            request.app.state.admin_secret, settings.admin_password, epoch=request.app.state.session_epoch
+        ),
         max_age=COOKIE_MAX_AGE_S,
         httponly=True,
         samesite="lax",
@@ -127,11 +128,16 @@ async def login(request: Request, password: str = Form(...)):
 
 @router.post("/admin/logout", include_in_schema=False)
 def logout(request: Request):
-    # Fix round 2, #4: bump the floor every session's issued_at must clear,
-    # so a copy of the cookie taken before logout stops working too, not
-    # just the one this browser is deleting -- one shared ADMIN_PASSWORD
-    # means "log out" should mean "every session", not "this browser".
-    request.app.state.sessions_valid_after = time.time()
+    # Ruling 43: increment the session epoch -- mixed into every token's
+    # HMAC, not compared as a timestamp -- so every session signed under
+    # the old epoch fails outright, not just the cookie this browser is
+    # deleting. One shared ADMIN_PASSWORD means "log out" should mean
+    # "every session", not "this browser". (A prior version compared a
+    # wall-clock float against issued_at instead; that let a login landing
+    # in the very same second as a logout get wrongly rejected, because
+    # sign_session floors issued_at to whole seconds. An epoch has no such
+    # boundary to get wrong.)
+    request.app.state.session_epoch += 1
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(COOKIE_NAME, path="/")
     return response

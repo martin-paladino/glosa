@@ -76,7 +76,7 @@ def _make_app(workers: dict | None = None, settings: Settings | None = None) -> 
     app.state.settings = settings if settings is not None else _settings()
     app.state.workers = workers if workers is not None else {}
     app.state.admin_secret = new_admin_secret()
-    app.state.sessions_valid_after = 0.0
+    app.state.session_epoch = 0
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)

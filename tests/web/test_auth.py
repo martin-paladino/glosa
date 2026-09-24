@@ -57,7 +57,7 @@ def _make_app(settings: Settings | None = None, workers: dict | None = None) -> 
     app.state.settings = settings if settings is not None else _settings()
     app.state.workers = workers if workers is not None else {}
     app.state.admin_secret = new_admin_secret()
-    app.state.sessions_valid_after = 0.0
+    app.state.session_epoch = 0
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)
@@ -182,10 +182,11 @@ def test_logout_clears_the_cookie(client: TestClient) -> None:
 
 
 def test_logout_invalidates_a_copy_of_the_token_too(client: TestClient) -> None:
-    # Fix round 2, #4: logout must invalidate every outstanding session for
-    # the one shared ADMIN_PASSWORD, not just delete this browser's cookie
-    # -- a copy taken before logout (a different browser, a saved bookmark
-    # with the cookie baked in, whatever) must stop working too.
+    # Fix round 2, #4 / Ruling 43: logout must invalidate every outstanding
+    # session for the one shared ADMIN_PASSWORD, not just delete this
+    # browser's cookie -- a copy taken before logout (a different browser, a
+    # saved bookmark with the cookie baked in, whatever) must stop working
+    # too.
     client.post("/admin/login", data={"password": ADMIN_PASSWORD})
     stolen_token = client.cookies.get(COOKIE_NAME)
     assert stolen_token
@@ -200,7 +201,73 @@ def test_logout_invalidates_a_copy_of_the_token_too(client: TestClient) -> None:
     assert response.headers["location"] == "/admin/login"
 
 
-# ---- signing helpers (Ruling 36: <issued_at>.<hmac>, per-process secret) --
+def test_a_new_login_in_the_same_second_as_a_logout_is_accepted(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ruling 43: the round-2 fix compared a wall-clock float
+    # (sessions_valid_after) against issued_at, which sign_session floors to
+    # whole seconds -- so a login landing in the very same second as a
+    # preceding logout got floor(T) < T_logout and bounced straight back to
+    # the login page, even though the password was right and the login
+    # happened *after* the logout. Freeze time to the same instant -- with a
+    # fractional part, so int(issued_at) (sign_session floors) really is
+    # strictly less than the raw float sessions_valid_after used to store --
+    # for both logins to reproduce that exactly; the fix (a session epoch,
+    # not a timestamp comparison) must accept the new login regardless.
+    fixed = 1_700_000_000.7
+    monkeypatch.setattr("glosa.web.auth.time.time", lambda: fixed)
+
+    first_login = client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    assert first_login.status_code == 303
+    client.post("/admin/logout")
+
+    second_login = client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    assert second_login.status_code == 303
+    # Same frozen instant, so (with the old design) the very same issued_at.
+    assert client.cookies.get(COOKIE_NAME).split(".")[0] == str(int(fixed))
+
+    response = client.get("/admin")
+    assert response.status_code == 200
+    assert "data-admin" in response.text
+
+
+def test_a_pre_logout_token_from_the_same_second_is_still_rejected(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixed = 1_700_000_000.0
+    monkeypatch.setattr("glosa.web.auth.time.time", lambda: fixed)
+
+    client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    pre_logout_token = client.cookies.get(COOKIE_NAME)
+    assert pre_logout_token
+
+    client.post("/admin/logout")
+
+    other_client = TestClient(client.app, follow_redirects=False)
+    other_client.cookies.set(COOKIE_NAME, pre_logout_token)
+    response = other_client.get("/admin")
+
+    assert response.status_code in (302, 303, 307)
+    assert response.headers["location"] == "/admin/login"
+
+
+def test_two_logouts_in_a_row_still_work(client: TestClient) -> None:
+    client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+
+    first_logout = client.post("/admin/logout")
+    second_logout = client.post("/admin/logout")
+
+    assert first_logout.status_code in (302, 303, 307)
+    assert second_logout.status_code in (302, 303, 307)
+
+    relogin = client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    assert relogin.status_code == 303
+    response = client.get("/admin")
+    assert response.status_code == 200
+
+
+# ---- signing helpers (Ruling 36: <issued_at>.<hmac>, per-process secret;
+# Ruling 43: a session epoch, not a timestamp, invalidates old sessions) ----
 
 
 def test_sign_and_verify_session_round_trip() -> None:
@@ -217,6 +284,28 @@ def test_verify_session_rejects_a_token_signed_with_a_different_process_secret()
     token = sign_session(new_admin_secret(), ADMIN_PASSWORD)
 
     assert not verify_session(new_admin_secret(), ADMIN_PASSWORD, token)
+
+
+def test_verify_session_checks_the_session_epoch() -> None:
+    secret = new_admin_secret()
+    token = sign_session(secret, ADMIN_PASSWORD, issued_at=1_000_000.0, epoch=3)
+
+    assert verify_session(secret, ADMIN_PASSWORD, token, now=1_000_000.0, epoch=3)
+    assert not verify_session(secret, ADMIN_PASSWORD, token, now=1_000_000.0, epoch=4)
+    assert not verify_session(secret, ADMIN_PASSWORD, token, now=1_000_000.0, epoch=2)
+
+
+def test_a_token_from_an_older_epoch_is_rejected_even_with_the_same_issued_at() -> None:
+    # This is the case sessions_valid_after (a wall-clock comparison) got
+    # wrong: same issued_at, different epoch -- must still differ, and the
+    # newer epoch's token must still work.
+    secret = new_admin_secret()
+    old_token = sign_session(secret, ADMIN_PASSWORD, issued_at=1_000_000.0, epoch=0)
+    new_token = sign_session(secret, ADMIN_PASSWORD, issued_at=1_000_000.0, epoch=1)
+
+    assert old_token != new_token
+    assert verify_session(secret, ADMIN_PASSWORD, new_token, now=1_000_000.0, epoch=1)
+    assert not verify_session(secret, ADMIN_PASSWORD, old_token, now=1_000_000.0, epoch=1)
 
 
 def test_verify_session_rejects_an_expired_token() -> None:
@@ -349,7 +438,7 @@ def test_a_router_built_with_both_dependencies_protects_any_route_on_it() -> Non
     app = FastAPI()
     app.state.settings = _settings()
     app.state.admin_secret = new_admin_secret()
-    app.state.sessions_valid_after = 0.0
+    app.state.session_epoch = 0
     app.include_router(dummy_router)
     client = TestClient(app)
 

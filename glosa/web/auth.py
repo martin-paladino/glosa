@@ -38,10 +38,18 @@ carry a session yet, or are simply clearing one).
 
 Logging out clears the browser's cookie, but a *copy* of that cookie (taken
 before logout) would otherwise still verify -- the token itself doesn't
-change. ``app.state.sessions_valid_after`` closes that: logout bumps it to
-"now", and ``verify_session`` rejects any token whose ``issued_at`` is
-older, so every outstanding session -- not just the one browser that logged
-out -- stops working at once (fine for a single shared admin password).
+change. ``app.state.session_epoch`` (an int, 0 at boot) closes that: logout
+increments it, and the epoch is mixed into the HMAC (Ruling 43), so a token
+signed under an older epoch fails the MAC outright, whatever its
+``issued_at`` -- every outstanding session, not just the one browser that
+logged out, stops working at once (fine for a single shared admin
+password). An earlier version compared a wall-clock ``sessions_valid_after``
+float against ``issued_at`` instead; that broke a legitimate login landing
+in the very same second as a preceding logout (``sign_session`` floors
+``issued_at`` to whole seconds, so ``int(issued_at) < sessions_valid_after``
+could be true for a token signed *after* the logout), and this doesn't have
+that problem: two tokens sharing one ``issued_at`` but signed under
+different epochs still produce different MACs.
 
 ``issued_at`` is parsed with a strict, length-bounded pattern
 (``[0-9]{1,12}``), not ``str.isdigit()``: that also accepts non-ASCII digit
@@ -86,15 +94,23 @@ def _session_key(admin_secret: bytes, admin_password: str) -> bytes:
     return hmac.new(admin_secret, admin_password.encode("utf-8"), hashlib.sha256).digest()
 
 
-def _session_mac(admin_secret: bytes, admin_password: str, issued_at: str) -> str:
-    return hmac.new(_session_key(admin_secret, admin_password), issued_at.encode("utf-8"), hashlib.sha256).hexdigest()
+def _session_mac(admin_secret: bytes, admin_password: str, issued_at: str, epoch: int) -> str:
+    # epoch is part of the signed message (Ruling 43), not compared
+    # separately against issued_at: a token from an older epoch fails the
+    # MAC outright, so there's no timestamp-vs-timestamp comparison left to
+    # get wrong across a second boundary.
+    message = f"{issued_at}.{epoch}".encode("utf-8")
+    return hmac.new(_session_key(admin_secret, admin_password), message, hashlib.sha256).hexdigest()
 
 
-def sign_session(admin_secret: bytes, admin_password: str, *, issued_at: float | None = None) -> str:
+def sign_session(
+    admin_secret: bytes, admin_password: str, *, issued_at: float | None = None, epoch: int = 0
+) -> str:
     """A fresh session token, ``"<issued_at>.<hmac>"``, for a correct
-    ``admin_password``."""
+    ``admin_password`` under session epoch ``epoch``
+    (``app.state.session_epoch``)."""
     ts = str(int(time.time() if issued_at is None else issued_at))
-    return f"{ts}.{_session_mac(admin_secret, admin_password, ts)}"
+    return f"{ts}.{_session_mac(admin_secret, admin_password, ts, epoch)}"
 
 
 def verify_session(
@@ -103,13 +119,13 @@ def verify_session(
     token: str | None,
     *,
     now: float | None = None,
-    valid_after: float = 0.0,
+    epoch: int = 0,
 ) -> bool:
     """Whether ``token`` (a cookie value) is a valid, unexpired session for
-    ``admin_password`` signed with ``admin_secret``, issued at or after
-    ``valid_after`` (``app.state.sessions_valid_after``: logout bumps this
-    to "now", so a copy of an already-logged-out cookie stops working even
-    though nothing about the token itself changed)."""
+    ``admin_password`` signed with ``admin_secret`` under session epoch
+    ``epoch`` (``app.state.session_epoch``: logout increments it, so a
+    token signed under an older epoch is rejected regardless of its
+    ``issued_at``)."""
     if not admin_password or not token:
         return False
     issued_at, sep, mac = token.partition(".")
@@ -125,8 +141,6 @@ def verify_session(
         issued_at_s = int(issued_at)
     except (ValueError, OverflowError):
         return False  # defense in depth; _ISSUED_AT_RE should already rule this out
-    if issued_at_s < valid_after:
-        return False
     now = time.time() if now is None else now
     try:
         age = now - issued_at_s
@@ -134,7 +148,7 @@ def verify_session(
         return False
     if age < -5 or age > COOKIE_MAX_AGE_S:  # small tolerance for clock skew, not for replay
         return False
-    expected = _session_mac(admin_secret, admin_password, issued_at)
+    expected = _session_mac(admin_secret, admin_password, issued_at, epoch)
     # Always compare bytes: hmac.compare_digest raises for a non-ASCII str,
     # and `mac` comes straight from the (untrusted) cookie.
     return hmac.compare_digest(expected.encode("utf-8"), mac.encode("utf-8"))
@@ -160,10 +174,8 @@ def is_authenticated(request: Request) -> bool:
     session cookie."""
     settings = request.app.state.settings
     secret = request.app.state.admin_secret
-    valid_after = getattr(request.app.state, "sessions_valid_after", 0.0)
-    return verify_session(
-        secret, settings.admin_password, request.cookies.get(COOKIE_NAME), valid_after=valid_after
-    )
+    epoch = getattr(request.app.state, "session_epoch", 0)
+    return verify_session(secret, settings.admin_password, request.cookies.get(COOKIE_NAME), epoch=epoch)
 
 
 def require_admin(request: Request) -> None:

@@ -147,6 +147,30 @@ async def test_maps_go_away_error_and_final_records(tmp_path: Path) -> None:
     ]
 
 
+async def test_replays_interim_source_deltas_and_finals(tmp_path: Path) -> None:
+    # A transcribe-live recording: interims rewrite the open segment, the final closes it.
+    path = _write_jsonl(
+        tmp_path / "tr.jsonl",
+        [
+            {"t": 1.0, "kind": "source_delta", "text": "Por cierto,", "meta": {"lang": "es", "interim": True}},
+            {"t": 1.5, "kind": "source_delta", "text": "Por cierto, cuando", "meta": {"lang": "es", "interim": True}},
+            {"t": 2.0, "kind": "source_final", "text": "Por cierto, cuando.", "meta": {"lang": "es"}},
+            {"t": 2.1, "kind": "audio_stream_end", "text": "", "meta": {"audio_t": 1.9}},
+        ],
+    )
+    engine = FakeEngine(EngineConfig(kind="fake", source_lang="es", target_lang=None, fixture_path=str(path)), FakeClock())
+    await engine.connect()
+
+    events = await _collect(engine)
+
+    assert [(ev.kind, ev.text, ev.lang, ev.meta) for ev in events] == [
+        ("source_delta", "Por cierto,", "es", {"interim": True}),
+        ("source_delta", "Por cierto, cuando", "es", {"interim": True}),
+        ("source_final", "Por cierto, cuando.", "es", {}),
+        ("closed", "", None, {}),  # client-side records (audio_stream_end, ...) are skipped
+    ]
+
+
 async def test_a_closed_record_ends_the_stream(tmp_path: Path) -> None:
     path = _write_jsonl(
         tmp_path / "rec.jsonl",

@@ -115,7 +115,7 @@
     --caption-base: 1.375rem;        /* 22 px en celular: ~27 caracteres por renglón a 390 px */
     --caption-leading: 1.45;
     --caption-weight: 400;
-    --caption-measure: 30em;         /* ~60 caracteres de B612 */
+    --caption-measure: 30em;         /* ~56 caracteres de B612 (0,535em cada uno) */
 
     /* Espacio (base 4 px) */
     --space-1: 0.25rem;
@@ -139,7 +139,8 @@
     --dur-settle: 400ms;             /* frase en curso → cerrada: solo cambia el color */
     --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
 
-    /* Alias de v1 para el admin mínimo de la Tarea 7 (se borran con la Tarea 12). */
+    /* Alias de v1 para el admin mínimo de la Tarea 7 (se borran con la Tarea 12).
+       Su markup v1 tiene además un bloque propio en glosa.views ("Interim admin of Task 7"). */
     --bg: var(--room);
     --surface: var(--panel);
     --surface-2: var(--panel-2);
@@ -158,7 +159,8 @@
   [data-theme="dark"]  { color-scheme: dark; }
 
   /* Alto contraste: negro, blanco y los tres estados más vivos. Sin transparencias,
-     filetes de 2 px, subtítulos en B612 Bold. La frase en curso no se apaga (13,4:1). */
+     filetes de 2 px, subtítulos en B612 Bold. La frase en curso no se apaga (13,4:1).
+     Este bloque está duplicado abajo para prefers-contrast: mantenelos iguales. */
   [data-theme="contrast"] {
     color-scheme: dark;
     --room: #000000; --panel: #000000; --panel-2: #000000; --drawer: #000000; --well: #000000;
@@ -174,7 +176,7 @@
     --caption-weight: 700;
   }
   @media (prefers-contrast: more) {
-    :root:not([data-theme]) {
+    :root:not([data-theme]) {        /* copia de [data-theme="contrast"]: mantenelos iguales */
       color-scheme: dark;
       --room: #000000; --panel: #000000; --panel-2: #000000; --drawer: #000000; --well: #000000;
       --glass: #000000; --key: #000000; --key-hover: #1F1F1F; --sel: #2B2B2B;
@@ -233,6 +235,9 @@
 
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   [data-theme="contrast"] :focus-visible { outline-width: 3px; outline-offset: 3px; }
+  @media (prefers-contrast: more) {
+    :root:not([data-theme]) :focus-visible { outline-width: 3px; outline-offset: 3px; }
+  }
 
   ::selection { background: color-mix(in srgb, var(--ink) 28%, transparent); }
 
@@ -848,6 +853,7 @@
   .slot__what .talk-title { font-size: var(--step-1); color: var(--ink-2); }
   .slot--now .slot__what .talk-title { color: var(--ink); }
   .slot__empty { font-size: var(--step-0); color: var(--ink-3); }
+  .slot, .slot__what { align-content: start; }   /* si un título ocupa dos renglones, la fila no se desalinea */
 
   /* Sala sin charla: la próxima, abajo en el vidrio, como el monitor inactivo del panel. */
   .stage-agenda { gap: 18px; }
@@ -880,6 +886,7 @@
     text-decoration: none;
   }
   .room-nav__item:hover { background: var(--panel); }
+  .room-nav__item:focus-visible { outline-offset: -2px; }   /* adentro: la lista tiene scroll y lo recortaría */
   .room-nav__item[aria-current="page"] { background: var(--sel); }
   .room-nav__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .room-nav__name {
@@ -1407,6 +1414,7 @@
   .room > .room-head { grid-area: head; }
   .room > .room-nav  { display: none; }
   .room > .controls  { grid-area: controls; }
+  .room > .room__clock { display: none; }   /* en celular el reloj va en la fila de la sala */
 
   .room__stage {
     --stage-pad-top: 20px;
@@ -1424,8 +1432,16 @@
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 64px);
     mask-image: linear-gradient(to bottom, transparent 0, #000 64px);
   }
-  .room__stage:has(> .transcript--facing) { -webkit-mask-image: none; mask-image: none; }
+  /* Las páginas enfrentadas llevan rótulos pegados arriba: ahí no hay desvanecido.
+     Abajo de 40rem el bilingüe es interlineal, sin rótulos, y conserva el roll-up. */
+  @container glosa (min-width: 40rem) {
+    .room__stage:has(> .transcript--facing) { -webkit-mask-image: none; mask-image: none; }
+  }
   .room__stage > :first-child { margin-block-start: auto; }   /* el vivo queda abajo sin romper el scroll */
+  /* En bilingüe la página más corta va anclada abajo y crece hacia arriba: el anclaje
+     de scroll del navegador la seguía subiendo el vidrio, y room.js lo tomaba como
+     el lector yéndose para atrás. Acá room.js maneja el scroll solo. */
+  .room__stage:has(> .transcript--facing) { overflow-anchor: none; }
 
   /* "Volver al vivo" flota abajo del vidrio. */
   .room > .room__to-live {
@@ -1442,11 +1458,11 @@
       --gutter: 1rem;
       --tap: 40px;
       --caption-base: clamp(1.5rem, 0.75rem + 1.3cqi, 2.25rem);
-      grid-template-columns: 20rem minmax(0, 1fr) auto;
+      grid-template-columns: 20rem minmax(0, 1fr) auto auto;
       grid-template-rows: auto minmax(0, 1fr);
       grid-template-areas:
-        "head head controls"
-        "nav  stage stage";
+        "head head  controls clock"
+        "nav  stage stage    stage";
       background: var(--room);
     }
     .room > .room-nav { display: flex; grid-area: nav; }
@@ -1486,9 +1502,21 @@
 
     .room > .controls {
       align-self: stretch;
-      padding: 0 var(--space-5) 0 0;
+      padding: 0;
       border-block-start: 0;
       border-block-end: var(--border-w) solid var(--line);
+    }
+    /* El reloj de la casa, a la derecha de las teclas, como en la franja del panel. */
+    .room-head__umd > .clock { display: none; }
+    .room > .room__clock {
+      grid-area: clock;
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      padding-inline: 20px var(--space-5);
+      background: var(--panel);
+      border-block-end: var(--border-w) solid var(--line);
+      font-size: var(--step-1);
     }
     .room .control--fullscreen { display: inline-flex; }
 
@@ -1612,6 +1640,20 @@
     .timeline { min-inline-size: 900px; }
     .scrim { inset-inline-end: 0; }
   }
+  /* Interim admin of Task 7 (v1 markup). Delete with Task 12. */
+  .admin:has(> .admin__bar) { grid-template-rows: auto minmax(0, 1fr); block-size: auto; min-block-size: 100dvh; align-content: start; }
+  .admin__bar { display: flex; align-items: center; gap: 12px; min-block-size: 52px; padding: 0 16px; background: var(--panel); border-block-end: var(--border-w) solid var(--edge); }
+  .admin__title { font: 700 var(--step-2)/1 var(--font-label); }
+  .admin__user { margin-inline-start: auto; }
+  .admin__main { padding: 14px 16px; }
+  .console { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 10px; padding: 0 16px 16px; }
+  .strip { display: grid; align-content: start; gap: 8px; padding: 12px 16px; background: var(--room); border: var(--border-w) solid var(--line); }
+  .strip--degraded { border-color: var(--warn); }
+  .strip--down { border-color: var(--fault); }
+  .strip__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .strip__name { font: 700 var(--step-3)/1.1 var(--font-label); font-stretch: var(--narrow-3); }
+  .strip__actions { display: flex; gap: 6px; }
+
   @container glosa (max-width: 40rem) {
     .wall { grid-template-columns: minmax(0, 1fr); }
     .attn { grid-template-columns: minmax(0, 1fr); }

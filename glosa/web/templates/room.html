@@ -112,6 +112,8 @@
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
   </nav>
+  {#- En escritorio el reloj va a la derecha de las teclas; en celular, en la fila de la sala. #}
+  <time class="clock room__clock" data-clock hidden></time>
 
   <main class="room__stage" data-stage aria-label="{{ tr('captions_in').format(lang=config.langNames.get(caption_lang, caption_lang)) }}">
     <div class="transcript" data-transcript data-layout="single" lang="{{ caption_lang }}">

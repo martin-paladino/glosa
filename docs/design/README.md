@@ -27,7 +27,7 @@ Las maquetas abren con doble clic, sin servidor. Las capturas de la app real est
 6. **Toda pantalla nueva arranca gris** y solo se colorea el estado que pide una acción.
 7. **La estructura es información.** Los filetes separan zonas, no decoran. No hay sombras salvo en lo que flota ("Volver al vivo"), no hay degradés de adorno y no hay mayúsculas sostenidas en rótulos. El único degradé es funcional: el desvanecido de arriba del roll-up.
 8. **Formato rioplatense:** voseo ("Elegí una sala"), coma decimal ("6,1 s", "US$ 41,80"), horas de 24 h, mayúscula solo al principio de la frase y en nombres propios.
-9. **Foco siempre visible:** contorno de 2 px en `--ink` (3 px en alto contraste). Teclas de lectura de 46 px de alto en el celular.
+9. **Foco siempre visible:** contorno de 2 px en `--ink` (3 px en alto contraste, también con `prefers-contrast: more`). Teclas de lectura de 46 px de alto en el celular.
 
 ## 2. Cómo se incluye
 
@@ -143,7 +143,7 @@ La regla más importante del sistema. `room.js` escribe este markup (las clases 
 4. **Frase cerrada:** se le saca `phrase--open`; el color pasa a `--cap` en 400 ms. Cambia solo el color, nunca el peso ni el tamaño.
 5. Siempre hay **una sola** `.phrase--open`, y es la última. Lo nuevo se agrega al final: nunca se reescribe lo que ya está en pantalla.
 6. En texto en vivo **no se usan** `text-wrap: balance` ni `pretty`, ni texto centrado, ni corte de palabras automático.
-7. **Roll-up:** el vidrio se desvanece en sus 64 px de arriba (en el monitor del panel, en su tercio de arriba). En bilingüe no, porque arriba van los rótulos de cada página.
+7. **Roll-up:** el vidrio se desvanece en sus 64 px de arriba (en el monitor del panel, en su tercio de arriba). En las páginas enfrentadas del bilingüe (desde 40rem) no, porque arriba van los rótulos de cada página; en el bilingüe interlineal del celular, sí.
 8. **Auto-scroll:** si el lector sube más de 48 px, se pausa y aparece `.to-live` ("Volver al vivo"), una tecla gris con borde claro que flota abajo del vidrio. Al tocarla, vuelve abajo y se esconde.
 9. **Bilingüe:** dos páginas enfrentadas (`.transcript--facing` con dos `.page`), original a la izquierda, cada una con su rótulo pegado arriba (`.line--head`). Abajo de 40rem, el original queda como un renglón chico y gris arriba del vivo de la traducción.
 
@@ -185,13 +185,13 @@ Los estados usan siempre las mismas cuatro palabras en los modificadores: `--liv
 
 | Pieza | Clases |
 |---|---|
-| Encabezado de sala | `.room-head`, `__bar` (marca, evento y "Cambiar de sala"), `__brand`, `__event`, `__rooms` (solo celular), `__umd` (nombre, estado y reloj), `__name`, `__talk`, `__meta` |
+| Encabezado de sala | `.room-head`, `__bar` (marca, evento y "Cambiar de sala"), `__brand`, `__event`, `__rooms` (solo celular), `__umd` (nombre, estado y reloj en celular), `__name`, `__talk`, `__meta`; `.room__clock` (el reloj en escritorio, a la derecha de las teclas) |
 | Teclas de lectura | `.controls`, `.control` (46 px; 40 px en escritorio), `.control--select`, `.control--fullscreen` (solo escritorio), `.control-group`, `.control__word` (se oculta abajo de 23,5rem) |
 | Volver al vivo | `.to-live` (+ `.room__to-live` para flotar sobre el vidrio) |
 | Escenario vacío | `.stage-note`, `.stage-agenda` |
 | "Ahora" y "Próxima" | `.agenda`, `.slot` (+ `--now`), `__when` (con `<time>`), `__what`, `__empty` |
 | Salas al costado | `.room-nav`, `__title`, `__list`, `__item` (`aria-current="page"` = `--sel`), `__row`, `__name`, `__talk`, `__foot` |
-| Lista pública | `.room-list`, `.room-card` (+ `--live`), `__head`, `__name`, `__link` (toda la fila es el link) |
+| Lista pública | `.room-list`, `.room-card`, `__head`, `__name`, `__link` (toda la fila es el link) |
 | Pie | `.colophon` |
 
 ### Panel de producción (Tarea 12)

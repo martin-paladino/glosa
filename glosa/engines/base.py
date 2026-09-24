@@ -13,6 +13,20 @@ from glosa.models import AudioChunk, EngineConfig, EngineEvent
 
 
 class Engine(Protocol):
+    """One engine session.
+
+    Lifecycle contract:
+      - connect() opens the session. API/network failures do not raise: they
+        come out of events() as an "error" event (meta {"code", "retryable"})
+        followed by "closed".
+      - events() always ends with exactly one "closed" event.
+      - The consumer must call close() after observing "closed" (or when
+        retiring the engine for any other reason) to release the connection.
+        close() is safe at any time, even while connect() is in flight.
+      - meta["usd"] on any event is a cost INCREMENT since the previous event;
+        consumers sum it.
+    """
+
     async def connect(self) -> None:
         """Open the underlying session (e.g. the Live API websocket)."""
         ...
@@ -26,11 +40,13 @@ class Engine(Protocol):
         ...
 
     async def close(self) -> None:
-        """Tear down the session."""
+        """Tear down the session and release the connection. Idempotent; call
+        it after observing "closed" too."""
         ...
 
     def events(self) -> AsyncIterator[EngineEvent]:
-        """Async stream of EngineEvent produced by this session."""
+        """Async stream of EngineEvent produced by this session; ends with
+        exactly one "closed". meta["usd"] values are increments (sum them)."""
         ...
 
 

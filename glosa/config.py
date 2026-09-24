@@ -43,6 +43,9 @@ class RoomCfg(BaseModel):
     source_type: Literal["file", "url", "youtube", "emitter"] = "file"
     source_url: str | None = None
     default_targets: list[str] = Field(default_factory=list)
+    # Language spoken in the room's "free session" (the synthetic talk a room
+    # with a source runs when there is no agenda). Targets: default_targets.
+    language: str = "en"
 
 
 class Prices(BaseModel):
@@ -95,6 +98,12 @@ class Settings(BaseSettings):
     vad: VadCfg = Field(default_factory=VadCfg)
     segmenter: SegmenterCfg = Field(default_factory=SegmenterCfg)
     default_export_shift_s: float = 2.4
+    # "live": Gemini Live Translate. "fake": FakeEngine replaying a recorded
+    # session (fake_fixture, by default samples/fixtures/lt_en.jsonl), so a
+    # demo or a load test runs without spending API credit.
+    engine_mode: Literal["live", "fake"] = "live"
+    fake_fixture: str | None = None
+    db_path: str = "data/glosa.db"
 
     @classmethod
     def settings_customise_sources(

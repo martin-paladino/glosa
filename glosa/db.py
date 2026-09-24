@@ -108,6 +108,15 @@ _AGENDA_COLUMNS = (
     "abstract", "tags", "glossary_json",
 )
 _TALK_FIELD_TO_COLUMN = {"glossary": "glossary_json"}
+FREE_TALK_PREFIX = "free-"  # glosa.room.FREE_SESSION_PREFIX (db.py does not import the pipeline)
+
+
+@dataclass
+class AgendaWrite:
+    """What ``Database.upsert_agenda`` did besides inserting and updating."""
+
+    held: dict[str, str]  # id -> status: live/done talks left unchanged
+    removed: list[tuple[str, str]]  # (id, title): scheduled talks the agenda no longer lists
 
 
 @dataclass
@@ -224,13 +233,21 @@ class Database:
 
         await self._run(write)
 
-    async def upsert_agenda(self, talks: list[Talk]) -> dict[str, str]:
-        """An agenda import: insert new talks and refresh the agenda fields of
-        stored talks that are still ``scheduled``. A talk that is ``live`` or
-        ``done`` is left exactly as it is (its fields and its ``actual_*``).
-        Returns those left unchanged, id -> status. One transaction."""
+    async def upsert_agenda(self, talks: list[Talk]) -> AgendaWrite:
+        """An agenda import (Ruling 45), in one transaction:
+
+          - insert new talks and refresh the agenda fields of stored talks
+            that are still ``scheduled``; a ``live`` or ``done`` talk is left
+            exactly as it is (fields and ``actual_*``): ``held``;
+          - for every (room, day) the import covers (``day`` as stored, the
+            date part of ``start``: the admin API stores it in the event's
+            timezone), delete the ``scheduled`` talks it no longer lists (a
+            talk cancelled upstream, or one whose id changed because its
+            title or time was fixed): ``removed``. Live, done and free
+            session rows are never deleted.
+        """
         if not talks:
-            return {}
+            return AgendaWrite(held={}, removed=[])
         cols = ", ".join(_q(c) for c in _TALK_COLUMNS)
         marks = ", ".join("?" * len(_TALK_COLUMNS))
         updates = ", ".join(f"{_q(c)} = excluded.{_q(c)}" for c in _AGENDA_COLUMNS)
@@ -238,10 +255,16 @@ class Database:
             f"INSERT INTO talks ({cols}) VALUES ({marks}) "
             f"ON CONFLICT (id) DO UPDATE SET {updates} WHERE talks.status = 'scheduled'"
         )
-        rows = [[_talk_row(t)[c] for c in _TALK_COLUMNS] for t in talks]
+        rows = [_talk_row(t) for t in talks]
+        values = [[row[c] for c in _TALK_COLUMNS] for row in rows]
         ids = [t.id for t in talks]
+        covered = sorted({(row["room_id"], row["start"][:10]) for row in rows})
+        scheduled_of_day = (
+            'SELECT id, title FROM talks WHERE room_id = ? AND substr("start", 1, 10) = ? '
+            "AND status = 'scheduled' ORDER BY \"start\", id"
+        )
 
-        def write(con: sqlite3.Connection) -> dict[str, str]:
+        def write(con: sqlite3.Connection) -> AgendaWrite:
             con.execute("BEGIN")
             try:
                 held: dict[str, str] = {}
@@ -250,14 +273,42 @@ class Database:
                     marks = ", ".join("?" * len(chunk))
                     query = f"SELECT id, status FROM talks WHERE status != 'scheduled' AND id IN ({marks})"
                     held |= {row["id"]: row["status"] for row in con.execute(query, chunk)}
-                con.executemany(sql, rows)
+                listed = set(ids)
+                removed = [
+                    (row["id"], row["title"])
+                    for room_id, day in covered
+                    for row in con.execute(scheduled_of_day, (room_id, day)).fetchall()
+                    if row["id"] not in listed and not row["id"].startswith(FREE_TALK_PREFIX)
+                ]
+                con.executemany("DELETE FROM talks WHERE id = ? AND status = 'scheduled'", [(r[0],) for r in removed])
+                con.executemany(sql, values)
             except BaseException:
                 con.execute("ROLLBACK")
                 raise
             con.execute("COMMIT")
-            return held
+            return AgendaWrite(held=held, removed=removed)
 
         return await self._run(write)
+
+    async def delete_scheduled_talk(self, talk_id: str) -> bool:
+        """Delete a talk that is still ``scheduled``; False if there is no
+        such talk or it is live or done (those are never deleted)."""
+        sql = "DELETE FROM talks WHERE id = ? AND status = 'scheduled'"
+        cursor = await self._run(lambda con: con.execute(sql, (talk_id,)))
+        return cursor.rowcount > 0
+
+    async def get_live_talks(self) -> list[Talk]:
+        """Every talk marked ``live``, in any room."""
+        sql = "SELECT * FROM talks WHERE status = 'live' ORDER BY room_id, \"start\", id"
+        rows = await self._run(lambda con: con.execute(sql).fetchall())
+        return [_talk_from_row(r) for r in rows]
+
+    async def get_last_started_talk(self, room_id: str) -> Talk | None:
+        """The room's talk (free sessions included) with the latest
+        ``actual_start``, or None if none ever started."""
+        sql = "SELECT * FROM talks WHERE room_id = ? AND actual_start IS NOT NULL ORDER BY actual_start DESC LIMIT 1"
+        row = await self._run(lambda con: con.execute(sql, (room_id,)).fetchone())
+        return _talk_from_row(row) if row is not None else None
 
     async def get_talk(self, talk_id: str) -> Talk | None:
         row = await self._run(lambda con: con.execute("SELECT * FROM talks WHERE id = ?", (talk_id,)).fetchone())

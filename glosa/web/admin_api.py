@@ -37,17 +37,22 @@ RoomStatus}``:
 The agenda (Task 8), JSON only (the panel is Task 12's):
 
   - ``POST /api/admin/agenda/import``: multipart form with ``file`` (an
-    upload) or ``url`` (fetched by the server with the stdlib, http(s)
-    only, 15 s timeout), optional ``format`` (``csv`` | ``nerdearla``,
+    upload) or ``url`` (fetched by the server with the stdlib: http(s)
+    only, redirects included; 15 s timeout, 5 MB; a response that is not
+    JSON/CSV/text is refused), optional ``format`` (``csv`` | ``nerdearla``,
     guessed from the name or the content) and ``room_map`` (JSON: agenda
     room name -> room id; replaces the default map of each room's id, name
     and ``agenda_names``). Returns ``{"imported": N, "skipped": [{"source_id",
-    "title", "reason"}...]}`` (Ruling 17): rows of unmapped rooms, talks
-    that end before they start, and talks already ``live``/``done``, which a
-    re-import never touches (``Database.upsert_agenda``). A malformed row is
-    a 422 ``{"row", "reason"}`` and nothing is imported. Start/end are
-    stored in the event's timezone, so ``day`` queries match the event's
-    calendar.
+    "title", "reason"}...], "removed": [{"id", "title"}...]}`` (Ruling 17):
+    ``skipped`` has rows of unmapped rooms, talks that end before they
+    start, and talks already ``live``/``done``, which a re-import never
+    touches; ``removed`` has the scheduled talks of the rooms and days the
+    import covers that it no longer lists (Ruling 45,
+    ``Database.upsert_agenda``). A CSV talk's id is derived from its mapped
+    room, start and title, so naming a room by id or by name is the same
+    talk. A malformed row is a 422 ``{"row", "reason"}`` and nothing is
+    imported. Start/end are stored in the event's timezone, so ``day``
+    queries match the event's calendar.
   - ``GET /api/admin/talks?room=&day=``: a room's (or every room's) talks
     of ``day`` (default today, event timezone), free sessions left out.
   - ``GET /api/admin/talks/{id}``, ``PUT /api/admin/talks/{id}``: one talk;
@@ -56,7 +61,12 @@ The agenda (Task 8), JSON only (the panel is Task 12's):
     parsers, engine fast/glossary, start before end; else 422), 404 for no
     such talk, 409 for a free session or, on a live talk, for anything but
     title/targets/glossary. It updates the DB, logs a ``talk_updated``
-    event and publishes one on ``app.state.admin_events``.
+    event and publishes one on ``app.state.admin_events``. A running talk
+    gets the new title and glossary at once; new targets apply when it
+    next starts (RoomWorker reloads a restarted talk from the DB).
+  - ``DELETE /api/admin/talks/{id}``: a scheduled talk only (409 for live,
+    done or a free session, 404 if missing); logs and publishes
+    ``talk_deleted``.
 
 Two routers, on purpose (fix round 1 wired ``require_admin``/
 ``require_csrf_header`` per route; fix round 2 moved them here): ``router``
@@ -104,7 +114,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from glosa.agenda import AgendaError
+from glosa.agenda import AgendaError, stable_talk_id
 from glosa.agenda.csv_import import VALID_ENGINES, VALID_LANGUAGES, parse_csv
 from glosa.agenda.nerdearla_import import SkippedSession, parse_nerdearla_report
 from glosa.models import GlossaryTerm, Talk
@@ -442,15 +452,15 @@ async def import_agenda(
     except UnicodeDecodeError as exc:
         raise HTTPException(status_code=422, detail="the agenda is not UTF-8 text") from exc
     kind: AgendaFormat = source_format or _sniff(source_name, text)
+    zone = _event_tz(request)
     try:
         if kind == "csv":
-            talks, skipped = _from_csv(text, settings.timezone, names, settings.default_engine_en)
+            talks, skipped = _from_csv(text, settings.timezone, names, settings.default_engine_en, zone)
         else:
             talks, skipped = _from_nerdearla(text, settings.timezone, names, settings.default_engine_en)
     except AgendaError as exc:
         raise HTTPException(status_code=422, detail={"row": exc.row, "reason": exc.reason}) from exc
 
-    zone = _event_tz(request)
     unique: dict[str, Talk] = {}
     for talk in talks:
         talk.start, talk.end = talk.start.astimezone(zone), talk.end.astimezone(zone)  # the event's day
@@ -458,19 +468,27 @@ async def import_agenda(
             skipped.append(SkippedSession(talk.id, talk.title, "end is not after start"))
         else:
             unique[talk.id] = talk  # the same id twice: the last one wins
-    held = await request.app.state.db.upsert_agenda(list(unique.values()))
+    db = request.app.state.db
+    written = await db.upsert_agenda(list(unique.values()))
     skipped += [
         SkippedSession(talk_id, unique[talk_id].title, f"talk is {status}: left unchanged")
-        for talk_id, status in held.items()
+        for talk_id, status in written.held.items()
     ]
-    imported = len(unique) - len(held)
-    await request.app.state.db.log_event(
-        None, "info", "agenda_import", f"{kind}: {imported} imported, {len(skipped)} skipped"
+    removed = [{"id": talk_id, "title": title} for talk_id, title in written.removed]
+    imported = len(unique) - len(written.held)
+    await db.log_event(
+        None, "info", "agenda_import",
+        f"{kind}: {imported} imported, {len(skipped)} skipped, {len(removed)} removed",
     )
+    if removed:
+        await db.log_event(
+            None, "info", "agenda_removed",
+            "no longer in the agenda: " + ", ".join(f"{r['id']} ({r['title']})" for r in removed),
+        )
     request.app.state.admin_events.publish(
-        "agenda_imported", {"format": kind, "imported": imported, "skipped": len(skipped)}
+        "agenda_imported", {"format": kind, "imported": imported, "skipped": len(skipped), "removed": len(removed)}
     )
-    return {"imported": imported, "skipped": [asdict(s) for s in skipped]}
+    return {"imported": imported, "skipped": [asdict(s) for s in skipped], "removed": removed}
 
 
 @api_router.get("/talks")
@@ -495,6 +513,25 @@ async def get_talk(talk_id: str, request: Request) -> dict:
     if talk is None:
         raise HTTPException(status_code=404, detail=f"no talk {talk_id!r}")
     return talk_json(talk)
+
+
+@api_router.delete("/talks/{talk_id}")
+async def delete_talk(talk_id: str, request: Request) -> dict:
+    """Drop a talk from the agenda: only one that is still scheduled (409
+    for a live or done talk, or a free session; 404 if there is none)."""
+    db = request.app.state.db
+    talk = await db.get_talk(talk_id)
+    if talk is None:
+        raise HTTPException(status_code=404, detail=f"no talk {talk_id!r}")
+    if is_free_talk(talk_id):
+        raise HTTPException(status_code=409, detail="a free session is not part of the agenda")
+    if talk.status != "scheduled" or not await db.delete_scheduled_talk(talk_id):
+        raise HTTPException(status_code=409, detail=f"the talk is {talk.status}: only a scheduled talk can be deleted")
+    await db.log_event(talk.room_id, "info", "talk_deleted", f"{talk_id}: {talk.title}")
+    request.app.state.admin_events.publish(
+        "talk_deleted", {"talk_id": talk_id, "room_id": talk.room_id, "title": talk.title}
+    )
+    return {"status": "ok", "deleted": talk_id}
 
 
 @api_router.put("/talks/{talk_id}")
@@ -596,8 +633,11 @@ def _sniff(name: str, text: str) -> AgendaFormat:
 
 
 def _from_csv(
-    text: str, tz: str, names: dict[str, str], default_engine_en: Literal["fast", "glossary"]
+    text: str, tz: str, names: dict[str, str], default_engine_en: Literal["fast", "glossary"], zone: tzinfo
 ) -> tuple[list[Talk], list[SkippedSession]]:
+    """parse_csv, then each row's room through ``names``. A talk's id is
+    re-derived from the mapped room (and its start in the event's timezone),
+    so a row that names its room by id or by name is the same talk."""
     talks: list[Talk] = []
     skipped: list[SkippedSession] = []
     for row, talk in enumerate(parse_csv(text, tz, default_engine_en), start=2):  # parse_csv's row numbers
@@ -606,6 +646,8 @@ def _from_csv(
             skipped.append(SkippedSession(None, talk.title, f"row {row}: unmapped room: {talk.room_id!r}"))
             continue
         talk.room_id = room_id
+        talk.start, talk.end = talk.start.astimezone(zone), talk.end.astimezone(zone)
+        talk.id = stable_talk_id(room_id, talk.start, talk.title)
         talks.append(talk)
     return talks, skipped
 
@@ -623,25 +665,58 @@ def _from_nerdearla(
     return parse_nerdearla_report(sessions, names, tz, default_engine_en)
 
 
+class HttpOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow redirects to http(s) URLs only (urllib's default also follows
+    ftp)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        if urllib.parse.urlparse(newurl).scheme not in ("http", "https"):
+            raise urllib.error.HTTPError(newurl, code, "redirect to a non-http(s) URL refused", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(HttpOnlyRedirectHandler)
+
+
+def _is_agenda_type(content_type: str) -> bool:
+    """JSON, CSV or any text, or the generic binary type some servers use
+    for downloads; not an image, a PDF, an archive..."""
+    return (
+        content_type.startswith("text/")
+        or content_type in ("application/json", "application/octet-stream", "application/csv")
+        or content_type.endswith("+json")
+    )
+
+
 async def _fetch(url: str) -> bytes:
-    """GET ``url`` from the server (stdlib only; http/https only)."""
+    """GET ``url`` from the server (stdlib only; http/https only, redirects
+    too; 15 s timeout; at most MAX_AGENDA_BYTES + 1 bytes read)."""
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise HTTPException(status_code=422, detail="url must be an http(s) URL")
 
-    def get() -> bytes:
+    def get() -> tuple[str, bytes]:
         headers = {"User-Agent": "Glosa", "Accept": "application/json, text/csv, */*"}
         request = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_S) as response:
-            return response.read(MAX_AGENDA_BYTES + 1)
+        with _opener().open(request, timeout=FETCH_TIMEOUT_S) as response:
+            content_type = response.headers.get_content_type() if response.headers.get("Content-Type") else ""
+            if content_type and not _is_agenda_type(content_type):
+                return content_type, b""
+            return content_type, response.read(MAX_AGENDA_BYTES + 1)
 
     try:
-        return await asyncio.to_thread(get)
+        content_type, body = await asyncio.to_thread(get)
     except urllib.error.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"could not fetch the agenda: HTTP {exc.code}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"could not fetch the agenda: HTTP {exc.code} {exc.reason}".rstrip()
+        ) from exc
     except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
         reason = getattr(exc, "reason", None) or exc
         raise HTTPException(status_code=502, detail=f"could not fetch the agenda: {reason}") from exc
+    if content_type and not _is_agenda_type(content_type):
+        raise HTTPException(status_code=502, detail=f"the URL did not return an agenda ({content_type})")
+    return body
 
 
 # ---- helpers ------------------------------------------------------------------

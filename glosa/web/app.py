@@ -9,8 +9,11 @@ glosa/web/auth.py), and owns the rooms. The lifespan:
      keeping the mode (auto/manual) and public token already stored;
   2. creates the Autopilot (glosa/scheduler.py, ``lead_s`` 60) and runs one
      tick, which reopens the agenda's talk of the moment after a restart;
-  3. starts a free session in each room with a source that the autopilot
-     does not run (no agenda talks today, or manual; Ruling 33);
+  3. resumes, in each manual room, the talk that was still live when the
+     server stopped (a crash); other manual rooms stay idle (Ruling 46);
+     starts a free session in each auto room with a source that the
+     autopilot does not run (no agenda talks today; Ruling 33); and closes
+     the talks still marked live that no room runs now (``_boot_rooms``);
   4. runs ``Autopilot.tick()`` every ``autopilot_interval_s`` (5 s) in the
      task named ``autopilot``;
   5. on shutdown cancels that loop (a tick in progress finishes), stops
@@ -60,6 +63,7 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -179,7 +183,7 @@ def create_app(
                 )
             autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
             app.state.autopilot = autopilot
-            await _boot_rooms(autopilot, workers, db)
+            await _boot_rooms(autopilot, workers, db, clock.wall())
             pilot = asyncio.create_task(autopilot.run(autopilot_interval_s), name="autopilot")
             yield
         finally:
@@ -224,11 +228,19 @@ def create_app(
     return app
 
 
-async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db) -> None:
-    """First the autopilot's tick, which reopens whatever the agenda says is
-    on now (the server restarted mid-talk, spec §6); then the free session
-    (Task 5) of every room with a source that the autopilot does not run
-    (Ruling 33: no agenda talks today, or manual)."""
+async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db, boot: datetime) -> None:
+    """What each room runs at startup:
+
+      1. the autopilot's tick reopens whatever the agenda says is on now in
+         the auto rooms (the server restarted mid-talk, spec §6);
+      2. a manual room whose last talk was still ``live`` (a crash) resumes
+         it; any other manual room stays idle: no free session, no API
+         spend (Ruling 46);
+      3. an auto room with a source that the autopilot does not run (no
+         agenda talks today) starts its free session (Task 5, Ruling 33);
+      4. any talk still ``live`` that no room now runs (left by a crash) is
+         closed: ``done``, ``actual_end`` = boot time.
+    """
     try:
         await autopilot.tick()
     except Exception:
@@ -236,13 +248,47 @@ async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db) 
     for worker in workers.values():
         if not worker.has_source or worker.talk is not None:
             continue
+        room_id = worker.room.id
+        if autopilot.mode(room_id) == "manual":
+            await _resume_manual_room(worker, db)
+            continue
         try:
-            owned = await autopilot.in_charge(worker.room.id)
+            owned = await autopilot.in_charge(room_id)
         except Exception:
-            log.exception("room %s: could not ask the autopilot", worker.room.id)
+            log.exception("room %s: could not ask the autopilot", room_id)
             owned = False
         if not owned:
             await _start_free_session(worker, db)
+    await _close_stale_live_talks(workers, db, boot)
+
+
+async def _resume_manual_room(worker: RoomWorker, db) -> None:
+    room_id = worker.room.id
+    try:
+        last = await db.get_last_started_talk(room_id)
+        if last is None or last.status != "live":
+            return
+        await worker.start(last)
+        await db.log_event(room_id, "info", "resumed", f"{last.id}: still live when the server stopped")
+    except Exception as exc:
+        log.exception("room %s: could not resume its talk", room_id)
+        try:
+            await db.log_event(room_id, "error", "resume_failed", repr(exc))
+        except Exception:
+            log.exception("room %s: could not log the failure", room_id)
+
+
+async def _close_stale_live_talks(workers: dict[str, RoomWorker], db, boot: datetime) -> None:
+    held = {w.talk.id for w in workers.values() if w.talk is not None}
+    try:
+        for talk in await db.get_live_talks():
+            if talk.id in held:
+                continue
+            await db.update_talk(talk.id, status="done", actual_end=boot)
+            message = f"{talk.id}: still live from a previous run, closed"
+            await db.log_event(talk.room_id, "warning", "stale_live", message)
+    except Exception:
+        log.exception("could not close the talks left live by a previous run")
 
 
 async def _start_free_session(worker: RoomWorker, db) -> None:

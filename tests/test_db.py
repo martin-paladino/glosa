@@ -218,9 +218,10 @@ async def test_upsert_agenda_updates_scheduled_talks_and_leaves_live_and_done_al
     again = [_talk("s"), _talk("l", start_h=10), _talk("d", start_h=8), _talk("new", start_h=18)]
     for talk in again:
         talk.title = "Renamed on re-import"
-    unchanged = await db.upsert_agenda(again)
+    result = await db.upsert_agenda(again)
 
-    assert unchanged == {"l": "live", "d": "done"}
+    assert result.held == {"l": "live", "d": "done"}
+    assert result.removed == []
     got = {t.id: t for t in await db.get_talks("r1", date(2026, 9, 25))}
     assert got["s"].title == "Renamed on re-import" and got["s"].status == "scheduled"
     assert got["new"].title == "Renamed on re-import"
@@ -229,7 +230,50 @@ async def test_upsert_agenda_updates_scheduled_talks_and_leaves_live_and_done_al
 
 
 async def test_upsert_agenda_with_nothing_to_write(db) -> None:
-    assert await db.upsert_agenda([]) == {}
+    result = await db.upsert_agenda([])
+    assert result.held == {} and result.removed == []
+
+
+async def test_upsert_agenda_removes_the_scheduled_talks_a_covered_day_no_longer_lists(db) -> None:  # Ruling 45
+    kept, dropped = _talk("kept", start_h=10), _talk("dropped", start_h=12)
+    live, done = _talk("live", start_h=8), _talk("done", start_h=9)
+    other_day, other_room = _talk("other-day", day=26), _talk("other-room", room_id="r2")
+    await db.insert_talks([kept, dropped, live, done, other_day, other_room])
+    await db.update_talk("live", status="live", actual_start=datetime(2026, 9, 25, 11, 0, tzinfo=timezone.utc))
+    await db.update_talk("done", status="done", actual_end=datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc))
+    free = _talk("free-r1-20260925T090000", start_h=9)  # a free session's row, whatever its status
+    free.status = "scheduled"
+    await db.insert_talks([free])
+
+    result = await db.upsert_agenda([_talk("kept", start_h=10), _talk("new", start_h=16)])  # covers (r1, 25/9)
+
+    assert result.removed == [("dropped", dropped.title)]
+    ids = {t.id for t in await db.get_talks("r1", date(2026, 9, 25))}
+    assert ids == {"kept", "new", "live", "done", "free-r1-20260925T090000"}
+    assert await db.get_talk("other-day") is not None and await db.get_talk("other-room") is not None
+
+
+async def test_delete_scheduled_talk_only_deletes_scheduled_talks(db) -> None:
+    await db.insert_talks([_talk("s"), _talk("l", start_h=10)])
+    await db.update_talk("l", status="live")
+
+    assert await db.delete_scheduled_talk("s") is True
+    assert await db.delete_scheduled_talk("l") is False
+    assert await db.delete_scheduled_talk("missing") is False
+    assert await db.get_talk("s") is None and await db.get_talk("l") is not None
+
+
+async def test_live_talks_and_the_last_started_talk_of_a_room(db) -> None:
+    first, second, third = _talk("a", start_h=9), _talk("b", start_h=11), _talk("c", start_h=13)
+    elsewhere = _talk("x", room_id="r2")
+    await db.insert_talks([first, second, third, elsewhere])
+    await db.update_talk("a", status="live", actual_start=datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc))
+    await db.update_talk("b", status="done", actual_start=datetime(2026, 9, 25, 14, 0, tzinfo=timezone.utc))
+    await db.update_talk("x", status="live", actual_start=datetime(2026, 9, 25, 15, 0, tzinfo=timezone.utc))
+
+    assert sorted(t.id for t in await db.get_live_talks()) == ["a", "x"]
+    assert (await db.get_last_started_talk("r1")).id == "b"  # c never started
+    assert await db.get_last_started_talk("r9") is None
 
 
 async def test_set_room_mode_persists_only_the_mode(db) -> None:

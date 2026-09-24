@@ -916,3 +916,28 @@ async def test_reconnect_asks_the_running_relay_for_a_new_session(db, monkeypatc
     assert calls == ["manual"]
     assert len(factory.configs) == 2  # a new engine session was opened
     await worker.stop()
+
+
+async def test_restarting_the_running_talk_takes_its_edited_fields_from_the_db(tmp_path: Path, db) -> None:
+    """An admin edit of a live talk (targets, title...) is in the DB; a
+    restart of that same talk (a new source after the old one died, or
+    start(worker.talk)) must use it, not write the worker's stale copy back."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, FAKE_LT)
+    ingests = IngestFactory(seconds=1.0, error="ffmpeg: connection refused")
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, ingests, tail_s=0.5)
+    await worker.start(_agenda_talk("a"))
+    await run_for(clock, 2.0)
+    assert worker.status().state == "red" and worker.talk.id == "a"  # the source died, the talk is on
+    began = worker.talk.actual_start
+
+    await db.update_talk("a", targets=["en", "es"], title="Edited while live")
+    await worker.play_file(_clip(tmp_path))  # same talk, new pipeline
+    await run_for(clock, 0.5)
+
+    stored = await db.get_talk("a")
+    assert stored.targets == ["en", "es"] and stored.title == "Edited while live"
+    assert worker.talk.targets == ["en", "es"] and worker.talk.title == "Edited while live"
+    assert stored.actual_start == began and stored.status == "live"
+    await worker.stop()

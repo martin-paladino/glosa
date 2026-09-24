@@ -206,6 +206,21 @@ async def test_start_talk_and_end_talk(tmp_path: Path) -> None:  # 9.2, Ruling 3
         assert (await client.post("/api/admin/rooms/r1/start-talk", json={})).status_code == 422
 
 
+async def test_a_live_targets_edit_survives_a_restart_of_the_talk(tmp_path: Path) -> None:
+    async with _open(_settings(tmp_path)) as (app, client):
+        await app.state.db.insert_talks([_talk("t", "r1", 0, 30)])
+        await client.post("/api/admin/rooms/r1/start-talk", json={"talk_id": "t"})
+
+        edited = await client.put("/api/admin/talks/t", json={"targets": ["en", "es"], "title": "Renamed"})
+        assert edited.status_code == 200, edited.text
+        worker = app.state.workers["r1"]
+        assert worker.talk.title == "Renamed"  # at once, for the room list
+        await worker.start(worker.talk)  # the same talk on a new pipeline
+
+        assert (await app.state.db.get_talk("t")).targets == ["en", "es"]
+        assert worker.talk.targets == ["en", "es"]
+
+
 async def test_task7_start_and_stop_switch_the_room_to_manual(tmp_path: Path) -> None:  # Ruling 34
     async with _open(_settings(tmp_path)) as (app, client):
         stopped = await client.post("/api/admin/rooms/r1/stop")
@@ -263,7 +278,56 @@ async def test_boot_leaves_a_room_the_agenda_owns_idle_between_talks(tmp_path: P
 
     async with _open(settings) as (app, _):
         assert app.state.workers["r1"].talk is None  # auto, talks today, none on now
-        assert _is_free(app.state.workers["r2"].talk)  # manual: the autopilot keeps out
+        assert app.state.workers["r2"].talk is None  # manual, nothing was running: idle (Ruling 46)
+
+
+async def _mark(settings: Settings, talk_id: str, **fields) -> None:
+    db = init_db(settings.db_path)
+    try:
+        await db.update_talk(talk_id, **fields)
+    finally:
+        db.close()
+
+
+async def test_boot_resumes_a_manual_room_that_crashed_mid_talk_and_keeps_the_others_idle(
+    tmp_path: Path,
+) -> None:  # Ruling 46
+    settings = _settings(tmp_path)
+    x, y = _talk("x", "r1", 60, 100), _talk("y", "r2", -60, -20)  # x is not due now: no tick opens it
+    await _seed(settings, x, y, modes={"r1": "manual", "r2": "manual"})
+    await _mark(settings, "x", status="live", actual_start=T0 - timedelta(minutes=5))
+    await _mark(settings, "y", status="done", actual_start=T0 - timedelta(minutes=60),
+                actual_end=T0 - timedelta(minutes=20))
+
+    async with _open(settings) as (app, _):
+        r1, r2 = app.state.workers["r1"], app.state.workers["r2"]
+        assert r1.talk is not None and r1.talk.id == "x"
+        assert r1.talk.actual_start == T0 - timedelta(minutes=5)
+        assert r2.talk is None  # manual, its last talk had ended: no free session, no API spend
+        assert app.state.autopilot.mode("r1") == "manual"
+        assert (await app.state.db.get_talk("x")).status == "live"
+
+
+async def test_boot_closes_live_rows_that_no_room_resumed(tmp_path: Path) -> None:  # stale live rows
+    settings = _settings(tmp_path)
+    past = _talk("past", "r1", -120, -60)  # r1 crashed during it; its slot is over
+    old_free = _talk("free-r2-20300924T080000", "r2", -360, 360)
+    await _seed(settings, past, old_free)
+    await _mark(settings, "past", status="live", actual_start=T0 - timedelta(minutes=119))
+    await _mark(settings, old_free.id, status="live", actual_start=T0 - timedelta(minutes=360))
+
+    async with _open(settings) as (app, _):
+        db = app.state.db
+        assert app.state.workers["r1"].talk is None  # auto, talks today, none due
+        r2 = app.state.workers["r2"].talk
+        assert _is_free(r2) and r2.id != old_free.id  # a fresh free session
+        for talk_id in ("past", old_free.id):
+            stale = await db.get_talk(talk_id)
+            assert stale.status == "done", talk_id
+            assert T0 <= stale.actual_end < T0 + timedelta(seconds=10)  # boot time
+        closed = [e for e in await db.recent_events(30) if e.type == "stale_live"]
+        assert sorted(e.room_id for e in closed) == ["r1", "r2"]
+        assert (await db.get_talk(r2.id)).status == "live"  # the new one is untouched
 
 
 # ------------------------------------------------- integration: engine_mode fake
@@ -301,16 +365,19 @@ async def test_an_imported_talk_runs_on_the_fake_engine(tmp_path: Path) -> None:
             imported = await client.post(
                 "/api/admin/agenda/import", files={"file": ("agenda.csv", csv_text.encode(), "text/csv")}
             )
-            assert imported.json() == {"imported": 1, "skipped": []}
+            assert imported.json() == {"imported": 1, "skipped": [], "removed": []}
             (talk,) = (await client.get("/api/admin/talks", params={"room": "r1", "day": "2030-09-24"})).json()
 
             await client.post("/api/admin/rooms/r1/mode", json={"mode": "auto"})  # ticks the room now
             worker = app.state.workers["r1"]
             assert worker.talk is not None and worker.talk.id == talk["id"]
+            closed = False
             for _ in range(300):
                 if any(m.type == "close" for m in app.state.bus.history("r1", "es", talk["id"])):
+                    closed = True
                     break
                 await asyncio.sleep(0.01)
+            assert closed, "no caption segment closed within 3 s"
             ended = await client.post("/api/admin/rooms/r1/end-talk")
 
         assert ended.json()["room"]["state"] == "idle"

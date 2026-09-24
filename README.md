@@ -61,14 +61,16 @@ Load the event's agenda once and the rooms follow it. Every endpoint below needs
 
 ```bash
 curl -b 'glosa_admin=<cookie>' -H 'X-Glosa-Admin: 1' -F file=@agenda.example.csv http://localhost:8000/api/admin/agenda/import
-# {"imported": 5, "skipped": []}
+# {"imported": 5, "skipped": [], "removed": []}
 ```
 
-The CSV columns are those of `agenda.example.csv`: `sala, inicio, fin, titulo, speakers, idioma, destinos, motor, abstract, tags, glosario`. Times are local to `timezone` unless they carry an offset; `speakers`, `destinos`, `tags` and `glosario` are `;`-separated; `idioma` is `es` or `en`; a blank `motor` means `glossary` for Spanish and `default_engine_en` for English; a glossary entry is `Term` (kept as is) or `term=translation`. A malformed row rejects the whole file with its row number. Importing again updates the talks that are still scheduled and never touches one that is live or done.
+The CSV columns are those of `agenda.example.csv`: `sala, inicio, fin, titulo, speakers, idioma, destinos, motor, abstract, tags, glosario`. Times are local to `timezone` unless they carry an offset; `speakers`, `destinos`, `tags` and `glosario` are `;`-separated; `idioma` is `es` or `en`; a blank `motor` means `glossary` for Spanish and `default_engine_en` for English; a glossary entry is `Term` (kept as is) or `term=translation`. A malformed row rejects the whole file with its row number. Importing again updates the talks that are still scheduled and never touches one that is live or done. It also drops, for each room and day the new file covers, the scheduled talks it no longer lists (cancelled, or re-titled or moved, which changes a CSV talk's id); they come back in `removed`.
 
-**Browse and edit:** `GET /api/admin/talks?room=<id>&day=YYYY-MM-DD` (default: today), `GET /api/admin/talks/<id>`, and `PUT /api/admin/talks/<id>` with any of `title, speakers, language, targets, engine, start, end, abstract, tags, glossary` (a live talk only takes `title`, `targets` and `glossary`).
+**Browse and edit:** `GET /api/admin/talks?room=<id>&day=YYYY-MM-DD` (default: today), `GET /api/admin/talks/<id>`, `PUT /api/admin/talks/<id>` with any of `title, speakers, language, targets, engine, start, end, abstract, tags, glossary` (a live talk only takes `title`, `targets` and `glossary`; new targets apply the next time the talk starts), and `DELETE /api/admin/talks/<id>` (scheduled talks only).
 
-**Autopilot.** Each room is in `auto` (the default) or `manual` mode, stored in the database so it survives a restart. In `auto`, a room with agenda talks today follows the clock: each talk opens a minute before its start and closes at its end (when the next one's minute of lead arrives first, the current one closes then), and between talks the room is idle. A room with no talks today keeps its free session. In `manual`, the autopilot leaves the room alone. After a restart, the talk the agenda says is on reopens by itself.
+**Autopilot.** Each room is in `auto` (the default) or `manual` mode, stored in the database so it survives a restart. In `auto`, a room with agenda talks today follows the clock: each talk opens a minute before its start and closes at its end (when the next one's minute of lead arrives first, the current one closes then), and between talks the room is idle. If the operator opened the next talk early and then hands the room back to `auto`, that talk keeps going through its slot. A room with no talks today keeps its free session. In `manual`, the autopilot leaves the room alone.
+
+After a restart, an `auto` room reopens the talk the agenda says is on, and a `manual` room resumes the talk it was running when the server died (other manual rooms stay idle, with no free session). Known limitation: which talks already ended inside their slot is remembered only in memory, so after a restart a talk that was ended early (say, the speaker finished ahead of time) reopens if its slot is still on; switch the room to `manual` if that happens.
 
 | Endpoint (`POST /api/admin/rooms/<id>/...`) | What it does |
 |---|---|

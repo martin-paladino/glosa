@@ -13,7 +13,11 @@ carries the ``X-Glosa-Admin`` CSRF header (glosa/web/auth.py).
 
 from __future__ import annotations
 
+import email.message
+import io
 import json
+import urllib.request
+import urllib.response
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -24,6 +28,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from glosa.clock import RealClock
 from glosa.config import RoomCfg, Settings
 from glosa.models import Talk
 from glosa.web import admin_api
@@ -36,6 +41,7 @@ ADMIN_PASSWORD = "test-password"
 CSRF = {"X-Glosa-Admin": "1"}
 TZ = "America/Argentina/Buenos_Aires"
 ART = ZoneInfo(TZ)
+T0 = datetime(2030, 9, 24, 10, 0, tzinfo=ART)  # the app's wall clock when it starts
 
 CSV_HEADER = "sala,inicio,fin,titulo,speakers,idioma,destinos,motor,abstract,tags,glosario\n"
 CSV = CSV_HEADER + (
@@ -62,9 +68,16 @@ def _settings(tmp_path: Path, **overrides) -> Settings:
     return Settings(**values)
 
 
+class PinnedClock(RealClock):
+    """RealClock whose wall clock starts at T0, so "today" is fixed."""
+
+    def wall(self) -> datetime:
+        return T0 + timedelta(seconds=self.now())
+
+
 @asynccontextmanager
 async def _open(settings: Settings) -> AsyncIterator[tuple[FastAPI, httpx.AsyncClient]]:
-    app = create_app(settings, autopilot_interval_s=3600)
+    app = create_app(settings, clock=PinnedClock(), autopilot_interval_s=3600)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=CSRF) as client:
@@ -180,9 +193,17 @@ async def test_nerdearla_upload_maps_rooms_with_agenda_names(admin) -> None:
     assert talks[0]["start"] == "2026-09-24T09:55:00-03:00"
 
 
+def _headers(**values: str) -> email.message.Message:
+    headers = email.message.Message()
+    for name, value in values.items():
+        headers[name.replace("_", "-")] = value
+    return headers
+
+
 class _FakeResponse:
-    def __init__(self, body: bytes) -> None:
+    def __init__(self, body: bytes, content_type: str = "application/json") -> None:
         self._body = body
+        self.headers = _headers(Content_Type=content_type)
 
     def read(self, n: int = -1) -> bytes:
         return self._body if n < 0 else self._body[:n]
@@ -194,17 +215,47 @@ class _FakeResponse:
         return None
 
 
+class _FakeOpener:
+    """Stands in for admin_api._opener(): records each open(), returns or raises."""
+
+    def __init__(self, response: _FakeResponse | None = None, error: Exception | None = None) -> None:
+        self.response = response
+        self.error = error
+        self.calls: list[tuple[str, float]] = []
+
+    def open(self, request, timeout: float):
+        self.calls.append((request.full_url, timeout))
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+class _ScriptedHTTPS(urllib.request.HTTPSHandler):
+    """A transport for the real opener: url -> (code, headers, body), no network."""
+
+    def __init__(self, script: dict[str, tuple[int, email.message.Message, bytes]]) -> None:
+        super().__init__()
+        self.script = script
+        self.opened: list[str] = []
+
+    def https_open(self, req):
+        self.opened.append(req.full_url)
+        code, headers, body = self.script[req.full_url]
+        response = urllib.response.addinfourl(io.BytesIO(body), headers, req.full_url, code)
+        response.msg = "OK" if code == 200 else "Found"
+        return response
+
+
+def _real_opener_over(transport: _ScriptedHTTPS):
+    return lambda: urllib.request.build_opener(admin_api.HttpOnlyRedirectHandler, transport)
+
+
 async def test_nerdearla_url_is_fetched_by_the_server_with_an_explicit_room_map(
     admin, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _, client = admin
-    calls: list[tuple[str, float]] = []
-
-    def fake_urlopen(request, timeout: float):
-        calls.append((request.full_url, timeout))
-        return _FakeResponse(NERDEARLA.read_bytes())
-
-    monkeypatch.setattr(admin_api.urllib.request, "urlopen", fake_urlopen)
+    opener = _FakeOpener(_FakeResponse(NERDEARLA.read_bytes()))
+    monkeypatch.setattr(admin_api, "_opener", lambda: opener)
     url = "https://backstage.nerdearla.com/api/sessions/?event_id=abc"
 
     response = await client.post(
@@ -213,9 +264,55 @@ async def test_nerdearla_url_is_fetched_by_the_server_with_an_explicit_room_map(
     )
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"imported": 3, "skipped": []}
-    assert calls == [(url, 15)]
+    assert response.json() == {"imported": 3, "skipped": [], "removed": []}
+    assert opener.calls == [(url, 15)]
     assert [t["id"] for t in await _talks(client, "track-2", "2026-09-26")] == ["1250744"]
+
+
+async def test_the_fetch_follows_https_redirects_but_never_to_another_scheme(
+    admin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, client = admin
+    start, final = "https://example.com/agenda", "https://cdn.example.com/agenda.json"
+    transport = _ScriptedHTTPS({
+        start: (302, _headers(Location=final), b""),
+        final: (200, _headers(Content_Type="application/json; charset=utf-8"), NERDEARLA.read_bytes()),
+        "https://example.com/elsewhere": (302, _headers(Location="ftp://example.com/agenda.json"), b""),
+    })
+    monkeypatch.setattr(admin_api, "_opener", _real_opener_over(transport))
+
+    followed = await client.post("/api/admin/agenda/import", data={"url": start})
+    refused = await client.post("/api/admin/agenda/import", data={"url": "https://example.com/elsewhere"})
+
+    assert followed.status_code == 200, followed.text
+    assert followed.json()["imported"] == 2
+    assert refused.status_code == 502 and "redirect" in refused.json()["detail"]
+    assert transport.opened == [start, final, "https://example.com/elsewhere"]  # ftp was never opened
+
+
+@pytest.mark.parametrize("content_type", ["image/png", "application/pdf", "application/zip"])
+async def test_a_response_that_is_not_an_agenda_is_refused(
+    admin, monkeypatch: pytest.MonkeyPatch, content_type: str
+) -> None:
+    _, client = admin
+    monkeypatch.setattr(admin_api, "_opener", lambda: _FakeOpener(_FakeResponse(b"\x89PNG", content_type)))
+
+    response = await client.post("/api/admin/agenda/import", data={"url": "https://example.com/agenda"})
+
+    assert response.status_code == 502 and content_type in response.json()["detail"]
+
+
+@pytest.mark.parametrize("content_type", ["text/csv", "text/plain", "application/octet-stream"])
+async def test_csv_and_plain_downloads_are_accepted(
+    admin, monkeypatch: pytest.MonkeyPatch, content_type: str
+) -> None:
+    _, client = admin
+    monkeypatch.setattr(admin_api, "_opener", lambda: _FakeOpener(_FakeResponse(CSV.encode(), content_type)))
+
+    response = await client.post("/api/admin/agenda/import", data={"url": "https://example.com/agenda.csv"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["imported"] == 2
 
 
 async def test_an_explicit_room_map_replaces_the_configured_names(admin) -> None:
@@ -251,7 +348,7 @@ async def test_a_bad_room_map_is_a_422(admin, room_map: str) -> None:
 
 async def test_only_http_urls_are_fetched(admin, monkeypatch: pytest.MonkeyPatch) -> None:
     _, client = admin
-    monkeypatch.setattr(admin_api.urllib.request, "urlopen", lambda *a, **k: pytest.fail("fetched"))
+    monkeypatch.setattr(admin_api, "_opener", lambda: pytest.fail("fetched"))
 
     for url in ("file:///etc/passwd", "ftp://example.com/agenda.csv", "not a url"):
         response = await client.post("/api/admin/agenda/import", data={"url": url})
@@ -261,10 +358,7 @@ async def test_only_http_urls_are_fetched(admin, monkeypatch: pytest.MonkeyPatch
 async def test_a_failing_fetch_is_a_502(admin, monkeypatch: pytest.MonkeyPatch) -> None:
     _, client = admin
 
-    def unreachable(request, timeout: float):
-        raise OSError("connection refused")
-
-    monkeypatch.setattr(admin_api.urllib.request, "urlopen", unreachable)
+    monkeypatch.setattr(admin_api, "_opener", lambda: _FakeOpener(error=OSError("connection refused")))
 
     response = await client.post("/api/admin/agenda/import", data={"url": "https://example.com/sessions"})
 
@@ -316,6 +410,110 @@ async def test_a_reimport_updates_scheduled_talks_and_leaves_live_and_done_ones_
     assert (kept.abstract, kept.status, kept.actual_start) == ("Abstract two", "live", began)
 
 
+async def test_a_fixed_title_or_a_moved_talk_replaces_its_old_row(admin) -> None:  # Ruling 45
+    app, client = admin
+    await _import_csv(client)
+    (uno,) = await _talks(client, "main")
+    (two,) = await _talks(client, "track-2")
+    fixed = CSV.replace("Charla uno", "Charla uno (fixed)").replace(
+        "2030-09-24 16:00,2030-09-24 16:40", "2030-09-24 16:30,2030-09-24 17:10"
+    )
+    sub = app.state.admin_events.subscribe()
+
+    body = (await _import_csv(client, fixed)).json()
+
+    assert body["imported"] == 2
+    assert sorted(body["removed"], key=lambda r: r["title"]) == [
+        {"id": uno["id"], "title": "Charla uno"},
+        {"id": two["id"], "title": "Talk two"},
+    ]
+    assert [t["title"] for t in await _talks(client, "main")] == ["Charla uno (fixed)"]
+    assert [t["start"] for t in await _talks(client, "track-2")] == ["2030-09-24T16:30:00-03:00"]
+    logged = [e for e in await app.state.db.recent_events(5) if e.type == "agenda_removed"]
+    assert len(logged) == 1 and uno["id"] in logged[0].message
+    assert sub.get_nowait().data["removed"] == 2
+
+
+async def test_a_talk_cancelled_upstream_is_removed_on_reimport(admin) -> None:  # Ruling 45
+    _, client = admin
+    room_map = json.dumps({"gran-sala": "main", "auditorio": "track-2"})
+    sessions = json.loads(NERDEARLA.read_text(encoding="utf-8"))
+
+    async def upload(data: dict) -> dict:
+        files = {"file": ("sessions.json", json.dumps(data).encode(), "application/json")}
+        return (await client.post("/api/admin/agenda/import", files=files, data={"room_map": room_map})).json()
+
+    assert (await upload(sessions))["imported"] == 3
+    sessions["sessions"] = [s for s in sessions["sessions"] if s["id"] != "1286278"]  # cancelled
+    body = await upload(sessions)
+
+    assert body["removed"] == [{"id": "1286278", "title": "Local AI Ecosystem"}]
+    assert [t["id"] for t in await _talks(client, "main", "2026-09-24")] == ["1341066"]
+    assert [t["id"] for t in await _talks(client, "track-2", "2026-09-26")] == ["1250744"]
+
+
+@pytest.mark.parametrize("status", ["live", "done"])
+async def test_a_live_or_done_talk_is_never_removed(admin, status: str) -> None:  # Ruling 45
+    app, client = admin
+    later = "main,2030-09-24 18:00,2030-09-24 18:40,Charla tres,Eva,es,en,,,,\n"
+    await _import_csv(client, CSV + later)
+    uno = next(t for t in await _talks(client, "main") if t["title"] == "Charla uno")
+    await app.state.db.update_talk(uno["id"], status=status, actual_start=datetime(2030, 9, 24, 14, 0, tzinfo=ART))
+
+    body = (await _import_csv(client, CSV_HEADER + later)).json()  # uno is gone from the agenda
+
+    assert body["removed"] == []
+    assert (await app.state.db.get_talk(uno["id"])).status == status
+
+
+async def test_a_csv_room_named_by_id_or_by_name_gives_the_same_talk(admin) -> None:
+    _, client = admin
+    await _import_csv(client)  # Talk two's row says "Auditorio" (the room's name)
+    (two,) = await _talks(client, "track-2")
+
+    body = (await _import_csv(client, CSV.replace("Auditorio,", "track-2,"))).json()
+
+    assert body["removed"] == []
+    assert [t["id"] for t in await _talks(client, "track-2")] == [two["id"]]
+
+
+async def test_deleting_a_scheduled_talk(admin) -> None:
+    app, client = admin
+    await _import_csv(client)
+    (uno,) = await _talks(client, "main")
+    sub = app.state.admin_events.subscribe()
+
+    response = await client.delete(f"/api/admin/talks/{uno['id']}")
+
+    assert response.status_code == 200, response.text
+    assert (await client.get(f"/api/admin/talks/{uno['id']}")).status_code == 404
+    event = sub.get_nowait()
+    assert event.kind == "talk_deleted"
+    assert event.data == {"talk_id": uno["id"], "room_id": "main", "title": "Charla uno"}
+    assert (await app.state.db.recent_events(1))[0].type == "talk_deleted"
+    assert (await client.delete(f"/api/admin/talks/{uno['id']}")).status_code == 404
+
+
+@pytest.mark.parametrize("status", ["live", "done"])
+async def test_a_live_or_done_talk_cannot_be_deleted(admin, status: str) -> None:
+    app, client = admin
+    await _import_csv(client)
+    (uno,) = await _talks(client, "main")
+    await app.state.db.update_talk(uno["id"], status=status)
+
+    assert (await client.delete(f"/api/admin/talks/{uno['id']}")).status_code == 409
+    assert await app.state.db.get_talk(uno["id"]) is not None
+
+
+async def test_a_free_session_cannot_be_deleted(admin) -> None:
+    app, client = admin
+    free = _free_talk("main", T0)
+    free.status = "scheduled"  # even one that somehow looks scheduled
+    await app.state.db.insert_talks([free])
+
+    assert (await client.delete(f"/api/admin/talks/{free.id}")).status_code == 409
+
+
 # ---- listing ----------------------------------------------------------------------------
 
 
@@ -329,11 +527,12 @@ def _free_talk(room_id: str, start: datetime) -> Talk:
 
 async def test_the_agenda_ignores_free_sessions_and_defaults_to_today(admin) -> None:
     app, client = admin
-    now = datetime.now(ART).replace(microsecond=0)
-    today = now.date().isoformat()
-    text = CSV_HEADER + f"main,{today} 00:01,{today} 00:02,Early bird,Ana,es,en,,,,\n"
+    text = CSV_HEADER + (
+        "main,2030-09-24 00:01,2030-09-24 00:02,Early bird,Ana,es,en,,,,\n"  # T0's day, in the event's timezone
+        "main,2030-09-25 00:01,2030-09-25 00:02,Tomorrow,Ana,es,en,,,,\n"
+    )
     await _import_csv(client, text)
-    await app.state.db.insert_talks([_free_talk("main", now)])
+    await app.state.db.insert_talks([_free_talk("main", T0)])
 
     listed = (await client.get("/api/admin/talks", params={"room": "main"})).json()
 
@@ -480,6 +679,7 @@ async def test_the_agenda_endpoints_need_the_admin_cookie_and_the_csrf_header(tm
             ("GET", "/api/admin/talks", {}),
             ("GET", "/api/admin/talks/x", {}),
             ("PUT", "/api/admin/talks/x", {"json": {"title": "y"}}),
+            ("DELETE", "/api/admin/talks/x", {}),
             ("POST", "/api/admin/agenda/import", {"data": {"url": "https://example.com"}}),
         ]
         for method, path, kwargs in requests:

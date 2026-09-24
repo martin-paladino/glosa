@@ -86,7 +86,7 @@ from glosa.captions.assembler import CaptionAssembler
 from glosa.captions.bus import CaptionBus
 from glosa.clock import Clock
 from glosa.config import Settings
-from glosa.db import Database
+from glosa.db import FREE_TALK_PREFIX, Database
 from glosa.engines.base import EngineFactory
 from glosa.engines.relay import SessionRelay
 from glosa.metrics import LatencyTracker, RoomHealth
@@ -102,10 +102,12 @@ LEVEL_WINDOW_CHUNKS = 50  # health uses the loudest chunk of the last 5 s
 RECENT_RECONNECT_S = 60.0
 CONSUMER_GRACE_S = 10.0
 FREE_SESSION_TITLE = "Sesión libre"
-FREE_SESSION_PREFIX = "free-"  # free session ids: free-<room id>-<YYYYmmddTHHMMSS>
+FREE_SESSION_PREFIX = FREE_TALK_PREFIX  # free session ids: free-<room id>-<YYYYmmddTHHMMSS>
 FREE_SESSION_HOURS = 12
 MIN_LEVEL_DB = -96.0
 SILENCE = bytes(CHUNK_BYTES)
+# A Talk's agenda fields (the admin can edit them); the rest is runtime state.
+AGENDA_FIELDS = ("title", "speakers", "language", "targets", "engine", "start", "end", "abstract", "tags", "glossary")
 COST_COMPONENT = "live_translate"
 
 
@@ -397,6 +399,8 @@ class RoomWorker:
         if self.talk is not None and (talk is None or talk.id != self.talk.id):
             await self._end_talk()
         talk = talk or self.talk or self.free_talk()
+        if talk is self.talk:  # the running talk again: an admin may have edited it since
+            await self._reload_agenda_fields(talk)
         wall = self._clock.wall()
         if talk.actual_start is None:
             talk.actual_start = wall
@@ -430,6 +434,16 @@ class RoomWorker:
         run.audio = self._spawn(self._audio_loop(run, source_type, source_url, realtime), "audio")
         log.info("room %s: talk %s started (%s -> %s)", self.room.id, talk.id, talk.language, target)
         await self._log("info", "talk_start", f"{talk.id}: {talk.title} ({talk.language} -> {target})")
+
+    async def _reload_agenda_fields(self, talk: Talk) -> None:
+        """Take ``talk``'s agenda fields from the database, so the insert
+        that (re)starts it never writes an out-of-date copy back over an
+        admin's edit (glosa/web/admin_api.py PUT /api/admin/talks)."""
+        stored = await self._db_call(self._db.get_talk(talk.id))
+        if stored is None:
+            return
+        for name in AGENDA_FIELDS:
+            setattr(talk, name, getattr(stored, name))
 
     async def _teardown(self, run: _Run) -> None:
         """Stop the pipeline of ``run``: audio, relay, event consumer, ticker.

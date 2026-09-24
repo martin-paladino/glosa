@@ -295,6 +295,80 @@ async def test_back_to_auto_follows_the_clock_again(db) -> None:  # 9.3
     assert worker.talk is None
 
 
+async def test_back_to_auto_keeps_the_next_talk_the_operator_opened_early(db) -> None:  # Ruling 44
+    talks = [_talk("A", "14:00", "15:00"), _talk("B", "15:00", "16:00")]
+    clock, workers, pilot, events = await _setup(db, _room("r1"), talks=talks, at_time=at("13:59"))
+    worker = workers["r1"]
+    await pilot.tick()  # A, by the autopilot
+    move_to(clock, at("14:45"))
+    await pilot.start_talk("r1", "B")  # the speaker is ready early
+    sub = events.subscribe()
+
+    move_to(clock, at("14:46"))
+    await pilot.set_mode("r1", "auto")
+    await pilot.tick()
+    for hm in ("14:59", "15:00", "15:30"):
+        move_to(clock, at(hm))
+        await pilot.tick()
+
+    assert worker.talk is not None and worker.talk.id == "B"
+    assert worker.starts() == ["A", "B"]  # B started once, at 14:45
+    assert (await db.get_talk("B")).actual_start == at("14:45")
+    assert sub.get_nowait().kind == "room_mode"
+    assert sub.empty()  # no second talk_started
+
+    move_to(clock, at("16:00"))
+    await pilot.tick()
+    assert worker.talk is None
+
+
+async def test_back_to_auto_stops_an_agenda_talk_that_is_not_the_next_one(db) -> None:  # Ruling 44
+    talks = [_talk("B", "15:00", "16:00"), _talk("C", "16:00", "17:00"),
+             _talk("T", "10:00", "11:00", day=DAY + timedelta(days=1))]
+    for opened_early in ("C", "T"):  # a later talk today, tomorrow's rehearsal
+        clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=talks, at_time=at("14:30"))
+        await pilot.start_talk("r1", opened_early)
+        move_to(clock, at("14:31"))
+        await pilot.set_mode("r1", "auto")
+        await pilot.tick()
+        assert workers["r1"].talk is None, opened_early
+        await db.update_talk(opened_early, status="scheduled", actual_start=None, actual_end=None)
+
+
+async def test_start_talk_on_the_running_talk_only_switches_to_manual(db) -> None:
+    clock, workers, pilot, events = await _setup(
+        db, _room("r1"), talks=[_talk("A", "14:00", "15:00")], at_time=at("13:59")
+    )
+    await pilot.tick()
+    sub = events.subscribe()
+
+    move_to(clock, at("14:10"))
+    await pilot.start_talk("r1", "A")
+
+    assert workers["r1"].starts() == ["A"]  # no restart of the engine
+    assert pilot.mode("r1") == "manual"
+    assert sub.get_nowait().kind == "room_mode" and sub.empty()
+
+
+async def test_a_slot_that_crosses_midnight_in_the_event_timezone(db) -> None:
+    late = _talk("L", "23:30", "23:59")
+    late.end = at("00:30", DAY + timedelta(days=1))
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[late], at_time=at("23:29"))
+    worker = workers["r1"]
+
+    await pilot.tick()
+    assert worker.talk is not None and worker.talk.id == "L"
+
+    move_to(clock, at("00:10", DAY + timedelta(days=1)))  # a new day, with no talks of its own
+    await pilot.tick()
+    assert worker.talk is not None and worker.talk.id == "L" and worker.starts() == ["L"]
+
+    move_to(clock, at("00:30", DAY + timedelta(days=1)))
+    await pilot.tick()
+    assert worker.talk is None
+    assert (await db.get_talk("L")).actual_end == at("00:30", DAY + timedelta(days=1))
+
+
 async def test_manual_actions_switch_the_room_to_manual_and_persist_it(db) -> None:  # Ruling 34
     clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")], at_time=at("14:10"))
 

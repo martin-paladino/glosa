@@ -15,8 +15,12 @@ restart:
       - when two overlap (the next one's lead against the current one's
         end), the later-starting one wins: the worker ends the current talk
         (its ``actual_end`` is now) before it opens the next;
-      - with nothing due the room is idle: a running talk past its end, or
-        the free session the room started with, is stopped.
+      - with nothing due the room is idle: the free session the room
+        started with, a talk past its end, or any other agenda talk is
+        stopped, except (Ruling 44) the room's next agenda talk of today
+        that the operator opened ahead of its slot: that one goes on, and
+        when its slot comes the tick finds it running and leaves it be (no
+        restart, same ``actual_start``).
 
     A room without agenda talks today is left alone: it keeps the free
     session of Task 5 (rooms with a source start one at boot).
@@ -24,8 +28,9 @@ restart:
     ``tick()`` never touches the room.
 
 Operator actions (Ruling 34): ``start_talk`` (ends the current talk, with
-its real ``actual_end``, and opens the chosen one) and ``end_talk`` (the
-room goes idle) switch the room to ``manual`` and persist it, and so do the
+its real ``actual_end``, and opens the chosen one; on the talk already
+running it only switches the mode) and ``end_talk`` (the room goes idle)
+switch the room to ``manual`` and persist it, and so do the
 Task 7 start/stop endpoints (they call ``set_mode``), or the next tick would
 undo them. ``reconnect`` keeps the mode. Back to ``auto`` is explicit
 (``set_mode``), and from then on the clock rules again.
@@ -38,6 +43,9 @@ Which talks can be due
     same database, spec §6) the talk of the moment reopens, whether the old
     process crashed (``live``) or shut down cleanly (its stop left it
     ``done``); a talk the operator closed before its slot opens in it.
+    Known limitation: the "already opened" set is in memory, so after a
+    restart a talk that was ended early inside its slot reopens (the
+    operator can switch the room to manual).
 
 Each room has a lock: a tick's decision and its start/stop, and every
 operator action, run one at a time per room, so a tick can never undo an
@@ -195,6 +203,8 @@ class Autopilot:
             raise ValueError(f"talk {talk_id!r} belongs to room {talk.room_id!r}")
         async with self._lock(room_id):
             await self._set_mode(room_id, worker, "manual")
+            if worker.talk is not None and worker.talk.id == talk.id:
+                return  # already on: no engine restart, no second talk_started
             await self._open(worker, talk, by="operator")
 
     async def end_talk(self, room_id: str) -> None:
@@ -228,10 +238,25 @@ class Autopilot:
             if due is not None:
                 if current is None or current.id != due.id:
                     await self._open(worker, due, by="autopilot")
-            elif current is not None:
+            elif current is not None and not self._early_next(current, agenda, now):
                 log.info("autopilot: room %s: nothing scheduled now, stopping %s", room_id, current.id)
                 await self._log(room_id, "autopilot", f"idle: nothing scheduled now (stopped {current.id})")
                 await worker.stop()
+
+    def _early_next(self, current: Talk, agenda: list[Talk], now: datetime) -> bool:
+        """Ruling 44: whether ``current`` is the room's next agenda talk,
+        opened ahead of its slot (by the operator), which then goes on: its
+        slot finds it running. It must not have ended, and must start today
+        (a rehearsal of tomorrow's first talk is stopped)."""
+        if is_free_talk(current.id):
+            return False
+        today = now.astimezone(self._tz).date()
+        upcoming = [t for t in agenda if t.status != "done" and t.end > now]
+        return (
+            bool(upcoming)
+            and upcoming[0].id == current.id
+            and upcoming[0].start.astimezone(self._tz).date() == today
+        )
 
     def _owns(self, worker: Worker, agenda: list[Talk], now: datetime, due: Talk | None) -> bool:
         today = now.astimezone(self._tz).date()

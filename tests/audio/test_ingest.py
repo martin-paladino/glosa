@@ -111,3 +111,62 @@ async def test_ingest_supervisor_retries_then_terminal_error(monkeypatch: pytest
     # build_ffmpeg_cmd (and thus resolve_youtube, for a youtube source) is
     # called fresh on every attempt: 1 initial + 5 retries.
     assert len(cmd_calls) == 6
+
+
+@pytest.mark.asyncio
+async def test_ingest_youtube_resolution_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A resolve_youtube failure must flow into the same backoff/retry path
+    as an ffmpeg start/exit failure, not crash chunks() outright."""
+    calls: list[str] = []
+
+    def flaky_resolve(url: str) -> str:
+        calls.append(url)
+        if len(calls) <= 2:
+            raise RuntimeError("yt-dlp: transient resolution failure")
+        return str(FIXTURE_WAV)
+
+    monkeypatch.setattr(ingest_module, "resolve_youtube", flaky_resolve)
+
+    clock = FakeClock()
+    ingest = AudioIngest(
+        source_type="youtube",
+        source_url="https://www.youtube.com/watch?v=example",
+        realtime=False,
+        clock=clock,
+    )
+
+    chunks = [c async for c in ingest.chunks()]
+
+    assert len(calls) == 3  # 2 failures + 1 success
+    assert ingest.restarts == 2
+    assert clock.now() == pytest.approx(1 + 2)
+    assert len(chunks) >= 20
+    assert all(len(c.pcm) == 3200 for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_ingest_youtube_resolution_always_fails_terminal_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def always_fail(url: str) -> str:
+        calls.append(url)
+        raise RuntimeError("yt-dlp: could not resolve")
+
+    monkeypatch.setattr(ingest_module, "resolve_youtube", always_fail)
+
+    clock = FakeClock()
+    ingest = AudioIngest(
+        source_type="youtube",
+        source_url="https://www.youtube.com/watch?v=example",
+        realtime=False,
+        clock=clock,
+    )
+
+    chunks = [c async for c in ingest.chunks()]
+
+    assert chunks == []
+    assert len(calls) == 6  # 1 initial + 5 retries
+    assert ingest.restarts == 5
+    assert ingest.last_error is not None
+    assert "could not resolve" in ingest.last_error
+    assert clock.now() == pytest.approx(1 + 2 + 4 + 8 + 16)

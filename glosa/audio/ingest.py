@@ -95,44 +95,52 @@ class AudioIngest:
         attempt = 0
         while True:
             error = None
-            # build_ffmpeg_cmd (and, for youtube, resolve_youtube) shells out
-            # synchronously; run it off the event loop so one room resolving
-            # a URL doesn't stall every other room's pipeline.
-            cmd = await asyncio.to_thread(
-                build_ffmpeg_cmd, self.source_type, self.source_url, self.realtime
-            )
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                # build_ffmpeg_cmd (and, for youtube, resolve_youtube) shells
+                # out synchronously; run it off the event loop so one room
+                # resolving a URL doesn't stall every other room's pipeline.
+                # A resolution failure (e.g. yt-dlp couldn't resolve the
+                # URL) is treated the same as an ffmpeg start/exit failure:
+                # it flows into the same backoff/retry/terminal-error path
+                # below, instead of crashing chunks() outright.
+                cmd = await asyncio.to_thread(
+                    build_ffmpeg_cmd, self.source_type, self.source_url, self.realtime
                 )
-            except OSError as exc:
-                error = f"failed to start {cmd[0]!r}: {exc}"
+            except Exception as exc:
+                error = f"failed to resolve source: {exc}"
             else:
-                assert proc.stdout is not None
                 try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                except OSError as exc:
+                    error = f"failed to start {cmd[0]!r}: {exc}"
+                else:
+                    assert proc.stdout is not None
                     try:
-                        while True:
-                            data = await proc.stdout.readexactly(CHUNK_BYTES)
-                            yield AudioChunk(pcm=data, t=self._t)
-                            self._t = round(self._t + CHUNK_S, 2)
-                    except asyncio.IncompleteReadError:
-                        pass  # EOF; any trailing partial (< CHUNK_BYTES) is dropped
+                        try:
+                            while True:
+                                data = await proc.stdout.readexactly(CHUNK_BYTES)
+                                yield AudioChunk(pcm=data, t=self._t)
+                                self._t = round(self._t + CHUNK_S, 2)
+                        except asyncio.IncompleteReadError:
+                            pass  # EOF; any trailing partial (< CHUNK_BYTES) is dropped
 
-                    returncode = await proc.wait()
-                    if returncode == 0:
-                        return  # clean end of stream
-                    stderr = b""
-                    if proc.stderr is not None:
-                        stderr = await proc.stderr.read()
-                    error = stderr.decode(errors="replace").strip() or f"{cmd[0]} exited {returncode}"
-                finally:
-                    # If we were cancelled/abandoned mid-stream (caller
-                    # stopped iterating), don't leave ffmpeg running.
-                    if proc.returncode is None:
-                        proc.kill()
-                        await proc.wait()
+                        returncode = await proc.wait()
+                        if returncode == 0:
+                            return  # clean end of stream
+                        stderr = b""
+                        if proc.stderr is not None:
+                            stderr = await proc.stderr.read()
+                        error = stderr.decode(errors="replace").strip() or f"{cmd[0]} exited {returncode}"
+                    finally:
+                        # If we were cancelled/abandoned mid-stream (caller
+                        # stopped iterating), don't leave ffmpeg running.
+                        if proc.returncode is None:
+                            proc.kill()
+                            await proc.wait()
 
             self.last_error = error
             if attempt >= MAX_RESTARTS:

@@ -42,9 +42,11 @@ AUDIO_MIME = "audio/pcm;rate=16000"
 AUDIO_TOKENS_PER_S = 25.0
 
 _NORMAL_CLOSE = 1000
-# Websocket close codes that won't get better by retrying: invalid argument,
-# policy violation (bad key / bad config).
-_NON_RETRYABLE_WS = {1007, 1008}
+# Websocket close codes that won't get better by retrying: 1007 invalid
+# argument (bad config). 1008 (policy violation) stays retryable: it is what
+# the server sends when it kills a session kept past its GoAway (observed at
+# 591 s in the 25-min T0.5 run), and a fresh session works.
+_NON_RETRYABLE_WS = {1007}
 # Prepaid billing reports exhausted credit as a 429 RESOURCE_EXHAUSTED with
 # this wording; it must stop like a 402, not retry like a rate limit.
 _PAYMENT_HINTS = ("prepayment", "credits are depleted", "payment required", "payment_required")
@@ -174,7 +176,7 @@ class LiveTranslateEngine:
             meta = {"code": code, "retryable": True}
         elif 400 <= code < 500 or code in _NON_RETRYABLE_WS:
             meta = {"code": code, "retryable": False}
-        else:  # 1011 internal error, 1006 abnormal closure, 0 = network/unknown
+        else:  # 1011 internal error, 1008 GoAway abort, 1006 abnormal closure, 0 = network/unknown
             meta = {"code": code, "retryable": True}
         event = EngineEvent(
             kind="error",

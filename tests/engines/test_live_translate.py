@@ -103,9 +103,20 @@ def test_empty_or_missing_language_transcriptions() -> None:
         # The Live API surfaces websocket close frames as APIError(<close code>, <reason>).
         (errors.APIError(1011, "Internal error encountered.", None), {"code": 1011, "retryable": True}),
         (errors.APIError(1007, "Request contains an invalid argument.", None), {"code": 1007, "retryable": False}),
+        # Observed at 591 s in the 25-min run (samples/fixtures/lt_en.jsonl): a session kept past its
+        # GoAway is killed with 1008. A fresh session works, so it must be retried.
+        (
+            errors.APIError(
+                1008,
+                "Connection aborted because the client failed to close the connection after receiving"
+                " a GoAway signal once the session durat",
+                None,
+            ),
+            {"code": 1008, "retryable": True},
+        ),
         (ConnectionResetError("reset by peer"), {"code": 0, "retryable": True}),
     ],
-    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "network"],
+    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "network"],
 )
 def test_classify_error(exc: Exception, expected_meta: dict) -> None:
     ev = _engine(FakeClock(start=3.0))._classify_error(exc)

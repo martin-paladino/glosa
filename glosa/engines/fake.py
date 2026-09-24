@@ -13,11 +13,12 @@ object per line:
 - ``source_delta`` / ``target_delta`` / ``source_final`` pass through
   (``target_final`` becomes ``target_delta``: EngineEvent has no target_final);
   ``go_away`` takes ``meta.time_left_s`` or parses ``meta.time_left_raw``
-  ("50s"); ``error`` takes ``meta.code`` / ``meta.retryable`` (/ ``payment``);
-  a ``closed`` record ends the stream. Anything else (usage,
+  ("50s"); ``error`` takes ``meta.code`` / ``meta.retryable`` (/ ``payment``)
+  and ends the session, as a real error does. Anything else (usage,
   session_resumption_update, ...) is skipped.
-- The stream always ends with one ``closed`` event (end of file, a ``closed``
-  record, or close()).
+- The stream always ends with exactly one ``closed`` event (end of file, a
+  ``closed`` record, an ``error`` record, or close()). A recording whose
+  first record is an error at t=0 simulates a failed connect.
 
 ``fail_after_s`` simulates a hung session: records later than that are never
 emitted and the stream goes silent (it neither emits nor ends) until close().
@@ -86,6 +87,8 @@ class FakeEngine:
             yield event
             if event.kind == "closed":
                 return
+            if event.kind == "error":  # an error ends the session, as in the real engine
+                break
         yield EngineEvent(kind="closed", t_recv=self._clock.now())
 
     def _to_event(self, rec: dict) -> EngineEvent | None:

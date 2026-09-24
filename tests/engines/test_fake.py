@@ -118,27 +118,47 @@ async def test_close_ends_the_replay_early() -> None:
     assert [ev.kind for ev in rest] == ["closed"]
 
 
-async def test_maps_go_away_error_final_and_closed_records(tmp_path: Path) -> None:
-    rows = [
-        {"t": 1.0, "kind": "target_final", "text": " fin.", "raw_type": "x", "meta": {"lang": "es", "finished": True}},
-        {"t": 2.0, "kind": "go_away", "text": "", "raw_type": "go_away", "meta": {"time_left_raw": "50s"}},
-        {"t": 3.0, "kind": "error", "text": "quota", "raw_type": "ClientError", "meta": {"code": 429, "retryable": True}},
-        {"t": 4.0, "kind": "closed", "text": "", "raw_type": "probe_finished"},
-        {"t": 5.0, "kind": "source_delta", "text": "after close", "raw_type": "x", "meta": {"lang": "en"}},
-    ]
-    path = tmp_path / "rec.jsonl"
+def _write_jsonl(path: Path, rows: list[dict]) -> Path:
     path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    return path
+
+
+async def test_maps_go_away_error_and_final_records(tmp_path: Path) -> None:
+    path = _write_jsonl(
+        tmp_path / "rec.jsonl",
+        [
+            {"t": 1.0, "kind": "target_final", "text": " fin.", "raw_type": "x", "meta": {"lang": "es", "finished": True}},
+            {"t": 2.0, "kind": "go_away", "text": "", "raw_type": "go_away", "meta": {"time_left_raw": "50s"}},
+            {"t": 3.0, "kind": "error", "text": "quota", "raw_type": "ClientError", "meta": {"code": 429, "retryable": True}},
+            {"t": 5.0, "kind": "source_delta", "text": "after error", "raw_type": "x", "meta": {"lang": "en"}},
+        ],
+    )
     engine = FakeEngine(_cfg(path), FakeClock())
     await engine.connect()
 
     events = await _collect(engine)
 
+    # An error ends the session, as with LiveTranslateEngine: error, then closed.
     assert [(ev.kind, ev.text, ev.lang, ev.meta, ev.t_recv) for ev in events] == [
         ("target_delta", " fin.", "es", {}, 1.0),
         ("go_away", "", None, {"time_left_s": 50.0}, 2.0),
         ("error", "quota", None, {"code": 429, "retryable": True}, 3.0),
-        ("closed", "", None, {}, 4.0),
+        ("closed", "", None, {}, 3.0),
     ]
+
+
+async def test_a_closed_record_ends_the_stream(tmp_path: Path) -> None:
+    path = _write_jsonl(
+        tmp_path / "rec.jsonl",
+        [
+            {"t": 1.0, "kind": "closed", "text": "", "raw_type": "probe_finished"},
+            {"t": 2.0, "kind": "source_delta", "text": "after close", "raw_type": "x", "meta": {"lang": "en"}},
+        ],
+    )
+    engine = FakeEngine(_cfg(path), FakeClock())
+    await engine.connect()
+
+    assert [(ev.kind, ev.t_recv) for ev in await _collect(engine)] == [("closed", 1.0)]
 
 
 def test_requires_a_fixture_path() -> None:

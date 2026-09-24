@@ -1,0 +1,23 @@
+# Same 2 rooms as config.demo.yaml, but engine_mode: fake (FakeEngine
+# replays a recorded session): `make demo-fake` runs this for free, e.g. to
+# try Glosa without a Gemini key or to smoke-test Docker.
+
+event_name: Glosa demo
+timezone: UTC
+
+rooms:
+  - id: demo-en
+    name: "Demo: English to Spanish"
+    source_type: file
+    source_url: samples/en_clip.opus
+    language: en
+    default_targets: [es]
+  - id: demo-es
+    name: "Demo: Spanish to English"
+    source_type: file
+    source_url: samples/es_clip.opus
+    language: es
+    default_targets: [en]
+
+engine_mode: fake
+db_path: data/demo-fake.db

@@ -1,14 +1,21 @@
 """create_app(settings): the Glosa web app.
 
-It mounts ``/static``, the audience pages (glosa/web/pages.py) and the
-public API (glosa/web/public_api.py), and owns the rooms: the lifespan
-opens the SQLite database, registers every room of config.yaml, starts a
-free session in each room that has a source, and stops them all on
-shutdown.
+It mounts ``/static``, the audience pages (glosa/web/pages.py), the public
+API (glosa/web/public_api.py) and the admin panel (glosa/web/admin_api.py,
+login at ``/admin/login`` protected with ``Settings.admin_password``; see
+glosa/web/auth.py), and owns the rooms: the lifespan opens the SQLite
+database, registers every room of config.yaml, starts a free session in
+each room that has a source, and stops them all on shutdown.
 
 ``app.state``:
   - ``settings``, ``bus`` (CaptionBus), ``db`` (Database, once started);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
+  - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
+    admin session cookies;
+  - ``session_epoch``: an int, 0 until the first ``POST /admin/logout``,
+    which increments it and so invalidates every outstanding session
+    (Ruling 43: mixed into each session token's HMAC, not compared as a
+    timestamp);
   - ``rooms_view()``: the rooms as the pages see them (task-6 contract);
   - ``branding``: {"event_name", "primary", "accent", "logo_url"}.
 
@@ -52,7 +59,8 @@ from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room
 from glosa.room import IngestFactory, RoomWorker
-from glosa.web import pages, public_api
+from glosa.web import admin_api, pages, public_api
+from glosa.web.auth import new_admin_secret
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +152,12 @@ def create_app(
     app.state.settings = settings
     app.state.bus = bus
     app.state.workers = workers
+    # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
+    # invalidates every outstanding admin session cookie.
+    app.state.admin_secret = new_admin_secret()
+    # Incremented by POST /admin/logout: invalidates every outstanding
+    # session at once (Ruling 43), not just the browser that logged out.
+    app.state.session_epoch = 0
     app.state.rooms_view = lambda: [w.view() for w in workers.values()]
     app.state.branding = {
         "event_name": settings.event_name,
@@ -153,6 +167,8 @@ def create_app(
     }
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(public_api.router)
+    app.include_router(admin_api.router)
+    app.include_router(admin_api.api_router)
     app.include_router(pages.router)
     return app
 

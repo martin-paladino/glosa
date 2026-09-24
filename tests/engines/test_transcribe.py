@@ -145,6 +145,46 @@ def test_a_stale_interim_of_the_segment_just_closed_is_dropped() -> None:
     ]
 
 
+def _interim(text: str) -> dict:
+    return {"serverContent": {"interimInputTranscription": {"text": text}}}
+
+
+def test_the_closed_segments_text_at_the_start_of_the_next_interims_is_cut_off() -> None:
+    """The same live run: more often the first interim of the next segment
+    is the closed segment's last interim with the new words after it."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [INTERIM_3, FINAL_1])
+    clock.advance(0.35)
+    events = _map_all(engine, [
+        _interim("Por cierto, cuando ustedes reciben la En nodos"),
+        _interim("por cierto cuando ustedes reciben la factura En nodos tenés"),  # the final's words, rewritten
+        _interim("En nodos tenés tantos"),  # clean: the server moved on
+    ])
+    clock.advance(0.3)
+    events += engine._map_message(FINAL_NEXT)
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "En nodos"),
+        ("source_delta", "En nodos tenés"),
+        ("source_delta", "En nodos tenés tantos"),
+        ("source_final", "En nodos tenés tantos miles de dólares gastados."),
+    ]
+
+
+def test_a_short_closed_segment_is_not_cut_off_the_next_one() -> None:
+    """"Sí." then "Sí, claro": too short to tell a stale repeat from a real
+    start, so nothing is cut (a stale interim has many words)."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [_interim("Sí"), {"serverContent": {"inputTranscription": {"text": "Sí."}}}])
+    clock.advance(0.5)
+
+    [ev] = engine._map_message(_interim("Sí, claro"))
+
+    assert (ev.kind, ev.text) == ("source_delta", "Sí, claro")
+
+
 def test_a_new_segment_that_starts_like_the_closed_one_shows_up_with_its_next_interim() -> None:
     clock = FakeClock()
     engine = _engine(clock)

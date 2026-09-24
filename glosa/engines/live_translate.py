@@ -18,6 +18,9 @@ Contract for the relay (T3):
   (``meta = {"code", "retryable"}``, plus ``"payment": True`` for credit
   exhaustion) and then ``closed``. Nothing is reported as an error after our
   own ``close()`` or on a normal websocket close (1000).
+- Call ``close()`` after observing ``closed`` (or when retiring the engine)
+  to release the connection. ``close()`` is safe at any time, including
+  while ``connect()`` is still in its handshake.
 - Cost: ``usage_metadata`` is priced at ``price_per_min`` per minute of input
   audio. ``meta["usd"]`` on an event is the cost *increment* accrued since the
   previous event (sum them, e.g. CostTracker.add). ``usd_total`` is the
@@ -43,10 +46,12 @@ AUDIO_TOKENS_PER_S = 25.0
 
 _NORMAL_CLOSE = 1000
 # Websocket close codes that won't get better by retrying: 1007 invalid
-# argument (bad config). 1008 (policy violation) stays retryable: it is what
-# the server sends when it kills a session kept past its GoAway (observed at
-# 591 s in the 25-min T0.5 run), and a fresh session works.
-_NON_RETRYABLE_WS = {1007}
+# argument, 1008 policy violation (model not found / not supported for
+# bidiGenerateContent, config rejected). Exception: a 1008 whose reason
+# mentions GoAway is the server killing a session kept past its GoAway
+# (observed at 591 s in the 25-min T0.5 run); a fresh session works.
+_NON_RETRYABLE_WS = {1007, 1008}
+_GOAWAY_ABORT = 1008
 # Prepaid billing reports exhausted credit as a 429 RESOURCE_EXHAUSTED with
 # this wording; it must stop like a 402, not retry like a rate limit.
 _PAYMENT_HINTS = ("prepayment", "credits are depleted", "payment required", "payment_required")
@@ -88,12 +93,17 @@ class LiveTranslateEngine:
     async def connect(self) -> None:
         stack = contextlib.AsyncExitStack()
         try:
-            self._session = await stack.enter_async_context(
+            session = await stack.enter_async_context(
                 self._client.aio.live.connect(model=MODEL, config=self._live_config())
             )
         except Exception as exc:  # reported by events(), see module docstring
             self._connect_error = exc
             return
+        if self._closing:  # close() ran during the handshake: don't leak the websocket
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+            return
+        self._session = session
         self._stack = stack
 
     async def send_audio(self, chunk: AudioChunk) -> None:
@@ -174,9 +184,11 @@ class LiveTranslateEngine:
             meta: dict = {"code": 402, "retryable": False, "payment": True}
         elif code in (429, 503) or 500 <= code < 600:
             meta = {"code": code, "retryable": True}
+        elif code == _GOAWAY_ABORT and "goaway" in reason.lower():
+            meta = {"code": code, "retryable": True}
         elif 400 <= code < 500 or code in _NON_RETRYABLE_WS:
             meta = {"code": code, "retryable": False}
-        else:  # 1011 internal error, 1008 GoAway abort, 1006 abnormal closure, 0 = network/unknown
+        else:  # 1011 internal error, 1006 abnormal closure, 0 = network/unknown
             meta = {"code": code, "retryable": True}
         event = EngineEvent(
             kind="error",

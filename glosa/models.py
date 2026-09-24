@@ -37,9 +37,12 @@ class EngineEvent:
     """One event emitted by an Engine (Live Translate, transcribe-live, fake, ...).
 
     meta conventions:
-      - kind == "error": {"code": int, "retryable": bool}
+      - kind == "error": {"code": int, "retryable": bool}, plus
+        {"payment": True} when credit is exhausted (a 402-style stop).
       - kind == "go_away": {"time_left_s": float}
-      - usage accounting (any kind): {"usd": float}
+      - usage accounting (any kind): {"usd": float}. This is an INCREMENT: the
+        cost accrued since the previous event of the same engine, not a
+        running total. Consumers sum it (e.g. CostTracker.add, db.add_cost).
     """
 
     kind: Literal[

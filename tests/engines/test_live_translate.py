@@ -114,9 +114,20 @@ def test_empty_or_missing_language_transcriptions() -> None:
             ),
             {"code": 1008, "retryable": True},
         ),
+        # Any other 1008 (model not found / not supported for bidiGenerateContent, config rejected)
+        # is a hard failure: retrying would just loop.
+        (
+            errors.APIError(
+                1008,
+                "models/gemini-x is not found for API version v1beta, or is not supported for"
+                " bidiGenerateContent.",
+                None,
+            ),
+            {"code": 1008, "retryable": False},
+        ),
         (ConnectionResetError("reset by peer"), {"code": 0, "retryable": True}),
     ],
-    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "network"],
+    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-other", "network"],
 )
 def test_classify_error(exc: Exception, expected_meta: dict) -> None:
     ev = _engine(FakeClock(start=3.0))._classify_error(exc)
@@ -150,15 +161,25 @@ class FakeSession:
 
 
 class FakeLive:
-    def __init__(self, session: FakeSession | None = None, connect_exc: Exception | None = None) -> None:
+    def __init__(
+        self,
+        session: FakeSession | None = None,
+        connect_exc: Exception | None = None,
+        handshake_gate: asyncio.Event | None = None,
+    ) -> None:
         self.session = session
         self.connect_exc = connect_exc
+        self.handshake_gate = handshake_gate  # connect() blocks on it, like a slow handshake
+        self.handshake_started = asyncio.Event()
         self.calls: list[dict] = []
         self.exited = False
 
     @contextlib.asynccontextmanager
     async def connect(self, *, model: str, config: types.LiveConnectConfig):
         self.calls.append({"model": model, "config": config})
+        self.handshake_started.set()
+        if self.handshake_gate is not None:
+            await self.handshake_gate.wait()
         if self.connect_exc is not None:
             raise self.connect_exc
         try:
@@ -243,6 +264,24 @@ async def test_send_audio_end_utterance_and_close() -> None:
     assert (blob.data, blob.mime_type) == (b"\x01\x02" * 1600, "audio/pcm;rate=16000")
     assert session.sent[1:] == [{"audio_stream_end": True}]
     assert live.exited
+    assert [ev.kind async for ev in engine.events()] == ["closed"]
+
+
+async def test_close_during_the_handshake_does_not_leak_the_websocket() -> None:
+    session = FakeSession([[SRC]], errors.APIError(1000, "", None))
+    gate = asyncio.Event()
+    live = FakeLive(session, handshake_gate=gate)
+    engine = _engine(client=_client(live))
+
+    connecting = asyncio.create_task(engine.connect())
+    await live.handshake_started.wait()
+    await engine.close()  # the relay retires the engine while the handshake is in flight
+    gate.set()
+    await asyncio.wait_for(connecting, timeout=1.0)
+
+    assert live.exited  # the just-opened connection was closed again
+    await engine.send_audio(AudioChunk(pcm=b"\x00" * 3200, t=0.0))
+    assert session.sent == []
     assert [ev.kind async for ev in engine.events()] == ["closed"]
 
 

@@ -25,16 +25,37 @@ def _format_event(msg: CaptionMsg) -> str:
 async def _event_stream(
     messages: AsyncIterator[CaptionMsg], ping_interval: float
 ) -> AsyncIterator[str]:
+    # The pending read is a task that survives a ping: timing out with
+    # wait_for() would cancel it, and cancelling an async generator's
+    # __anext__() finishes the generator (CaptionBus.subscribe would end and
+    # unsubscribe after the first quiet stretch).
     aiter = messages.__aiter__()
-    while True:
-        try:
-            msg = await asyncio.wait_for(aiter.__anext__(), timeout=ping_interval)
-        except asyncio.TimeoutError:
-            yield ": ping\n\n"
-            continue
-        except StopAsyncIteration:
-            return
-        yield _format_event(msg)
+
+    async def next_message() -> CaptionMsg:
+        return await aiter.__anext__()
+
+    pending: asyncio.Task[CaptionMsg] | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(next_message())
+            done, _ = await asyncio.wait({pending}, timeout=ping_interval)
+            if not done:
+                yield ": ping\n\n"
+                continue
+            task, pending = pending, None
+            try:
+                msg = task.result()
+            except StopAsyncIteration:
+                return
+            yield _format_event(msg)
+    finally:
+        if pending is not None:
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
+        aclose = getattr(aiter, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
 
 def sse_response(

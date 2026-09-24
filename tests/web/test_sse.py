@@ -112,3 +112,35 @@ async def test_sse_sends_ping_when_no_messages_arrive() -> None:
 
     assert first_chunk == ": ping\n\n"
     await body_iter.aclose()
+
+
+async def test_sse_keeps_streaming_after_a_ping() -> None:
+    """A ping must not end the stream: timing out the wait for the next
+    message used to cancel the subscription itself, so the first quiet
+    stretch (15 s in production) closed every audience connection."""
+    bus = CaptionBus()
+    response = sse_response(bus.subscribe("room1", "es", None), ping_interval=0.01)
+    body_iter = response.body_iterator
+    try:
+        assert await asyncio.wait_for(body_iter.__anext__(), timeout=1.0) == ": ping\n\n"
+
+        bus.publish("room1", "es", "append", seg=0, text="Hola")
+
+        chunk = ": ping\n\n"
+        while chunk == ": ping\n\n":
+            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=1.0)
+        assert chunk.startswith("id: 1\n") and '"Hola"' in chunk
+    finally:
+        await body_iter.aclose()
+
+
+async def test_sse_closing_the_stream_unsubscribes() -> None:
+    bus = CaptionBus()
+    response = sse_response(bus.subscribe("room1", "es", None), ping_interval=0.01)
+    body_iter = response.body_iterator
+    await asyncio.wait_for(body_iter.__anext__(), timeout=1.0)  # a ping: subscribed now
+
+    await body_iter.aclose()
+    await asyncio.sleep(0)
+
+    assert not bus._track("room1", "es").subscribers

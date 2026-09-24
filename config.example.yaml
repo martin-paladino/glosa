@@ -14,17 +14,31 @@ branding:
 # "all": anyone with the room link can watch. "qr_only": only via the room QR.
 audience_mode: all
 
+# Each room with a source opens a "free session" at startup: the audio is
+# captioned in `language` (default en) and translated to the first of
+# `default_targets` that differs from it.
 rooms:
   - id: main
     name: Main Stage
     source_type: youtube
     source_url: "https://www.youtube.com/watch?v=REPLACE_ME"
-    default_targets: [es, en]
+    language: es
+    default_targets: [en]
   - id: track-2
     name: Track 2
     source_type: file
     source_url: "samples/en_clip.opus"
+    language: en
     default_targets: [es]
+
+# "live": Gemini Live Translate (needs GEMINI_API_KEY). "fake": replays a
+# recorded session (fake_fixture, default samples/fixtures/lt_en.jsonl) so a
+# demo or a load test costs nothing.
+engine_mode: live
+# fake_fixture: samples/fixtures/lt_en.jsonl
+
+# SQLite database (agenda, captions, events, costs).
+db_path: data/glosa.db
 
 budget_usd: 10.0
 exports_public: true

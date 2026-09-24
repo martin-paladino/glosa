@@ -84,3 +84,39 @@ def test_typesafe_api_key_is_optional(tmp_path: Path) -> None:
     settings = Settings.load(env_path=str(env_without_typesafe), config_path=str(tmp_path / "missing.yaml"))
 
     assert settings.typesafe_api_key is None
+
+
+def test_room_language_engine_mode_and_storage_defaults(env_file: Path, config_yaml: Path) -> None:
+    settings = Settings.load(env_path=str(env_file), config_path=str(config_yaml))
+
+    assert settings.rooms[0].language == "en"  # the room's free-session language
+    assert settings.engine_mode == "live"
+    assert settings.db_path == "data/glosa.db"
+    assert settings.fake_fixture is None
+
+
+def test_engine_mode_fake_and_room_language_from_yaml(env_file: Path, tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "engine_mode: fake\n"
+        "rooms:\n"
+        "  - id: r2\n"
+        "    name: Sala 2\n"
+        "    source_url: samples/es_clip.opus\n"
+        "    language: es\n"
+        "    default_targets: [en]\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings.load(env_path=str(env_file), config_path=str(config))
+
+    assert settings.engine_mode == "fake"
+    assert settings.rooms[0].language == "es"
+
+
+def test_engine_mode_rejects_unknown_values(env_file: Path, tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("engine_mode: turbo\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        Settings.load(env_path=str(env_file), config_path=str(config))

@@ -530,3 +530,12 @@ def test_referrer_policy_header_and_meta_on_the_station_page(tmp_path: Path) -> 
         assert response.status_code == 200
         assert response.headers["referrer-policy"] == "same-origin"
         assert '<meta name="referrer" content="same-origin">' in response.text
+
+
+def test_station_page_follows_the_configured_interface_language() -> None:
+    client = _client(_make_app())
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    html = client.get(f"/station/r1?key={key}", headers={"Accept-Language": "en-US,en;q=0.9"}).text
+
+    assert '<html lang="es"' in html  # Settings.ui_language defaults to "es" (Ruling 63)

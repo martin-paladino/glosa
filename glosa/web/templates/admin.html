@@ -87,11 +87,12 @@
         {%- endfor %}
       </nav>
       <span class="masthead__keys">
-        <button class="btn btn--link" type="button" aria-describedby="hint-shortcuts">
+        <button class="btn btn--link" type="button" aria-describedby="hint-shortcuts" title="{{ at('shortcuts_help') }}">
           <svg viewBox="0 0 20 14" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 5h2M8 5h2M12 5h2M5 9h10" stroke="currentColor" stroke-width="1.6"/></svg>
           {{ at("shortcuts") }}
         </button>
-        <span class="hint__tip hint__tip--end" role="tooltip" id="hint-shortcuts">{{ at("shortcuts_help") }}</span>
+        {#- the top bar clips overflowing children: the native title shows it; this is for screen readers #}
+        <span class="visually-hidden" id="hint-shortcuts">{{ at("shortcuts_help") }}</span>
       </span>
       <button class="btn btn--link masthead__theme" type="button" data-action="theme"
         data-theme-label="{{ tr('theme') }}"
@@ -176,15 +177,15 @@
     <div class="drawer__meta"><span data-d-dir></span><span data-d-engine></span><span class="tc" data-d-slot></span><span class="tc" data-d-tc data-start="" data-prefix="TC "></span></div>
   </section>
   <section class="drawer__sec">
-    <div class="drawer__mode">{{ at("mode") }} <span class="segmented" role="group" aria-label="{{ at('mode') }}"><button type="button" data-mode="auto" aria-pressed="false">{{ at("mode_auto") }}</button><button type="button" data-mode="manual" aria-pressed="false">{{ at("mode_manual") }}</button></span></div>
+    <div class="drawer__mode">{{ at("mode") }} <span class="segmented" role="group" aria-label="{{ at('mode') }}"><button type="button" data-mode="auto" aria-pressed="false" title="{{ at('tip_mode_auto') }}">{{ at("mode_auto") }}</button><button type="button" data-mode="manual" aria-pressed="false" title="{{ at('tip_mode_manual') }}">{{ at("mode_manual") }}</button></span></div>
     <div class="drawer__keys">
-      <button class="btn" type="button" data-d-start aria-expanded="false">{{ at("start_talk") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
-      <button class="btn" type="button" data-d-end>{{ at("end_talk") }}</button>
-      <button class="btn" type="button" data-d-reconnect>{{ at("reconnect") }}</button>
+      <button class="btn" type="button" data-d-start aria-expanded="false" title="{{ at('tip_start_talk') }}">{{ at("start_talk") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
+      <button class="btn" type="button" data-d-end title="{{ at('tip_end_talk') }}">{{ at("end_talk") }}</button>
+      <button class="btn" type="button" data-d-reconnect title="{{ at('tip_reconnect') }}">{{ at("reconnect") }}</button>
       {#- Task 14a: an emitter room's station, reloaded remotely. #}
-      <button class="btn" type="button" data-slot="station-reload" hidden>{{ at("reload_station") }}</button>
+      <button class="btn" type="button" data-slot="station-reload" hidden title="{{ at('tip_reload_station') }}">{{ at("reload_station") }}</button>
       {#- Task 14b: "Probar con audio" -- a repo sample or an uploaded clip, played through the room's pipeline. #}
-      <button class="btn" type="button" data-slot="test-audio" aria-expanded="false">{{ at("test_audio") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
+      <button class="btn" type="button" data-slot="test-audio" aria-expanded="false" title="{{ at('tip_test_audio') }}">{{ at("test_audio") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
     </div>
     <form class="drawer__pick" data-d-test-audio hidden>
       <fieldset>
@@ -202,7 +203,7 @@
     {#- Task 14b, Ruling 5: admin-only, and only while the room plays a test
         file (this container's own poll decides -- glosa/web/static/js/listen.js). #}
     <div class="drawer__listen" data-listen data-listen-preparing="{{ at('listen_preparing') }}" hidden>
-      <button class="btn" type="button" data-listen-button>{{ at("listen_audio") }}</button>
+      <button class="btn" type="button" data-listen-button title="{{ at('tip_listen_audio') }}">{{ at("listen_audio") }}</button>
       <audio data-listen-audio preload="none" controls hidden></audio>
       <span class="drawer__hint" data-listen-status hidden></span>
     </div>

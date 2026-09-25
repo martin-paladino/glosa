@@ -269,6 +269,13 @@ class _Run:
     vad: EnergyVad
     tracks: dict[str, _Track]
     t0: float
+    # Task 14b (Ruling 5, the admin "Escuchar el audio" feature): the clock
+    # (Clock.now()) at which the *current* file segment started -- reset
+    # every time `source` becomes a fresh ("file", path, ...), both at
+    # _start_locked and in play_file()'s hot swap. RoomWorker.test_file()
+    # subtracts it from now() for the play position to seek the admin's
+    # <audio> to; unused (and meaningless) for every other source_type.
+    file_started_at: float = 0.0
     # The engine side, set by RoomWorker._apply_engine (again on a hot swap):
     engine: str = "fast"  # "fast" | "glossary"
     relay: SessionRelay = None  # type: ignore[assignment]
@@ -408,6 +415,7 @@ class RoomWorker:
                 self._report(await asyncio.gather(run.audio, return_exceptions=True), "audio")
             self._source_down = None
             run.source = ("file", path, True)
+            run.file_started_at = self._clock.now()  # Task 14b: this file's own clock starts over
             run.audio = self._spawn(self._audio_loop(run, "file", path, True), "audio")
             await self._log("info", "source_change", f"playing file {path}")
 
@@ -432,6 +440,21 @@ class RoomWorker:
             log.error("room %s: talk-end hook still running after %s s: cancelled", self.room.id, timeout)
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
+
+    def test_file(self) -> tuple[str, float] | None:
+        """Task 14b (Ruling 5): ``(path, offset_s)`` when this room is
+        currently playing a test file -- ``source_type == "file"``, whether
+        because the room is *configured* that way or because an admin hit
+        "Probar con audio" (``play_file()``) -- else None. ``offset_s`` is
+        how far into that file real-time playback has gotten (since
+        ``run.file_started_at``): the admin's "Escuchar el audio" seeks its
+        ``<audio>`` there, which is why it plays a few seconds ahead of the
+        captions on screen, same as in the room. Never true for a live
+        source (url/youtube/emitter): those aren't a file to transcode."""
+        run = self._run
+        if run is None or run.source[0] != "file":
+            return None
+        return run.source[1], max(self._clock.now() - run.file_started_at, 0.0)
 
     def langs(self) -> list[str]:
         """The spoken language, then every translation language."""
@@ -615,6 +638,7 @@ class RoomWorker:
             tracks=tracks,
             t0=now - elapsed,
             last_cost_flush=now,
+            file_started_at=now,
         )
         self._apply_engine(run, await self._build_engine(run, kind))
         self._run = run

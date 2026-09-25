@@ -86,6 +86,29 @@ async def server(tmp_path: Path) -> AsyncIterator[str]:
         await asyncio.wait_for(task, timeout=20)
 
 
+@pytest.fixture
+async def qr_only_server(tmp_path: Path) -> AsyncIterator[tuple[str, object]]:
+    """Same as `server` above, but `audience_mode: qr_only` -- yields the
+    running app too, so tests can read a room's real (secret) token off
+    `app.state.workers` the way an admin's session would, without going
+    through another unauthenticated endpoint to get it."""
+    app = create_app(_settings(tmp_path, audience_mode="qr_only"))
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", ws="none", lifespan="on")
+    srv = uvicorn.Server(config)
+    task = asyncio.create_task(srv.serve())
+    for _ in range(500):
+        if srv.started or task.done():
+            break
+        await asyncio.sleep(0.01)
+    assert srv.started, "uvicorn did not start"
+    port = srv.servers[0].sockets[0].getsockname()[1]
+    try:
+        yield f"http://127.0.0.1:{port}", app
+    finally:
+        srv.should_exit = True
+        await asyncio.wait_for(task, timeout=20)
+
+
 def _client(base_url: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url=base_url, timeout=10, trust_env=False)
 
@@ -167,6 +190,28 @@ async def test_unknown_rooms_and_bad_languages_are_404(server: str) -> None:
         assert (await client.get("/api/stream/nope/es")).status_code == 404
         assert (await client.get("/api/stream/r1/not a lang")).status_code == 404
         assert (await client.get("/api/stream/r1/pt")).status_code == 404
+
+
+async def test_qr_only_mode_lists_no_rooms_and_refuses_the_stream_by_slug(
+    qr_only_server: tuple[str, object],
+) -> None:
+    """Ruling 56 (Task 14b fix round 1): in qr_only mode nothing public may
+    reveal a room's slug->token mapping or its captions without the token.
+    /api/rooms (pre-existing) must not list rooms, and /api/stream/{slug}
+    must 404 for a plain slug -- only the room's public_token resolves it."""
+    base_url, app = qr_only_server
+    token = app.state.workers["r1"].room.public_token
+
+    async with _client(base_url) as client:
+        rooms = (await client.get("/api/rooms")).json()
+        assert rooms == []
+
+        assert (await client.get("/api/stream/r1/es")).status_code == 404
+
+    by_token = await asyncio.wait_for(
+        _read_sse(base_url, f"/api/stream/{token}/es", {"talk"}), timeout=15
+    )
+    assert by_token[0]["type"] == "talk" and by_token[0]["data"]["talk_id"].startswith("free-r1-")
 
 
 async def test_stream_refuses_other_languages_before_touching_the_bus(tmp_path: Path) -> None:

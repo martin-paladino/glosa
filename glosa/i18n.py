@@ -87,6 +87,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "station_audio_reconnecting": "Reconectando…",
         "station_audio_idle": "Sin señal",
         "station_device_gone": "Se desconectó el micrófono. Buscando otro…",
+        # QR page (Task 14b: glosa/web/templates/qr.html)
+        "qr_title": "Código QR de {room}",
+        "qr_alt": "Código QR para {room}",
+        "qr_lede": "Subtítulos en vivo · escaneá y elegí tu idioma",
+        # "Escuchar el audio" (Task 14b, Ruling 5): admins only, test mode only
+        "listen_audio": "Escuchar el audio",
+        "listen_preparing": "Preparando el audio…",
     },
     "en": {
         # Navigation and brand
@@ -160,6 +167,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "station_audio_reconnecting": "Reconnecting…",
         "station_audio_idle": "No signal",
         "station_device_gone": "The microphone disconnected. Looking for another one…",
+        # QR page (Task 14b: glosa/web/templates/qr.html)
+        "qr_title": "QR code for {room}",
+        "qr_alt": "QR code for {room}",
+        "qr_lede": "Live captions · scan and pick your language",
+        # "Escuchar el audio" (Task 14b, Ruling 5): admins only, test mode only
+        "listen_audio": "Listen to the audio",
+        "listen_preparing": "Preparing the audio…",
     },
 }
 
@@ -351,6 +365,12 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "reconnect": "Reconectar",
         "reload_station": "Recargar estación",
         "test_audio": "Probar con audio",
+        "test_audio_sample_en": "Muestra en inglés",
+        "test_audio_sample_es": "Muestra en español",
+        "test_audio_upload": "O subí un archivo (máx. 50 MB)",
+        "test_audio_started": "Reproduciendo la prueba.",
+        "listen_audio": "Escuchar el audio",
+        "listen_preparing": "Preparando el audio…",
         "manual_hint": "Iniciar o terminar una charla pasa la sala a manual: el piloto deja de actuar hasta que vuelvas a Auto.",
         "pick_talk": "Elegí la charla",
         "start_this": "Iniciar esta charla",
@@ -635,6 +655,12 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "reconnect": "Reconnect",
         "reload_station": "Reload station",
         "test_audio": "Test with audio",
+        "test_audio_sample_en": "English sample",
+        "test_audio_sample_es": "Spanish sample",
+        "test_audio_upload": "Or upload a file (max 50 MB)",
+        "test_audio_started": "Playing the test clip.",
+        "listen_audio": "Listen to the audio",
+        "listen_preparing": "Preparing the audio…",
         "manual_hint": "Starting or ending a talk switches the room to manual: the autopilot stays out until you go back to Auto.",
         "pick_talk": "Pick the talk",
         "start_this": "Start this talk",

@@ -2198,3 +2198,70 @@ async def test_quality_resets_for_each_new_talk(db, fake_typesafe_sdk) -> None: 
     assert worker.status().quality is None  # the new talk's window starts empty again
 
     await worker.stop()
+
+# ---- test_file(): Task 14b, Ruling 5 (the admin listen feature) -----------------
+
+
+async def test_test_file_is_none_for_a_live_source(db) -> None:
+    """A room whose source is not a file (here: never started) never offers
+    listen -- test_file() is the sole way the admin listen router decides
+    ``available``."""
+    clock = DrivenClock()
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), IngestFactory())
+    assert worker.test_file() is None
+    await worker.start(None)  # _room()'s configured source_type is "file" too (fixture default)
+    await run_for(clock, 1.0)
+    # Ruling 5 explicitly counts a room *configured* with source_type "file"
+    # as test mode, same as an admin's "Probar con audio" -- so this one
+    # does report a file.
+    info = worker.test_file()
+    assert info is not None and info[0] == "fake://r1"
+    await worker.stop()
+
+
+async def test_test_file_offset_grows_with_the_clock(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory())
+    clip = _clip(tmp_path)
+
+    await worker.play_file(clip)
+    await run_for(clock, 3.0)
+    first = worker.test_file()
+    assert first is not None
+    path, offset = first
+    assert path == clip
+    assert offset == pytest.approx(3.0, abs=0.15)
+
+    await run_for(clock, 2.0)
+    path2, offset2 = worker.test_file()
+    assert path2 == clip
+    assert offset2 > offset
+    await worker.stop()
+
+
+async def test_test_file_offset_resets_when_a_new_file_replaces_the_old_one(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory())
+
+    await worker.start(None)  # _room() is a "file" source too
+    await run_for(clock, 4.0)
+    await worker.play_file(_clip(tmp_path))  # the operator plays something else mid-talk
+    await run_for(clock, 1.0)
+
+    _, offset = worker.test_file()
+    assert offset < 2.0  # the new file's own clock, not the room's cumulative one
+    await worker.stop()
+
+
+async def test_test_file_is_none_once_the_room_goes_idle(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory())
+
+    await worker.play_file(_clip(tmp_path))
+    await run_for(clock, 1.0)
+    assert worker.test_file() is not None
+    await worker.stop()
+    assert worker.test_file() is None

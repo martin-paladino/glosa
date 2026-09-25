@@ -1,9 +1,13 @@
 """create_app(settings): the Glosa web app.
 
-It mounts ``/static``, the audience pages (glosa/web/pages.py), the public
+It mounts ``/static``, the audience pages (glosa/web/pages.py -- also the
+overlay ``/overlay/{room}`` and QR ``/qr/{room}`` pages, Task 14b) the public
 API (glosa/web/public_api.py) and the admin panel (glosa/web/admin_api.py,
 login at ``/admin/login`` protected with ``Settings.admin_password``; see
-glosa/web/auth.py; its live feed is glosa/web/admin_stream.py), and owns the
+glosa/web/auth.py; its live feed is glosa/web/admin_stream.py), plus two
+small routers of their own so they don't collide with Task 12's
+admin_api.py (Task 14b): glosa/web/test_audio.py ("Probar con audio") and
+glosa/web/admin_listen.py ("Escuchar el audio", Ruling 5). It owns the
 rooms. The lifespan:
 
   1. opens the SQLite database and registers every room of config.yaml,
@@ -111,7 +115,7 @@ from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
 from glosa.text.corrector import build_corrected
-from glosa.web import admin_api, admin_stream, pages, public_api, station
+from glosa.web import admin_api, admin_listen, admin_stream, pages, public_api, station, test_audio
 from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
 
@@ -385,6 +389,11 @@ def create_app(
     app.include_router(admin_stream.stream_router)  # SSE: the session cookie only, no CSRF header
     app.include_router(station.router)
     app.include_router(station.api_router)
+    # Task 14b: "Probar con audio" (CSRF-protected, like api_router) and
+    # "Escuchar el audio" (session cookie only, like stream_router above --
+    # an <audio> GET can't carry the CSRF header either).
+    app.include_router(test_audio.api_router)
+    app.include_router(admin_listen.router)
     app.include_router(pages.router)
     return app
 

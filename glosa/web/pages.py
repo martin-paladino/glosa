@@ -1,13 +1,36 @@
-"""Audience pages: the public room list (`/`) and the room view (`/s/{slug}`).
+"""Audience pages: the public room list (`/`), the room view (`/s/{slug}`),
+the OBS/vMix overlay (`/overlay/{room}`) and the printable QR page
+(`/qr/{room}`). Task 14b.
 
 Task 5's create_app() includes `router` and provides on app.state:
   - rooms_view(): list[dict] with {"slug", "name", "langs", "now", "next"}
     (now/next: {"talk_id", "title", "speakers", "language"}, next also "start": "HH:MM");
-  - branding: {"event_name", "primary", "accent", "logo_url"}.
+  - branding: {"event_name", "primary", "accent", "logo_url"};
+  - workers: room id -> RoomWorker (Task 14b: the overlay, the QR page's
+    `/s/{token}` link in `qr_only` mode, and the room page's admin-only
+    "Escuchar el audio" flag all need the worker directly, not just its
+    audience-safe `view()`). Accessed defensively (``getattr``/``or {}``): a handful of
+    older, narrower test fixtures (tests/web/test_pages.py) build a bare
+    app with only ``rooms_view`` and ``branding`` set, and must keep working
+    unchanged -- with no ``workers``, this module just falls back to the
+    pre-14b behaviour (slug-only room lookup, no token fallback, "listen"
+    always off).
 
 Interface language: `?lang=es|en` wins, then Accept-Language, then Spanish.
-Live captions arrive over SSE (`/api/stream/{slug}/{lang}`), handled by
-static/js/room.js; the page embeds what room.js needs as JSON.
+Live captions arrive over SSE (`/api/stream/{slug}/{lang}`, glosa/web/
+public_api.py), handled by static/js/room.js; the page embeds what room.js
+needs as JSON.
+
+``Settings.audience_mode`` (glosa/config.py): "all" (default) or "qr_only".
+Ruling 56: in `qr_only`, nothing public may reveal a room's slug->token
+mapping or its captions without the token. `/` lists no rooms; `/s/{slug}`
+and `/overlay/{slug}` 404 -- only the token forms, `/s/{token}` and
+`/overlay/s/{token}`, work (a room's ``Room.public_token``), which is what
+`/qr/{room}` then encodes instead of the slug (plan case 14.2); `/qr/{room}`
+itself requires an admin session in this mode (it's the page that hands out
+that token); and `/api/stream/{slug}/{lang}` (public_api.py) only resolves
+by the token too, so both `room_page()`'s and `overlay_page_by_token()`'s
+embedded JSON config point room.js/overlay.js at the token, not the slug.
 """
 
 from __future__ import annotations
@@ -17,7 +40,8 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from glosa.i18n import (
@@ -30,6 +54,8 @@ from glosa.i18n import (
     lang_name,
     t,
 )
+from glosa.web.admin_api import public_base, qr_data_uri
+from glosa.web.auth import is_authenticated
 
 router = APIRouter()
 
@@ -48,7 +74,13 @@ _HEX_COLOR = re.compile(r"#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
 @router.get("/", include_in_schema=False)
 def index(request: Request):
     ui, forced = _ui_lang(request)
-    rooms = [_room_summary(room, ui, forced) for room in _rooms(request)]
+    # qr_only: "/" no lista salas (plan case 14.2) -- the empty state
+    # ("rooms_empty") already reads "scan the QR code on the screen".
+    rooms = (
+        []
+        if _audience_mode(request) == "qr_only"
+        else [_room_summary(room, ui, forced) for room in _rooms(request)]
+    )
     context = _base_context(request, ui, forced) | {"rooms": rooms}
     return templates.TemplateResponse(request, "index.html", context, headers=_VARY)
 
@@ -57,7 +89,19 @@ def index(request: Request):
 def room_page(slug: str, request: Request):
     ui, forced = _ui_lang(request)
     all_rooms = _rooms(request)
-    room = next((r for r in all_rooms if r.get("slug") == slug), None)
+    workers = _workers(request)
+    qr_only = _audience_mode(request) == "qr_only"
+
+    room = None if qr_only else next((r for r in all_rooms if r.get("slug") == slug), None)
+    worker = None
+    if room is None and workers:
+        # qr_only: `/s/{slug}` 404s, `/s/{token}` works (plan case 14.2).
+        # Tried in "all" mode too, harmlessly: a token is never a valid
+        # slug, so this only ever matches when the slug lookup above did not.
+        worker = next((w for w in workers.values() if getattr(w.room, "public_token", None) == slug), None)
+        if worker is not None:
+            room = next((r for r in all_rooms if r.get("slug") == worker.room.slug), None)
+
     base = _base_context(request, ui, forced)
     if room is None:
         return templates.TemplateResponse(
@@ -71,10 +115,15 @@ def room_page(slug: str, request: Request):
     forced_caption = requested if requested in langs else None
     caption_lang = forced_caption or _default_caption_lang(ui, langs, now)
     source = now["language"] if now else None
+    # Ruling 56: /api/stream/{slug}/{lang} (public_api.py) itself refuses a
+    # plain slug in qr_only mode, same as this page -- stream by the token
+    # instead (``worker`` is always set here when qr_only: the only way
+    # ``room`` is non-None above is via the token match).
+    stream_slug = worker.room.public_token if qr_only else room["slug"]
 
     config = {
         "slug": room["slug"],
-        "streamBase": f"/api/stream/{quote(room['slug'], safe='')}/",
+        "streamBase": f"/api/stream/{quote(stream_slug, safe='')}/",
         "langs": langs,
         "defaultLang": caption_lang,
         "forcedLang": forced_caption,
@@ -84,6 +133,15 @@ def room_page(slug: str, request: Request):
         "langNames": {code: lang_name(code, ui) for code in langs},
         "i18n": STRINGS[ui],
     }
+
+    # Task 14b, Ruling 5: "Escuchar el audio" on the public page -- only
+    # ever true with a valid admin session AND the room already playing a
+    # test file at this render. Both the markup and listen.js are left out
+    # entirely otherwise (room.html), not just hidden.
+    if worker is None and workers:
+        worker = _find_worker(request, room["slug"])
+    listen = worker is not None and is_authenticated(request) and worker.test_file() is not None
+
     context = base | {
         "room": summary,
         "nav": [
@@ -94,8 +152,92 @@ def room_page(slug: str, request: Request):
         "direction": _direction(source, caption_lang, ui),
         "lang_options": _lang_options(langs, source, ui),
         "config": config,
+        "listen": listen,
     }
     return templates.TemplateResponse(request, "room.html", context, headers=_VARY)
+
+
+@router.get("/overlay/{slug}", include_in_schema=False)
+def overlay_page(slug: str, request: Request):
+    """`/overlay/{room}?lang=&lines=&size=&logo=1`: the transparent,
+    chrome-less page a vMix browser input or an OBS browser source reads
+    (docs/design/overlay.html; static/js/overlay.js). It's for the
+    production booth, not the audience, but it directly serves live
+    captions, so Ruling 56 applies the same as `room_page()`'s: in
+    `qr_only` mode this slug form 404s (like `/s/{slug}`) -- use
+    `/overlay/s/{public_token}` (below) instead, the same token the
+    audience's `/s/{token}` URL uses."""
+    if _audience_mode(request) == "qr_only":
+        raise HTTPException(status_code=404)
+    worker = _find_worker(request, slug)
+    if worker is None:
+        raise HTTPException(status_code=404)
+    return _overlay_response(worker, request, stream_slug=worker.room.slug)
+
+
+@router.get("/overlay/s/{token}", include_in_schema=False)
+def overlay_page_by_token(token: str, request: Request):
+    """`/overlay/s/{public_token}`: the token form of `/overlay/{room}`,
+    works in both `all` and `qr_only` mode (plan case 14.2, Ruling 56) --
+    admins printing/pasting a station's overlay link in `qr_only` mode use
+    this form (they already know the token from the `/qr/{room}` page or
+    the admin drawer)."""
+    worker = next(
+        (w for w in _workers(request).values() if getattr(w.room, "public_token", None) == token), None
+    )
+    if worker is None:
+        raise HTTPException(status_code=404)
+    qr_only = _audience_mode(request) == "qr_only"
+    stream_slug = worker.room.public_token if qr_only else worker.room.slug
+    return _overlay_response(worker, request, stream_slug=stream_slug)
+
+
+def _overlay_response(worker, request: Request, *, stream_slug: str):
+    langs = worker.langs()
+    requested = request.query_params.get("lang")
+    lang = requested if requested in langs else (langs[0] if langs else "es")
+    branding = getattr(request.app.state, "branding", None) or {}
+    context = {
+        "lang": lang,
+        "lines": _clamp_int(request.query_params.get("lines"), default=2, lo=1, hi=4),
+        "size": _clamp_int(request.query_params.get("size"), default=48, lo=16, hi=120),
+        "show_logo": request.query_params.get("logo") == "1",
+        "logo_url": branding.get("logo_url"),
+        "brand_css": _brand_css(branding),
+        "config": {"streamBase": f"/api/stream/{quote(stream_slug, safe='')}/", "lang": lang},
+    }
+    return templates.TemplateResponse(request, "overlay.html", context)
+
+
+@router.get("/qr/{slug}", include_in_schema=False)
+def qr_page(slug: str, request: Request):
+    """`/qr/{room}`: a printable/projectable page with the room's QR --
+    `/s/{slug}`, or `/s/{token}` in `qr_only` mode (plan case 14.1).
+
+    Public in `all` mode, no admin session required, both to print this
+    from a kiosk browser and because the brief's own interface lists it as
+    a plain page (not one of the `/api/admin/*` routes). In `qr_only` mode
+    this page is the one place that turns a room's plain `slug` into its
+    secret `public_token` (Ruling 56: nothing public may do that), so it
+    requires an admin session there -- same dependency and redirect
+    `/admin` uses (glosa/web/admin_api.py:admin_page)."""
+    ui, forced = _ui_lang(request)
+    qr_only = _audience_mode(request) == "qr_only"
+    if qr_only and not is_authenticated(request):
+        suffix = f"?lang={forced}" if forced else ""
+        return RedirectResponse(f"/admin/login{suffix}", status_code=303)
+    worker = _find_worker(request, slug)
+    base = _base_context(request, ui, forced)
+    if worker is None:
+        return templates.TemplateResponse(request, "not_found.html", base, status_code=404, headers=_VARY)
+    key = worker.room.public_token if qr_only else worker.room.slug
+    url = f"{public_base(request)}/s/{quote(key, safe='')}"
+    context = base | {
+        "room_name": worker.room.name,
+        "qr_data_uri": qr_data_uri(url),
+        "qr_url": url,
+    }
+    return templates.TemplateResponse(request, "qr.html", context, headers=_VARY)
 
 
 # ---- helpers -------------------------------------------------------------------
@@ -103,6 +245,29 @@ def room_page(slug: str, request: Request):
 
 def _rooms(request: Request) -> list[dict]:
     return list(request.app.state.rooms_view())
+
+
+def _workers(request: Request) -> dict:
+    """room id -> RoomWorker, or {} for the narrower test fixtures that
+    don't set ``app.state.workers`` at all (see the module docstring)."""
+    return getattr(request.app.state, "workers", None) or {}
+
+
+def _find_worker(request: Request, slug: str):
+    return next((w for w in _workers(request).values() if w.room.slug == slug), None)
+
+
+def _audience_mode(request: Request) -> str:
+    settings = getattr(request.app.state, "settings", None)
+    return getattr(settings, "audience_mode", "all") if settings is not None else "all"
+
+
+def _clamp_int(raw: str | None, *, default: int, lo: int, hi: int) -> int:
+    try:
+        value = int(raw) if raw is not None else default
+    except ValueError:
+        value = default
+    return max(lo, min(hi, value))
 
 
 def _ui_lang(request: Request) -> tuple[Lang, Lang | None]:

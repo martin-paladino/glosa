@@ -377,6 +377,47 @@ async def test_boot_runs_on_talk_end_for_talks_it_closed_as_stale(tmp_path: Path
         assert actual_end is not None and T0 <= actual_end < T0 + timedelta(seconds=10)
 
 
+async def test_a_blocking_boot_export_hook_does_not_delay_startup_or_leak_at_shutdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """task-11r-fix1.md item 1: _close_stale_live_talks used to await
+    on_talk_end inline in the lifespan, before yield -- a slow hook (a real
+    Gemini call, no timeout) blocked the whole app's startup and the
+    autopilot loop for every room, not just the stale talk's own. It must
+    be queued as a background task instead, mirroring how
+    RoomWorker._end_talk spawns and tracks its own talk-end hooks
+    (glosa/room.py _spawn/_hooks/drain_hooks)."""
+    monkeypatch.setattr(app_module, "HOOK_GRACE_S", 0.05)  # keep the shutdown wait short
+    settings = _settings(tmp_path)
+    past = _talk("past", "r1", -120, -60)
+    await _seed(settings, past)
+    await _mark(settings, "past", status="live", actual_start=T0 - timedelta(minutes=119))
+
+    started = asyncio.Event()
+
+    async def blocking_hook(talk: Talk) -> None:
+        started.set()
+        await asyncio.Event().wait()  # never returns on its own
+
+    app = create_app(settings, clock=EventClock(), engine_factory=QuietEngine, ingest_factory=SilentIngest,
+                      on_talk_end=blocking_hook, autopilot_interval_s=3600)
+    ctx = app.router.lifespan_context(app)
+    await asyncio.wait_for(ctx.__aenter__(), 1)  # would hang here before the fix
+    await asyncio.wait_for(started.wait(), 1)  # the hook is running...
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/login")  # ...but the app serves a request anyway
+    assert response.status_code == 200
+
+    boot_tasks = [t for t in asyncio.all_tasks() if t.get_name().startswith("boot-hook-")]
+    assert len(boot_tasks) == 1 and not boot_tasks[0].done()
+
+    await asyncio.wait_for(ctx.__aexit__(None, None, None), 2)  # shutdown does not hang on the stuck hook
+
+    assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("boot-hook-")]  # cancelled, not leaked
+
+
 # ------------------------------------------------- integration: engine_mode fake
 
 

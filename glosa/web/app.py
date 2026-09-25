@@ -18,7 +18,8 @@ rooms. The lifespan:
   4. runs ``Autopilot.tick()`` every ``autopilot_interval_s`` (5 s) in the
      task named ``autopilot``;
   5. on shutdown cancels that loop (a tick in progress finishes), stops
-     every room and gives the talk-end hooks ``HOOK_GRACE_S``.
+     every room, gives the talk-end hooks ``HOOK_GRACE_S``, then does the
+     same for any boot-time stale-talk hooks still running (below).
 
 Every talk that ends publishes ``talk_ended`` on ``admin_events``, then goes
 to ``create_app(on_talk_end=...)`` if given -- generic extensibility (tests
@@ -26,7 +27,9 @@ inject their own hook this way); ``app_from_env()`` (the real entry point)
 wires it to ``_export_talk`` (Task 11-rest: rebuilds every target
 language's "corrected" export in the background). A talk the boot closes as
 stale (``_close_stale_live_talks``, never routed through a RoomWorker's own
-``on_talk_end``) gets the same hook run for it directly.
+``on_talk_end``) gets the same hook run for it too -- queued as a tracked
+background task (task-11r-fix1.md item 1), never awaited inline, so a slow
+hook never delays the app's own startup or the autopilot loop.
 
 ``app.state``:
   - ``settings``, ``clock``, ``bus`` (CaptionBus), ``db`` (Database, once
@@ -311,6 +314,7 @@ def create_app(
         db = await asyncio.to_thread(init_db, settings.db_path)
         app.state.db = db
         pilot: asyncio.Task | None = None
+        boot_hooks: set[asyncio.Task] = set()
         try:
             known = {room.id: room for room in await db.get_rooms()}
             for cfg in settings.rooms:
@@ -334,7 +338,7 @@ def create_app(
                 )
             autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
             app.state.autopilot = autopilot
-            await _boot_rooms(autopilot, workers, db, clock.wall(), on_talk_end)
+            await _boot_rooms(autopilot, workers, db, clock.wall(), on_talk_end, boot_hooks)
             pilot = asyncio.create_task(autopilot.run(autopilot_interval_s), name="autopilot")
             yield
         finally:
@@ -349,6 +353,7 @@ def create_app(
                 if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
                     log.error("room %s: stop failed", worker.room.id, exc_info=result)
             await asyncio.gather(*(w.drain_hooks(HOOK_GRACE_S) for w in rooms), return_exceptions=True)
+            await _drain_boot_hooks(boot_hooks, HOOK_GRACE_S)
             workers.clear()
             db.close()
 
@@ -390,6 +395,7 @@ async def _boot_rooms(
     db,
     boot: datetime,
     on_talk_end: TalkEndHook | None = None,
+    boot_hooks: set[asyncio.Task] | None = None,
 ) -> None:
     """What each room runs at startup:
 
@@ -405,7 +411,11 @@ async def _boot_rooms(
          never goes through RoomWorker._end_talk, ``on_talk_end`` (Task 11:
          exports) is run for it here too (task-11r-brief.md item 5): such a
          talk's on_talk_end never fired on its own, so its corrected export
-         would otherwise never get built.
+         would otherwise never get built. task-11r-fix1.md item 1: queued
+         as a background task (``boot_hooks``, drained by
+         ``_drain_boot_hooks`` at shutdown) instead of awaited inline here,
+         so a slow hook (a real Gemini call, no timeout) never delays the
+         app's own startup or the autopilot loop of every other room.
     """
     try:
         await autopilot.tick()
@@ -425,7 +435,7 @@ async def _boot_rooms(
             owned = False
         if not owned:
             await _start_free_session(worker, db)
-    await _close_stale_live_talks(workers, db, boot, on_talk_end)
+    await _close_stale_live_talks(workers, db, boot, on_talk_end, boot_hooks)
 
 
 async def _resume_manual_room(worker: RoomWorker, db) -> None:
@@ -449,7 +459,11 @@ async def _resume_manual_room(worker: RoomWorker, db) -> None:
 
 
 async def _close_stale_live_talks(
-    workers: dict[str, RoomWorker], db, boot: datetime, on_talk_end: TalkEndHook | None = None
+    workers: dict[str, RoomWorker],
+    db,
+    boot: datetime,
+    on_talk_end: TalkEndHook | None = None,
+    boot_hooks: set[asyncio.Task] | None = None,
 ) -> None:
     held = {w.talk.id for w in workers.values() if w.talk is not None}
     try:
@@ -461,12 +475,38 @@ async def _close_stale_live_talks(
             await db.log_event(talk.room_id, "warning", "stale_live", message)
             if on_talk_end is not None:
                 talk.status, talk.actual_end = "done", boot
-                try:
-                    await on_talk_end(talk)
-                except Exception:
-                    log.exception("room %s: on_talk_end failed for the stale talk %s", talk.room_id, talk.id)
+                # task-11r-fix1.md item 1: spawned and tracked (mirrors
+                # RoomWorker._end_talk's own _spawn/_hooks), never awaited
+                # inline -- a slow hook here must not block the rest of
+                # boot, the app's own startup, or the autopilot loop.
+                task = asyncio.get_running_loop().create_task(
+                    _run_boot_hook(on_talk_end, talk), name=f"boot-hook-{talk.id}"
+                )
+                if boot_hooks is not None:
+                    boot_hooks.add(task)
+                    task.add_done_callback(boot_hooks.discard)
     except Exception:
         log.exception("could not close the talks left live by a previous run")
+
+
+async def _run_boot_hook(hook: TalkEndHook, talk: Talk) -> None:
+    try:
+        await hook(talk)
+    except Exception:
+        log.exception("room %s: on_talk_end failed for the stale talk %s", talk.room_id, talk.id)
+
+
+async def _drain_boot_hooks(boot_hooks: set[asyncio.Task], timeout: float | None) -> None:
+    """Wait for the boot's stale-talk on_talk_end hooks still running
+    (mirrors RoomWorker.drain_hooks); after ``timeout`` s, cancel the rest."""
+    pending = set(boot_hooks)
+    if not pending:
+        return
+    _, late = await asyncio.wait(pending, timeout=timeout)
+    for task in late:
+        log.error("boot: talk-end hook still running after %s s: cancelled", timeout)
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
 
 
 async def _start_free_session(worker: RoomWorker, db) -> None:

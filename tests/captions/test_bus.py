@@ -161,20 +161,24 @@ async def test_publish_never_blocks_or_raises_when_subscriber_queue_is_full() ->
     await _abandon_cleanup(sub, task)
 
 
-async def test_full_subscriber_queue_never_exceeds_the_bound_and_keeps_newest() -> None:
+async def test_a_subscriber_that_falls_behind_gets_its_queue_then_its_stream_ends_and_replay_fills_the_gap() -> None:
     bus = CaptionBus()
     sub = bus.subscribe("room1", "es", last_event_id=None)
-    consumer = asyncio.ensure_future(_take(sub, SUBSCRIBER_QUEUE_MAX))
-    await asyncio.sleep(0)  # let subscribe() register and suspend on queue.get()
+    bus.publish("room1", "es", "append", seg=0, text="word0")
+    first = await anext(sub)  # registered and reading; now it stops reading while the room keeps publishing
+    assert first.id == 1
 
     total = SUBSCRIBER_QUEUE_MAX + 50
-    for i in range(total):
+    for i in range(1, total):
         bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
 
-    received = await asyncio.wait_for(consumer, timeout=1.0)
+    received = [msg async for msg in sub]  # drains what was queued, then the stream ends
+    assert [m.id for m in received] == list(range(2, SUBSCRIBER_QUEUE_MAX + 2))  # contiguous, no hole
 
-    assert len(received) == SUBSCRIBER_QUEUE_MAX
-    assert [m.id for m in received] == list(range(total - SUBSCRIBER_QUEUE_MAX + 1, total + 1))
+    # What EventSource does next: reconnect with the last id it saw.
+    replay = bus.subscribe("room1", "es", last_event_id=received[-1].id)
+    rest = await _take(replay, total - SUBSCRIBER_QUEUE_MAX - 1)
+    assert [m.id for m in rest] == list(range(SUBSCRIBER_QUEUE_MAX + 2, total + 1))
 
 
 async def test_full_queue_does_not_affect_other_subscribers() -> None:

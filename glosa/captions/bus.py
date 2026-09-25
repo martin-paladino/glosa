@@ -17,10 +17,12 @@ log = logging.getLogger(__name__)
 
 # Bound on each SSE subscriber's per-message queue. A subscriber that can't
 # keep up (e.g. a phone on bad wifi) must never make the publisher block or
-# grow memory without limit; once full we drop the oldest queued message to
-# make room for the newest one. The client already recovers any gap via
-# Last-Event-ID replay from the bus's circular buffer on reconnect, so
-# losing an already-queued-but-undelivered live message here is safe.
+# grow memory without limit. Once its queue is full the subscriber is marked
+# overflowed: nothing more is queued for it, it is handed what it already
+# has, and then its stream ENDS. The browser's EventSource reconnects on its
+# own with its Last-Event-ID and subscribe() replays the gap from the
+# track's buffer -- no silent hole in the middle of a caption (dropping
+# single "append"s would corrupt the text on screen with no way to notice).
 SUBSCRIBER_QUEUE_MAX = 500
 
 
@@ -32,9 +34,9 @@ class _TrackState:
         self.buffer: deque[tuple[CaptionMsg, str | None]] = deque(maxlen=buffer_size)
         self.subscribers: set[asyncio.Queue[CaptionMsg]] = set()
         self.current_talk_id: str | None = None
-        # Subscriber queues we've already logged as lagging, so we warn at
-        # most once per subscriber rather than once per dropped message.
-        self.lagging_logged: set[asyncio.Queue[CaptionMsg]] = set()
+        # Subscriber queues that filled up: they get nothing more and their
+        # stream ends once drained (see SUBSCRIBER_QUEUE_MAX).
+        self.overflowed: set[asyncio.Queue[CaptionMsg]] = set()
 
 
 class CaptionBus:
@@ -72,22 +74,21 @@ class CaptionBus:
 
         track.buffer.append((msg, track.current_talk_id))
         for queue in track.subscribers:
+            if queue in track.overflowed:
+                continue
             try:
                 queue.put_nowait(msg)
             except asyncio.QueueFull:
-                # Never block the publisher and never raise: drop the
-                # oldest queued message to make room for this one.
-                queue.get_nowait()
-                queue.put_nowait(msg)
-                if queue not in track.lagging_logged:
-                    track.lagging_logged.add(queue)
-                    log.warning(
-                        "room %s lang %s: subscriber queue full (max %d), "
-                        "dropping oldest queued message(s)",
-                        room_id,
-                        lang,
-                        SUBSCRIBER_QUEUE_MAX,
-                    )
+                # Never block the publisher and never raise: end this
+                # subscriber's stream once drained; it reconnects and replays.
+                track.overflowed.add(queue)
+                log.warning(
+                    "room %s lang %s: a subscriber fell %d messages behind: ending its stream "
+                    "(the client reconnects and replays from Last-Event-ID)",
+                    room_id,
+                    lang,
+                    SUBSCRIBER_QUEUE_MAX,
+                )
         return msg
 
     async def subscribe(
@@ -117,11 +118,13 @@ class CaptionBus:
             for msg in backlog:
                 yield msg
             while True:
+                if queue in track.overflowed and queue.empty():
+                    return  # fell behind: the client reconnects and replays the rest
                 msg = await queue.get()
                 yield msg
         finally:
             track.subscribers.discard(queue)
-            track.lagging_logged.discard(queue)
+            track.overflowed.discard(queue)
 
     def history(self, room_id: str, lang: str, talk_id: str) -> list[CaptionMsg]:
         """Buffered messages published while talk_id was current, for latecomers."""

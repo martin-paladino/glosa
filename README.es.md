@@ -82,7 +82,10 @@ Los secretos viven solo en `.env` (ignorado por git) y se leen directamente
 de ese archivo, nunca del entorno del shell/contenedor (así una variable
 exportada por accidente, o un `docker inspect`, no puede filtrarlos — ver
 el comentario de `docker-compose.yml`). Nunca los pongas en `config.yaml`
-ni los commitees.
+ni los commitees. `.env` se lee del directorio de trabajo por defecto;
+apuntá a otro con `GLOSA_ENV_FILE` (la misma idea que `GLOSA_CONFIG` de
+arriba, p. ej. para correr más de una instancia con secretos distintos sin
+andar haciendo `cd`).
 
 ### El evento (`config.yaml`)
 

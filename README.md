@@ -80,7 +80,10 @@ or add the same volume line to a local `docker-compose.override.yml`
 Secrets live only in `.env` (gitignored) and are read from that file
 directly, never from the shell/container environment (so a stray exported
 variable, or `docker inspect`, can't leak them — see `docker-compose.yml`'s
-comment). Never put them in `config.yaml` or commit them.
+comment). Never put them in `config.yaml` or commit them. `.env` is read
+from the working directory by default; point it elsewhere with
+`GLOSA_ENV_FILE` (same idea as `GLOSA_CONFIG` above, e.g. to run more than
+one instance from different secrets without `cd`-ing between them).
 
 ### Event (`config.yaml`)
 

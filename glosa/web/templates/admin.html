@@ -1,111 +1,287 @@
 {% extends "base.html" %}
 
-{% block title %}Admin | Glosa{% endblock %}
+{#- The production panel, "Sala de control" v2 (docs/design/admin.html,
+    docs/design/NOTES.md; markup reference docs/design/admin-classes.html).
+    First paint from the same snapshot as GET /api/admin/stream; admin.js
+    keeps every part live and finds it by its data-* hooks. #}
 
-{% block styles %}
-  {#- Task 12 replaces this with the full "Sala de control" console
-      (docs/design/admin.html): VU meters, quality, cost, the event log.
-      Until then, this reuses glosa.css's tokens and console/strip/status/btn
-      components as-is; these few rules are only the login card and the
-      couple of bits (inputs, error banners, an empty state) glosa.css
-      doesn't already style, so there is no second stylesheet for a page
-      this small. #}
-  <style>
-    .admin-login { display: grid; place-items: center; min-block-size: 100dvh; padding: var(--gutter); }
-    .admin-login__card {
-      inline-size: min(100%, 22rem);
-      display: grid;
-      gap: var(--space-4);
-      padding: var(--space-6) var(--space-5);
-      border: var(--border-w) solid var(--rule-strong);
-      border-radius: var(--radius-m);
-      background: var(--surface);
-    }
-    .admin-login__field { display: grid; gap: var(--space-2); }
-    .admin-login__field label { font-size: var(--step--1); font-weight: 700; color: var(--text-2); }
-    .admin-login__field input {
-      min-block-size: var(--tap);
-      padding-inline: var(--space-3);
-      border: var(--border-w) solid var(--rule-strong);
-      border-radius: var(--radius-s);
-      background: var(--bg);
-      font-size: var(--step-0);
-    }
-    .admin__notice { display: none; font-size: var(--step--1); font-weight: 700; color: var(--fail); }
-    .admin__notice[data-visible] { display: block; }
-    .admin__notice a { color: inherit; }
-    .admin__empty { padding-block: var(--space-4); color: var(--text-2); }
-    .strip__empty { color: var(--text-2); }
-    .strip__detail { font-size: var(--step--2); color: var(--text-2); }
-  </style>
-{%- endblock %}
+{% macro attn_row(row) -%}
+<li class="attn__row attn__row--{{ row.severity }}" data-attn-row="{{ row.key }}">
+  <i class="led led--{{ row.severity }}"></i><b class="attn__room">{{ row.room }}</b>
+  <span class="attn__what">{{ row.what }}{% if row.em %} <em>{{ row.em }}</em>{% endif %}</span>
+  <time class="attn__age tc" data-since="{{ row.since or '' }}"></time>
+  {%- if row.action %}
+  <button class="btn btn--compact btn--{{ row.severity }}" type="button" data-action="{{ row.action }}" data-room-id="{{ row.room_id }}">{{ row.action_label }}</button>
+  {%- else %}
+  <span></span>
+  {%- endif %}
+</li>
+{%- endmacro %}
+
+{% macro monitor(room) -%}
+{%- set issue = room.issue -%}
+{%- set nxt = room.next if room.next and room.next.start[:10] == view.now[:10] else none -%}
+<article class="monitor monitor--{{ room.state }}" data-monitor="{{ room.id }}" data-key="{{ room.key or '' }}"
+         aria-label="{{ room.name }}{% if room.text.state_word %}, {{ room.text.state_word }}{% endif %}">
+  <header class="monitor__head">
+    <i class="led led--{{ room.state }}" data-m-led></i>
+    {#- The name is the key that opens the room in the drawer (a click anywhere on the monitor does too). #}
+    <h3 class="monitor__name"><button class="monitor__open" type="button" aria-expanded="false" aria-controls="admin-drawer" data-open-room="{{ room.id }}">{{ room.name }}</button></h3>
+    <em class="monitor__state" data-m-state{% if room.state == 'live' or not room.text.state_word %} hidden{% endif %}>{{ room.text.state_word }}</em>
+    <span class="monitor__tc tc" data-m-tc data-start="{{ room.talk.actual_start if room.talk and room.state != 'idle' else '' }}"></span>
+    {%- if room.key %}<kbd>{{ room.key }}</kbd>{% endif %}
+  </header>
+  <div class="monitor__cc{% if room.state == 'down' %} monitor__cc--frozen{% endif %}" data-m-cc lang="{{ room.lang }}"{% if room.state == 'idle' %} hidden{% endif %}>
+    <p><span data-m-closed></span> <span class="phrase phrase--open" data-m-open></span></p>
+    <small class="tc" data-m-frozen hidden></small>
+  </div>
+  <div class="monitor__wait" data-m-wait{% if room.state != 'idle' %} hidden{% endif %}>
+    <span class="monitor__count tc" data-m-count data-until="{{ nxt.start if nxt else '' }}"></span>
+    <b data-m-next-title{% if nxt %} lang="{{ nxt.language }}"{% endif %}>{{ nxt.title if nxt else '' }}</b>
+    <span data-m-next-meta>{% if nxt and nxt.speakers %}{{ nxt.speakers | join(', ') }}. {% endif %}{{ room.text.wait }}</span>
+  </div>
+  <footer class="monitor__issue" data-m-issue{% if not issue %} hidden{% endif %}>
+    <span data-m-issue-text><b>{{ room.text.title }}</b> {{ room.text.note }}</span>
+    <button class="btn btn--compact{% if issue %} btn--{{ issue.severity }}{% endif %}" type="button" data-action="{{ (issue.action if issue else '') or '' }}" data-room-id="{{ room.id }}"{% if not issue or not issue.action %} hidden{% endif %}>{{ room.text.action_label }}</button>
+  </footer>
+</article>
+{%- endmacro %}
+
+{% block title %}{{ at("admin_title") }} | {{ event_name }}{% endblock %}
 
 {% block head %}
   <script src="/static/js/admin.js" defer></script>
 {%- endblock %}
 
 {% block body %}
-{% if not authenticated %}
-<main class="admin-login" data-admin-login>
-  <div class="admin-login__card">
-    <a class="wordmark" href="/" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
-    <h1 class="panel__title">Admin</h1>
-    <p class="admin__notice" data-admin-login-error>Wrong password.</p>
-    <form class="admin-login__form" method="post" action="/admin/login" data-admin-login-form>
-      <div class="admin-login__field">
-        <label for="admin-password">Password</label>
-        <input id="admin-password" name="password" type="password" required autofocus autocomplete="current-password">
-      </div>
-      <button class="btn btn--primary" type="submit">Log in</button>
-    </form>
-  </div>
-</main>
-{% else %}
+{%- set budget = view.budget %}
 <div class="admin" data-admin>
-  <header class="admin__bar">
-    <a class="wordmark" href="/" aria-label="Glosa">glosa<span class="nib" aria-hidden="true"></span></a>
-    <h1 class="admin__title">Admin</h1>
-    <form class="admin__user" method="post" action="/admin/logout">
-      <button class="btn btn--quiet" type="submit">Log out</button>
-    </form>
-  </header>
-  <main class="admin__main">
-    <section class="panel" aria-labelledby="admin-rooms">
-      <div class="panel__head">
-        <h2 class="panel__title" id="admin-rooms">Rooms</h2>
-      </div>
-      <p class="admin__notice" data-rooms-error></p>
-      {% if rooms %}
-      <div class="console" data-rooms>
-        {%- for room in rooms %}
-        <article class="strip strip--{{ room.css_state }}" data-room-row data-room-id="{{ room.id }}"
-                  aria-labelledby="admin-room-{{ loop.index }}">
-          <header class="strip__head">
-            <h3 class="strip__name" id="admin-room-{{ loop.index }}">{{ room.name }}</h3>
-            <span class="status status--{{ room.css_state }}" data-room-status>{{ room.status.state }}</span>
-          </header>
-          <div class="strip__talk">
-            {%- if room.now %}
-            <cite class="talk-title" data-room-talk lang="{{ room.now.language }}">{{ room.now.title }}</cite>
-            {%- else %}
-            <span class="strip__empty" data-room-talk>No talk running</span>
-            {%- endif %}
-          </div>
-          {%- if room.status.detail %}
-          <p class="strip__detail" data-room-detail>{{ room.status.detail }}</p>
-          {%- endif %}
-          <div class="strip__actions">
-            <button class="btn btn--primary" type="button" data-action="start" data-room-id="{{ room.id }}">Start</button>
-            <button class="btn btn--danger" type="button" data-action="stop" data-room-id="{{ room.id }}">Stop</button>
-          </div>
-        </article>
+  <header class="masthead">
+    <div class="masthead__cell">
+      <a class="wordmark" href="/" aria-label="Glosa">glosa</a>
+      {#- The event's logo stands for its name (the strip has no room for both). #}
+      {%- if logo_url %}
+      <img class="event-logo{% if logo_mono %} event-logo--mono{% endif %}" src="{{ logo_url }}" alt="{{ event_name }}" title="{{ event_name }}">
+      {%- else %}
+      <div class="masthead__event"><b>{{ event_name }}</b><span data-event-date></span></div>
+      {%- endif %}
+    </div>
+    <div class="masthead__cell tally" data-tally aria-label="{{ at('rooms_by_state') }}">
+      {%- for item in view.tally %}
+      <span class="tally__item" data-tally-state="{{ item.state }}"><i class="led led--{{ item.state }}"></i><strong>{{ item.count }}</strong>{{ item.word }}</span>
+      {%- endfor %}
+    </div>
+    <div class="masthead__cell budget{% if budget.alert == '80%' %} budget--warn{% elif budget.alert %} budget--over{% endif %}" data-budget
+         style="--spent: {{ [budget.ratio, 1] | min }}" aria-label="{{ at('budget') }}">
+      <span class="budget__label">{{ at("budget_label") }}</span><strong class="budget__value" data-budget-value>{{ budget.text.value }}</strong><span class="budget__of" data-budget-of>{{ budget.text.of }}</span>
+      <span class="budget__bar" data-budget-bar role="meter" aria-valuemin="0" aria-valuemax="{{ budget.budget }}" aria-valuenow="{{ '%.2f' | format(budget.spent) }}"
+            aria-valuetext="{{ budget.text.valuetext }}" title="{{ budget.text.warns_at }}"></span>
+    </div>
+    <div class="masthead__cell masthead__push masthead__tools">
+      <span class="operators" data-panels>{{ view.panels_text }}</span>
+      <nav class="segmented" aria-label="{{ at('language') }}">
+        {%- for lang in langs %}
+        <a href="?lang={{ lang.code }}" hreflang="{{ lang.code }}" lang="{{ lang.code }}"{% if lang.current %} aria-current="true"{% endif %}>{{ lang.code | upper }}</a>
         {%- endfor %}
-      </div>
-      {% else %}
-      <p class="admin__empty">No rooms configured. Add one under <code>rooms:</code> in config.yaml.</p>
-      {% endif %}
+      </nav>
+      <form method="post" action="/admin/logout"><button class="btn btn--link" type="submit">{{ at("log_out") }}</button></form>
+    </div>
+    <div class="masthead__cell"><time class="clock clock--big" data-admin-clock></time></div>
+  </header>
+
+  <section class="attn{% if not view.attention %} attn--calm{% endif %}" data-attn aria-label="{{ at('attention') }}">
+    <div class="attn__head"><b>{{ at("attention") }}</b><span data-attn-count role="status">{{ view.pending }}</span></div>
+    <ol class="attn__list" data-attn-list>
+      {%- for row in view.attention %}
+      {{ attn_row(row) }}
+      {%- endfor %}
+    </ol>
+    <p class="attn__ok"><i class="led led--live"></i><span data-attn-ok>{{ view.all_clear }}</span></p>
+  </section>
+
+  <main class="wall" data-wall aria-label="{{ at('rooms_by_state') }}">
+    {%- for room in view.rooms %}
+    {{ monitor(room) }}
+    {%- endfor %}
+    <section class="panel panel--sunk" data-log-panel aria-labelledby="admin-log-title">
+      <header class="panel__head">
+        <h2 class="panel__title" id="admin-log-title">{{ at("log") }}</h2>
+        <div class="segmented" role="group" aria-label="{{ at('log_filter') }}">
+          <button type="button" aria-pressed="true" data-log-filter="alerts">{{ at("alerts_n").format(n=0) }}</button><button type="button" aria-pressed="false" data-log-filter="all">{{ at("all_n").format(n=0) }}</button>
+        </div>
+      </header>
+      <ol class="log" data-log></ol>
+      <p class="log__empty" data-log-empty>{{ at("log_empty") }}</p>
+      <button class="btn btn--link log__more" type="button" data-log-more hidden></button>
     </section>
   </main>
+
+  <section class="panel schedule" data-schedule aria-labelledby="admin-agenda-title">
+    <header class="schedule__head">
+      <h2 class="panel__title" id="admin-agenda-title">{{ at("agenda") }}</h2>
+      <p class="schedule__next" data-next-change>
+        {%- if view.next_change %}{{ at("next_change") }} <b>{{ view.next_change.text }}</b> <span class="tc" data-next-count data-until="{{ view.next_change.at }}"></span>
+        {%- else %}{{ view.next_change_text }}{% endif -%}
+      </p>
+      <div class="legend"><span><i class="swatch swatch--manual"></i>{{ at("legend_manual") }}</span><span><i class="swatch swatch--now"></i>{{ at("legend_now") }}</span></div>
+      <button class="btn btn--compact" type="button" data-open-import>{{ at("import_agenda") }}</button>
+    </header>
+    <div class="timeline" data-timeline style="--span: 270; --t: 0">
+      <div class="timeline__axis tc" data-axis aria-hidden="true"></div>
+      {%- for room in view.rooms %}
+      <div class="timeline__row" data-track-row="{{ room.id }}">
+        <div class="timeline__room">{% if room.key %}<kbd>{{ room.key }}</kbd>{% endif %}<i class="led led--{{ room.state }}" data-t-led></i><span>{{ room.name }}</span></div>
+        <div class="timeline__track" data-track="{{ room.id }}"></div>
+      </div>
+      {%- endfor %}
+      <div class="timeline__now" data-now aria-hidden="true"><span class="tc" data-now-label></span></div>
+    </div>
+    <p class="schedule__empty" data-agenda-empty hidden>{{ at("agenda_empty") }}</p>
+  </section>
+
+  <div class="scrim" data-scrim></div>
+  <aside class="drawer" id="admin-drawer" data-drawer role="dialog" aria-modal="true" aria-label="{{ at('room_detail') }}" tabindex="-1"></aside>
+
+  <div class="toast" data-toast role="status" hidden>
+    <p class="toast__text" data-toast-text></p>
+    <button class="btn btn--link" type="button" data-toast-close>{{ at("dismiss") }}</button>
+  </div>
 </div>
-{% endif %}
+
+{#- The drawer's three contents: a room, a talk of the agenda, the import. -#}
+<template data-tpl="room">
+  <section class="drawer__sec">
+    <div class="drawer__head"><kbd data-d-key></kbd><h2 class="drawer__title" data-d-name></h2>
+      <button class="drawer__close" type="button" data-close>{{ at("close") }} <kbd>Esc</kbd></button></div>
+    <p class="drawer__state"><i class="led" data-d-led></i><span data-d-state></span></p>
+  </section>
+  <section class="drawer__sec" data-d-talk-sec>
+    <b class="drawer__talk" data-d-talk></b><span class="drawer__who" data-d-who></span>
+    <div class="drawer__meta"><span data-d-dir></span><span data-d-engine></span><span class="tc" data-d-slot></span><span class="tc" data-d-tc data-start="" data-prefix="TC "></span></div>
+  </section>
+  <section class="drawer__sec">
+    <div class="drawer__mode">{{ at("mode") }} <span class="segmented" role="group" aria-label="{{ at('mode') }}"><button type="button" data-mode="auto" aria-pressed="false">{{ at("mode_auto") }}</button><button type="button" data-mode="manual" aria-pressed="false">{{ at("mode_manual") }}</button></span></div>
+    <div class="drawer__keys">
+      <button class="btn" type="button" data-d-start aria-expanded="false">{{ at("start_talk") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
+      <button class="btn" type="button" data-d-end>{{ at("end_talk") }}</button>
+      <button class="btn" type="button" data-d-reconnect>{{ at("reconnect") }}</button>
+      {#- Task 14a: an emitter room's station, reloaded remotely. Task 14b fills the test clip's slot. #}
+      <button class="btn" type="button" data-slot="station-reload" hidden>{{ at("reload_station") }}</button>
+      <button class="btn" type="button" data-slot="test-audio" hidden>{{ at("test_audio") }}</button>
+    </div>
+    <form class="drawer__pick" data-d-pick hidden>
+      <fieldset>
+        <legend class="field__label">{{ at("pick_talk") }}</legend>
+        <ul class="pick" data-d-pick-list></ul>
+      </fieldset>
+      <div class="form__actions">
+        <button class="btn btn--primary" type="submit" data-d-pick-go>{{ at("start_this") }}</button>
+        <button class="btn btn--link" type="button" data-d-pick-cancel>{{ at("cancel") }}</button>
+      </div>
+    </form>
+    <p class="drawer__hint" data-d-hint></p>
+    <p class="notice" data-d-error role="alert" hidden></p>
+  </section>
+  <section class="drawer__sec" data-d-station-sec hidden>
+    <h3 class="drawer__h">{{ at("station") }}</h3>
+    <p class="drawer__state"><i class="led led--idle" data-d-station-led></i><span data-d-station-state></span></p>
+    <div class="field station-link">
+      <label class="field__label" for="station-url">{{ at("station_link") }}</label>
+      <span class="station-link__row">
+        <input id="station-url" class="tc" type="text" readonly data-d-station-url aria-describedby="station-url-hint">
+        <button class="btn btn--compact" type="button" data-d-station-copy>{{ at("copy") }}</button>
+      </span>
+      <span class="field__hint" id="station-url-hint">{{ at("station_link_hint") }}</span>
+      <details class="station-link__qr"><summary>{{ at("show_qr") }}</summary><img data-d-station-qr alt="{{ at('station_qr_alt') }}" width="148" height="148"></details>
+    </div>
+  </section>
+  <section class="drawer__sec" aria-label="{{ at('metrics') }}">
+    <dl class="metrics">
+      <dt>{{ at("metric_audio") }}</dt><dd class="metrics__value" data-d-level></dd><dd class="metrics__note"><span class="vu" data-d-vu role="meter" aria-label="{{ at('metric_audio') }}" aria-valuemin="-60" aria-valuemax="0"></span><span data-d-level-note></span></dd>
+      <dt>{{ at("metric_latency") }}</dt><dd class="metrics__value" data-d-latency></dd><dd class="metrics__note" data-d-latency-note></dd>
+      <dt>{{ at("metric_quality") }}</dt><dd class="metrics__value" data-d-quality></dd><dd class="metrics__note" data-d-quality-note></dd>
+      <dt>{{ at("metric_cost") }}</dt><dd class="metrics__value" data-d-cost></dd><dd class="metrics__note">{{ at("cost_note") }}</dd>
+    </dl>
+    <p class="drawer__raw"><span>{{ at("raw_detail") }}</span> <code data-d-raw></code></p>
+  </section>
+  <section class="drawer__sec" data-d-cc-sec>
+    <div class="drawer__cc" data-d-cc aria-label="{{ at('captions') }}"><p><span data-d-closed></span> <span class="phrase phrase--open" data-d-open></span></p></div>
+  </section>
+  <section class="drawer__sec">
+    <h3 class="drawer__h">{{ at("room_history") }}</h3>
+    <ol class="log log--all log--compact" data-d-log></ol>
+    <p class="drawer__hint" data-d-log-empty hidden>{{ at("room_history_empty") }}</p>
+  </section>
+</template>
+
+<template data-tpl="talk">
+  <section class="drawer__sec">
+    <div class="drawer__head"><h2 class="drawer__title">{{ at("edit_talk") }}</h2>
+      <button class="drawer__close" type="button" data-close>{{ at("close") }} <kbd>Esc</kbd></button></div>
+    <p class="drawer__state"><i class="led led--idle" data-t-led></i><span data-t-where></span></p>
+  </section>
+  <form class="drawer__sec form" data-talk-form novalidate>
+    <p class="notice" data-t-note hidden></p>
+    <label class="field"><span class="field__label">{{ at("talk_title") }}</span><input name="title" required autocomplete="off"></label>
+    <label class="field"><span class="field__label">{{ at("speakers") }}</span><input name="speakers" autocomplete="off" aria-describedby="t-speakers-hint"><span class="field__hint" id="t-speakers-hint">{{ at("speakers_hint") }}</span></label>
+    <div class="field-row">
+      <label class="field"><span class="field__label">{{ at("talk_language") }}</span>
+        <select name="language"><option value="es">{{ at("lang_es") }}</option><option value="en">{{ at("lang_en") }}</option></select></label>
+      <fieldset class="field"><legend class="field__label">{{ at("targets") }}</legend>
+        <span class="checks"><label class="check"><input type="checkbox" name="targets" value="es"><abbr title="{{ at('lang_es') }}">ES</abbr></label><label class="check"><input type="checkbox" name="targets" value="en"><abbr title="{{ at('lang_en') }}">EN</abbr></label></span></fieldset>
+      <label class="field"><span class="field__label">{{ at("engine") }}</span>
+        <select name="engine"><option value="fast">{{ at("engine_fast") }}</option><option value="glossary">{{ at("engine_glossary") }}</option></select></label>
+    </div>
+    <div class="field-row field-row--2">
+      <label class="field"><span class="field__label">{{ at("starts") }}</span><input type="datetime-local" name="start" step="60" class="tc"></label>
+      <label class="field"><span class="field__label">{{ at("ends") }}</span><input type="datetime-local" name="end" step="60" class="tc"></label>
+    </div>
+    <label class="field"><span class="field__label">{{ at("abstract") }}</span><textarea name="abstract" rows="4"></textarea></label>
+    <label class="field"><span class="field__label">{{ at("tags") }}</span><input name="tags" autocomplete="off" aria-describedby="t-tags-hint"><span class="field__hint" id="t-tags-hint">{{ at("tags_hint") }}</span></label>
+    <label class="field"><span class="field__label">{{ at("glossary") }}</span><textarea name="glossary" rows="5" spellcheck="false" aria-describedby="t-glossary-hint"></textarea><span class="field__hint" id="t-glossary-hint">{{ at("glossary_hint") }}</span></label>
+    <p class="notice" data-t-error role="alert" hidden></p>
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit" data-t-save>{{ at("save_talk") }}</button>
+      <button class="btn btn--link" type="button" data-close>{{ at("cancel") }}</button>
+    </div>
+  </form>
+  <section class="drawer__sec" data-t-delete-sec hidden>
+    <button class="btn" type="button" data-t-delete>{{ at("delete_talk") }}</button>
+    <div class="confirm" data-t-confirm hidden>
+      <p class="confirm__text" data-t-confirm-text></p>
+      <div class="form__actions">
+        <button class="btn btn--primary" type="button" data-t-delete-yes>{{ at("delete_yes") }}</button>
+        <button class="btn btn--link" type="button" data-t-delete-no>{{ at("cancel") }}</button>
+      </div>
+    </div>
+  </section>
+</template>
+
+<template data-tpl="import">
+  <section class="drawer__sec">
+    <div class="drawer__head"><h2 class="drawer__title">{{ at("import_agenda") }}</h2>
+      <button class="drawer__close" type="button" data-close>{{ at("close") }} <kbd>Esc</kbd></button></div>
+    <p class="drawer__hint">{{ at("import_lede") }}</p>
+  </section>
+  <form class="drawer__sec form" data-import-form novalidate>
+    <label class="field"><span class="field__label">{{ at("import_file") }}</span><input type="file" name="file" accept=".csv,.json,text/csv,application/json"></label>
+    <p class="form__or">{{ at("import_or") }}</p>
+    <div class="field">
+      <label class="field__label" for="import-url">{{ at("import_url") }}</label>
+      <input id="import-url" type="url" name="url" placeholder="https://" autocomplete="off">
+      <button class="btn btn--link field__aside" type="button" data-use-nerdearla>{{ at("use_nerdearla") }}</button>
+    </div>
+    <label class="field field--narrow"><span class="field__label">{{ at("import_format") }}</span>
+      <select name="format"><option value="">{{ at("format_auto") }}</option><option value="csv">CSV</option><option value="nerdearla">Nerdearla (JSON)</option></select></label>
+    <p class="notice" data-i-error role="alert" hidden></p>
+    <div class="form__actions"><button class="btn btn--primary" type="submit" data-i-go>{{ at("import_go") }}</button></div>
+  </form>
+  <section class="drawer__sec" data-i-result role="status" hidden>
+    <p class="import__total" data-i-imported></p>
+    <details class="import__list" data-i-skipped-box><summary data-i-skipped-sum></summary><ul data-i-skipped></ul></details>
+    <details class="import__list" data-i-removed-box><summary data-i-removed-sum></summary><ul data-i-removed></ul></details>
+  </section>
+</template>
+
+<script type="application/json" id="glosa-admin">{{ config | tojson }}</script>
 {% endblock %}

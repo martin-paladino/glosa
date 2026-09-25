@@ -290,3 +290,26 @@ async def test_set_room_mode_persists_only_the_mode(db) -> None:
     assert stored.mode == "manual" and stored.public_token == "tok-1"
     with pytest.raises(ValueError):
         await db.set_room_mode("r1", "sideways")
+
+
+async def test_events_after_an_id_come_oldest_first_and_bounded(db) -> None:  # Task 12: the admin stream
+    for n in range(5):
+        await db.log_event("r1", "info", "tick", f"event {n}")
+    first, second, *_ = sorted(await db.recent_events(5), key=lambda e: e.id)
+
+    after = await db.events_after(second.id, limit=2)
+
+    assert [e.message for e in after] == ["event 2", "event 3"]
+    assert await db.events_after(first.id + 100, limit=10) == []
+
+
+async def test_cost_by_room_sums_each_room(db) -> None:  # Task 12: the drawer's room cost
+    assert await db.cost_by_room() == {}
+    await db.add_cost("r1", "live_translate", 1.5, 0.05)
+    await db.add_cost("r2", "live_translate", 0.5, 0.02)
+    await db.add_cost("r1", "flash_lite", 1200, 0.01)
+    await db.add_cost(None, "glossary", 1, 0.03)
+
+    costs = await db.cost_by_room()
+
+    assert costs == pytest.approx({"r1": 0.06, "r2": 0.02, None: 0.03})

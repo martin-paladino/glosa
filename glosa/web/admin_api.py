@@ -1,9 +1,13 @@
-"""Admin: password login and room start/stop.
+"""Admin: the production panel, its login, and the room and agenda API.
 
-  - ``GET /admin``: the room console (the login form if there is no valid
-    session cookie; otherwise the room list with Start/Stop).
-  - ``GET /admin/login``: the login form on its own (redirects to
-    ``/admin`` if already authenticated).
+  - ``GET /admin``: the "Sala de control" panel (Task 12; redirects to
+    ``/admin/login`` without a valid session cookie). The first paint comes
+    from the same snapshot as the live feed (glosa/web/admin_stream.py,
+    ``GET /api/admin/stream``); static/js/admin.js keeps it live and drives
+    every control through the routes below. Interface language: ``?lang=``,
+    then Accept-Language (glosa/i18n.py ``ADMIN_STRINGS``).
+  - ``GET /admin/login``: the login page (redirects to ``/admin`` if already
+    authenticated).
   - ``POST /admin/login``: checks ``password`` against
     ``Settings.admin_password`` (constant time) and sets the signed session
     cookie (``glosa.web.auth``), or raises 401 for a wrong password (after
@@ -31,6 +35,8 @@ RoomStatus}``:
     a free session or no source;
   - ``POST .../rooms/{id}/end-talk``: the room goes idle (manual);
   - ``POST .../rooms/{id}/reconnect``: a new engine session, mode unchanged;
+  - ``POST .../rooms/{id}/restart`` (Task 12): the room's source opened again
+    for the talk it runs (after "source is down"), mode unchanged;
   - ``GET /api/admin/rooms``: every room's id, name, mode, status, current
     talk (``now``) and next agenda talk (``next``, free sessions aside).
 
@@ -85,30 +91,32 @@ key, ``glosa.web.auth.new_admin_secret()``) and ``app.state.session_epoch``
 (an int, 0 until the first logout increments it), and mounts both
 ``router`` and ``api_router``.
 
-The room list's visual state reuses the four-state vocabulary
-(live/degraded/down/idle) already defined in glosa.css for the "Sala de
-control" console (docs/design/admin.html), mapped from RoomStatus's
-green/yellow/red/idle. It also shows RoomStatus.detail, the raw
-possibly-technical status text (ffmpeg/API errors): fine behind admin auth
-(Ruling 29), even though the audience-facing bus only ever gets the state
-name. Task 12 replaces this page with that full console; this one is the
-MVP's bare minimum: name, state, detail, current talk, Start/Stop.
+The panel uses the four-state vocabulary of glosa.css (live/degraded/down/
+idle, from RoomStatus's green/yellow/red/idle) and shows RoomStatus.detail,
+the raw, possibly technical status text (ffmpeg/API errors): fine behind
+admin auth (Ruling 29), even though the audience only ever gets the state
+name. The live feed (``admin_stream.stream_router``) is mounted apart from
+``api_router``: it needs the session cookie but not the CSRF header, which
+an EventSource cannot send.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import http.client
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict
 from datetime import date, datetime, timezone, tzinfo
-from pathlib import Path
-from typing import Any, Literal
+from pathlib import Path, PurePosixPath
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import qrcode
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -117,8 +125,11 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from glosa.agenda import AgendaError, stable_talk_id
 from glosa.agenda.csv_import import VALID_ENGINES, VALID_LANGUAGES, parse_csv
 from glosa.agenda.nerdearla_import import SkippedSession, parse_nerdearla_report
+from glosa.i18n import ADMIN_STRINGS, SUPPORTED, Lang, admin_t, detect_lang
 from glosa.models import GlossaryTerm, Talk
 from glosa.room import RoomWorker, is_free_talk
+from glosa.scheduler import NoTalkToRestart
+from glosa.web import admin_stream
 from glosa.web.auth import (
     COOKIE_MAX_AGE_S,
     COOKIE_NAME,
@@ -129,6 +140,7 @@ from glosa.web.auth import (
     sign_session,
     verify_password,
 )
+from glosa.web.station import station_url
 
 # Pages, login and logout: no auth dependency (login can't require the
 # session it's about to create; logout only ever needs to clear one).
@@ -142,12 +154,18 @@ api_router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# RoomStatus.state (green/yellow/red/idle) -> the live/degraded/down/idle
-# vocabulary glosa.css's .strip--*/.status--* classes use.
-_STATE_CSS = {"green": "live", "yellow": "degraded", "red": "down", "idle": "idle"}
-
 # A cheap brute-force brake: a wrong password always takes at least this long.
 _FAILED_LOGIN_DELAY_S = 1.0
+
+# Nerdearla 2026's public agenda (glosa/agenda/nerdearla_import.py): one click
+# in the panel's import form fills it in.
+NERDEARLA_AGENDA_URL = "https://backstage.nerdearla.com/api/sessions/?event_id=148d7ff3-134c-48b5-8bc2-52bf025d2ac4"
+_VARY = {"Vary": "Accept-Language"}
+# The panel holds the station links (with their keys): never cached.
+_PAGE_HEADERS = _VARY | {"Cache-Control": "no-store"}
+STATIC_DIR = Path(__file__).parent / "static"
+# A forwarded host is only taken when it looks like one (host, IPv4 or [IPv6], optional port).
+_HOST_RE = re.compile(r"(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?")
 
 
 # ---- pages ------------------------------------------------------------------
@@ -155,17 +173,144 @@ _FAILED_LOGIN_DELAY_S = 1.0
 
 @router.get("/admin", include_in_schema=False)
 async def admin_page(request: Request):
+    ui, forced = _ui_lang(request)
     if not is_authenticated(request):
-        return RedirectResponse("/admin/login", status_code=303)
-    rooms = [_room_summary(w) for w in _workers(request)]
-    return templates.TemplateResponse(request, "admin.html", {"authenticated": True, "rooms": rooms})
+        return RedirectResponse("/admin/login" + _lang_suffix(forced), status_code=303)
+    view = admin_stream.localize(await admin_stream.monitor_for(request.app).snapshot(), ui)
+    config = {
+        "page": "panel",
+        "ui": ui,
+        "tz": view["tz"],
+        "streamUrl": f"/api/admin/stream?lang={ui}",
+        "i18n": ADMIN_STRINGS[ui],
+        "limits": {
+            "latency": admin_stream.LATENCY_LIMIT_S,
+            "quality": admin_stream.QUALITY_MIN,
+            "level": admin_stream.LEVEL_MIN_DB,
+        },
+        "nerdearlaUrl": NERDEARLA_AGENDA_URL,
+        "stations": _stations(request),
+        "state": view,
+    }
+    context = _page_context(request, ui) | {"view": view, "config": config}
+    return templates.TemplateResponse(request, "admin.html", context, headers=_PAGE_HEADERS)
 
 
 @router.get("/admin/login", include_in_schema=False)
 def login_page(request: Request):
+    ui, forced = _ui_lang(request)
     if is_authenticated(request):
-        return RedirectResponse("/admin", status_code=303)
-    return templates.TemplateResponse(request, "admin.html", {"authenticated": False, "rooms": []})
+        return RedirectResponse("/admin" + _lang_suffix(forced), status_code=303)
+    config = {"page": "login", "ui": ui, "tz": request.app.state.settings.timezone, "i18n": ADMIN_STRINGS[ui]}
+    context = _page_context(request, ui) | {"config": config}
+    return templates.TemplateResponse(request, "admin_login.html", context, headers=_PAGE_HEADERS)
+
+
+def _stations(request: Request) -> dict[str, dict[str, str]]:
+    """Each emitter room's station link (Task 14a, glosa/web/station.py) and
+    its QR, for the drawer: the same absolute URL (the panel copies ``url``,
+    it never rebuilds it). The link carries the station key: it only ever
+    goes into this admin-only page (sent with ``Cache-Control: no-store``)."""
+    password = request.app.state.settings.admin_password
+    base = public_base(request)
+    stations = {}
+    for worker in _workers(request):
+        if worker.room.source_type == "emitter":
+            url = base + station_url(worker.room.id, password)
+            stations[worker.room.id] = {"url": url, "qr": qr_data_uri(url)}
+    return stations
+
+
+def public_base(request: Request) -> str:
+    """Ruling 52: the panel's origin as the browser sees it, for the station
+    link and its QR. Behind a TLS proxy (deploy/Caddyfile) uvicorn only
+    trusts X-Forwarded-* from 127.0.0.1, so ``request.base_url`` says
+    ``http://`` and a scanned QR would send the key in the clear: take the
+    scheme from ``X-Forwarded-Proto`` (http or https only) and the host from
+    ``X-Forwarded-Host`` (when it looks like a host), else the request's own
+    (its ``Host``). The first value of a list wins (the client-facing hop).
+    A spoofed header only changes this admin's own page."""
+    scheme, _, rest = str(request.base_url).partition("://")
+    host = rest.split("/", 1)[0]
+    proto = _first(request.headers.get("x-forwarded-proto")).lower()
+    if proto in ("http", "https"):
+        scheme = proto
+    forwarded = _first(request.headers.get("x-forwarded-host"))
+    if forwarded and _HOST_RE.fullmatch(forwarded):
+        host = forwarded
+    return f"{scheme}://{host}"
+
+
+def _first(header: str | None) -> str:
+    return (header or "").split(",", 1)[0].strip()
+
+
+def admin_logo(logo_url: str | None) -> tuple[str | None, bool]:
+    """The event logo for the panel, which keeps colour for state: the
+    official black-and-white version when the configured file has one next
+    to it (``name-bw.ext``, like static/branding/nerdearla/), else the logo
+    itself shown in greyscale (the second value: needs the filter)."""
+    if not logo_url:
+        return None, False
+    path = PurePosixPath(urllib.parse.urlparse(logo_url).path)
+    if path.stem.endswith("-bw"):
+        return logo_url, False
+    if logo_url.startswith("/static/") and path.suffix:
+        variant = path.with_name(f"{path.stem}-bw{path.suffix}")
+        if (STATIC_DIR / variant.relative_to("/static")).is_file():
+            return str(variant), False
+    return logo_url, True
+
+
+def qr_data_uri(text: str) -> str:
+    """``text`` as a QR code: an SVG data URI (black on white, one path of
+    horizontal runs) the page can show with a plain <img>."""
+    code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    code.add_data(text)
+    code.make(fit=True)
+    matrix = code.get_matrix()
+    size = len(matrix)
+    runs = []
+    for y, row in enumerate(matrix):
+        x = 0
+        while x < size:
+            if not row[x]:
+                x += 1
+                continue
+            start = x
+            while x < size and row[x]:
+                x += 1
+            runs.append(f"M{start} {y}h{x - start}v1h-{x - start}z")
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" shape-rendering="crispEdges">'
+        f'<rect width="{size}" height="{size}" fill="#fff"/><path d="{"".join(runs)}" fill="#000"/></svg>'
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("ascii")).decode("ascii")
+
+
+def _ui_lang(request: Request) -> tuple[Lang, Lang | None]:
+    """(the panel's language, the one forced by ?lang= or None)."""
+    requested = request.query_params.get("lang")
+    forced = cast(Lang, requested) if requested in SUPPORTED else None
+    return forced or detect_lang(request.headers.get("accept-language")), forced
+
+
+def _lang_suffix(forced: Lang | None) -> str:
+    return f"?lang={forced}" if forced else ""
+
+
+def _page_context(request: Request, ui: Lang) -> dict[str, Any]:
+    branding = getattr(request.app.state, "branding", None) or {}
+    settings = request.app.state.settings
+    logo, mono = admin_logo(branding.get("logo_url"))
+    return {
+        "ui": ui,
+        "at": lambda key: admin_t(key, ui),
+        "event_name": branding.get("event_name") or settings.event_name or "Glosa",
+        "logo_url": logo,
+        "logo_mono": mono,
+        "langs": [{"code": code, "current": code == ui} for code in SUPPORTED],
+    }
 
 
 @router.post("/admin/login", include_in_schema=False)
@@ -300,6 +445,24 @@ async def reconnect_room(room_id: str, request: Request) -> dict:
     """A new engine session for the running talk; the mode stays."""
     worker = _worker(request, room_id)
     await request.app.state.autopilot.reconnect(room_id)
+    return _control_reply(request, worker)
+
+
+@api_router.post("/rooms/{room_id}/restart")
+async def restart_room(room_id: str, request: Request) -> dict:
+    """The panel's "Reconectar" for a room whose source is down: open the
+    source again for the talk it was running, the same talk (no talk end, no
+    free session; its actual_start stays), under the room's autopilot lock
+    (``Autopilot.restart``). The mode stays. ``reconnect`` cannot do this
+    (the pipeline is gone) and ``start`` would end the talk. 409 without a
+    talk or without a source."""
+    worker = _worker(request, room_id)
+    try:
+        await request.app.state.autopilot.restart(room_id)
+    except NoTalkToRestart as exc:
+        raise HTTPException(status_code=409, detail="the room has no talk to restart") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _control_reply(request, worker)
 
 
@@ -732,11 +895,3 @@ def _worker(request: Request, room_id: str) -> RoomWorker:
         raise HTTPException(status_code=404)
     return worker
 
-
-def _room_summary(worker: RoomWorker) -> dict:
-    status = asdict(worker.status())
-    return worker.view() | {
-        "id": worker.room.id,
-        "status": status,
-        "css_state": _STATE_CSS.get(status["state"], "idle"),
-    }

@@ -376,6 +376,13 @@ class Database:
         rows = await self._run(lambda con: con.execute(sql, (n,)).fetchall())
         return [EventRecord(**dict(r)) for r in rows]
 
+    async def events_after(self, after_id: int, limit: int) -> list[EventRecord]:
+        """Up to ``limit`` events logged after event ``after_id``, oldest first
+        (the admin stream's new events and its Last-Event-ID resume)."""
+        sql = "SELECT * FROM events WHERE id > ? ORDER BY id LIMIT ?"
+        rows = await self._run(lambda con: con.execute(sql, (after_id, limit)).fetchall())
+        return [EventRecord(**dict(r)) for r in rows]
+
     # ------------------------------------------------------------ costs
 
     async def add_cost(self, room_id: str | None, component: str, units: float, usd: float) -> None:
@@ -385,6 +392,12 @@ class Database:
     async def total_cost(self) -> float:
         row = await self._run(lambda con: con.execute("SELECT COALESCE(SUM(usd), 0.0) FROM costs").fetchone())
         return float(row[0])
+
+    async def cost_by_room(self) -> dict[str | None, float]:
+        """Every room's spend (``None``: costs of no room), all time."""
+        sql = "SELECT room_id, SUM(usd) FROM costs GROUP BY room_id"
+        rows = await self._run(lambda con: con.execute(sql).fetchall())
+        return {row[0]: float(row[1]) for row in rows}
 
 
 # ---------------------------------------------------------------- helpers

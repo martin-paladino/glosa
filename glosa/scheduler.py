@@ -53,8 +53,9 @@ action that raced it. Rooms tick concurrently; one failing room (say, no
 audio source: logged once per talk) does not keep the others from ticking.
 
 Admin events (``events``, glosa/web/admin_events.py): ``room_mode``,
-``talk_started`` (``by``: ``autopilot`` | ``operator``) and
-``room_reconnect``. A talk's end is published by the app from
+``talk_started`` (``by``: ``autopilot`` | ``operator``), ``room_reconnect``
+and ``room_restart`` (Task 12: ``restart`` reopens a dead source for the
+same talk). A talk's end is published by the app from
 ``RoomWorker.on_talk_end``, which sees every way a talk ends.
 """
 
@@ -78,6 +79,10 @@ TICK_S = 5.0
 LEAD_S = 60.0
 Mode = Literal["auto", "manual"]
 MODES: tuple[Mode, ...] = ("auto", "manual")
+
+
+class NoTalkToRestart(LookupError):
+    """``Autopilot.restart`` on a room that runs no talk."""
 
 
 class Worker(Protocol):
@@ -222,6 +227,23 @@ class Autopilot:
         worker = self._worker(room_id)
         await worker.reconnect("manual")
         self._publish("room_reconnect", {"room_id": room_id})
+
+    async def restart(self, room_id: str) -> Talk:
+        """The panel's "Reconectar" for a room whose source is down: open the
+        source again for the talk the room runs -- the same talk (no talk
+        end, no free session, same actual_start). The talk is read under the
+        room's lock, so a tick or an operator action in progress is never
+        undone by a stale one. The mode stays. NoTalkToRestart: no talk
+        running; ValueError: the room has no audio source."""
+        worker = self._worker(room_id)
+        async with self._lock(room_id):
+            talk = worker.talk
+            if talk is None:
+                raise NoTalkToRestart(f"room {room_id!r} has no talk to restart")
+            await worker.start(talk)
+        await self._log(room_id, "restart", f"{talk.id}: source reopened by the operator")
+        self._publish("room_restart", {"room_id": room_id, "talk_id": talk.id})
+        return talk
 
     # ------------------------------------------------------------ internals
 

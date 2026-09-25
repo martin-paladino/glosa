@@ -147,12 +147,12 @@ async def test_ingest_youtube_resolution_retries_then_succeeds(monkeypatch: pyte
         clock=clock,
     )
 
-    chunks = [c async for c in ingest.chunks()]
+    chunks = await _take(ingest, 20)  # a live source never ends by itself (I6): take what we need
 
     assert len(calls) == 3  # 2 failures + 1 success
     assert ingest.restarts == 2
     assert clock.now() == pytest.approx(1 + 2)
-    assert len(chunks) >= 20
+    assert len(chunks) == 20
     assert all(len(c.pcm) == 3200 for c in chunks)
 
 
@@ -182,6 +182,81 @@ async def test_ingest_youtube_resolution_always_fails_terminal_error(monkeypatch
     assert ingest.last_error is not None
     assert "could not resolve" in ingest.last_error
     assert clock.now() == pytest.approx(1 + 2 + 4 + 8 + 16)
+
+
+async def _take(ingest: AudioIngest, n: int) -> list:
+    """The first ``n`` chunks, then close the generator (kills ffmpeg)."""
+    chunks = []
+    async with contextlib.aclosing(ingest.chunks()) as stream:
+        async for chunk in stream:
+            chunks.append(chunk)
+            if len(chunks) >= n:
+                break
+    return chunks
+
+
+def _fake_ffmpeg(monkeypatch: pytest.MonkeyPatch, script: str) -> list[tuple]:
+    """build_ffmpeg_cmd -> a shell script standing in for ffmpeg."""
+    calls: list[tuple] = []
+
+    def fake_build_cmd(source_type: str, source_url: str, realtime: bool) -> list[str]:
+        calls.append((source_type, source_url))
+        return ["sh", "-c", script]
+
+    monkeypatch.setattr(ingest_module, "build_ffmpeg_cmd", fake_build_cmd)
+    return calls
+
+
+@pytest.mark.parametrize("source_type", ["url", "youtube"])
+async def test_a_live_stream_that_ends_cleanly_is_restarted(
+    monkeypatch: pytest.MonkeyPatch, source_type: str
+) -> None:  # final-review-A I6
+    """A url/youtube stream whose connection closes (ffmpeg exits 0) is not
+    the end of the talk: restart it with the usual backoff."""
+    calls = _fake_ffmpeg(monkeypatch, f"head -c {CHUNK_BYTES * 3} /dev/zero")
+    clock = FakeClock()
+    ingest = AudioIngest(source_type=source_type, source_url="https://example.test/live", realtime=True, clock=clock)
+
+    chunks = await _take(ingest, 7)
+
+    assert len(chunks) == 7 and len(calls) == 3
+    assert ingest.restarts == 2 and ingest.last_error == "the stream ended"
+    assert [c.t for c in chunks] == pytest.approx([0.1 * i for i in range(7)])  # one continuous clock
+
+
+async def test_a_file_that_ends_cleanly_still_just_ends(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _fake_ffmpeg(monkeypatch, f"head -c {CHUNK_BYTES * 3} /dev/zero")
+    ingest = AudioIngest(source_type="file", source_url="clip.opus", realtime=True, clock=FakeClock())
+
+    chunks = [c async for c in ingest.chunks()]
+
+    assert len(chunks) == 3 and len(calls) == 1
+    assert ingest.restarts == 0 and ingest.last_error is None
+
+
+async def test_a_live_stream_with_no_audio_for_5_s_is_restarted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec §6: "no llega audio en 5 s" -> restart (a half-open connection
+    leaves ffmpeg blocked forever)."""
+    monkeypatch.setattr(ingest_module, "NO_AUDIO_TIMEOUT_S", 0.2)
+    calls = _fake_ffmpeg(monkeypatch, f"head -c {CHUNK_BYTES * 2} /dev/zero; exec sleep 30")
+    ingest = AudioIngest(source_type="url", source_url="https://example.test/live", realtime=True, clock=FakeClock())
+
+    chunks = await asyncio.wait_for(_take(ingest, 4), 5)
+
+    assert len(chunks) == 4 and len(calls) == 2
+    assert ingest.restarts == 1 and ingest.last_error == "no audio for 0.2 s"
+
+
+async def test_a_live_stream_that_never_sends_audio_is_restarted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ingest_module, "CONNECT_TIMEOUT_S", 0.2)
+    calls = _fake_ffmpeg(monkeypatch, "exec sleep 30")
+    clock = FakeClock()
+    ingest = AudioIngest(source_type="url", source_url="https://example.test/live", realtime=True, clock=clock)
+
+    chunks = await asyncio.wait_for(_take(ingest, 1), 5)
+
+    assert chunks == [] and len(calls) == 6  # 1 + 5 restarts, then the terminal error
+    assert ingest.restarts == 5 and ingest.last_error == "no audio for 0.2 s"
 
 
 # --------------------------------------------------------------- StationHub

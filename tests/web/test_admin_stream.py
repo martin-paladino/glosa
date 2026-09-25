@@ -454,6 +454,8 @@ async def test_the_budget_warns_at_80_percent_and_when_payment_is_refused(panel)
 
     ok.state = _status(state="red", talk_id="t", detail="payment blocked: budget exhausted")
     assert (await AdminMonitor(p.app).snapshot())["budget"]["alert"] == "exhausted"
+    ok.state = _status(state="red", talk_id="t", detail="payment blocked: spending cap reached")
+    assert (await AdminMonitor(p.app).snapshot())["budget"]["alert"] == "exhausted"
 
 
 async def test_attention_lists_down_rooms_first_and_says_all_clear_when_nothing_is_wrong(panel) -> None:
@@ -698,6 +700,14 @@ def test_a_silent_station_is_an_issue_of_its_own() -> None:
     degraded = classify(_status(state="yellow", latency_p50_s=6.1, talk_id="t",
                                 detail="latency 6.1s exceeds 5.0s | station: Mic, -20.0 dBFS, last audio 0.1s ago"))
     assert degraded.kind == "latency"
+
+
+def test_a_spending_cap_is_an_issue_of_its_own() -> None:
+    issue = classify(_status(state="red", talk_id="t", detail="payment blocked: spending cap reached"))
+    assert (issue.kind, issue.severity, issue.action) == ("spend_cap", "down", None)
+    es, en = localize_issue(issue, "es"), localize_issue(issue, "en")
+    assert (es["what"], es["em"]) == ("Se alcanzó el tope de gasto de Gemini.", "Subí el límite en ai.studio/spend y reconectá.")
+    assert "ai.studio/spend" in en["em"] and all(en[part] for part in ("what", "em", "title", "note", "hint"))
 
 
 def localize_issue(issue, lang):

@@ -252,7 +252,7 @@ beats `green`:
 |---|---|---|
 | `green` | Healthy, talk running. | `"ok"` |
 | `yellow` | Degraded, still running. | `"latency {p50}s exceeds 5.0s"`, `"average quality {q} below 0.5"`, `"level {db}dB below -50dB with active talk"` (audio present but very quiet), or `"degraded: recent reconnect in the last 60s"` |
-| `red` | Needs attention now. | `"stalled: audio present but no engine output"` (voice going in with no output for 8+ s — `StallWatchdog`, `glosa/engines/watchdog.py` — the relay should be reconnecting that session on its own), `"source is down"` (**fuente caída**: no audio for a long time — see below), or `"payment blocked: budget exhausted"` (**crédito**: the Gemini project's own prepaid credit ran out — see `docs/costs.md`) |
+| `red` | Needs attention now. | `"stalled: audio present but no engine output"` (voice going in with no output for 8+ s — `StallWatchdog`, `glosa/engines/watchdog.py` — the relay should be reconnecting that session on its own), `"source is down"` (**fuente caída**: no audio for a long time — see below), or `"payment blocked: budget exhausted"` (**crédito**: the Gemini project's own prepaid credit ran out — see `docs/costs.md`) / `"payment blocked: spending cap reached"` (**tope de gasto**: the project hit its monthly spending cap — raise it at ai.studio/spend) |
 | `idle` | No talk in progress. | `"no talk in progress"` |
 
 **Two different things are both called "fallback"; only one is visible

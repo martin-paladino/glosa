@@ -241,6 +241,16 @@ async def test_non_retryable_error_is_raised_immediately() -> None:
     assert len(client.models.calls) == 1
 
 
+async def test_a_spending_cap_is_raised_at_once_without_retries_or_the_fallback_model() -> None:
+    # The cap is the project's: every retry and the fallback model would be refused too.
+    cap = ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                                      "message": "Your project has exceeded its monthly spending cap."}})
+    translator, client = _translator([cap, _FakeResponse(text="ok")])
+    with pytest.raises(ClientError):
+        await translator.translate("hi", "es", [], [])
+    assert len(client.models.calls) == 1
+
+
 async def test_raises_last_error_when_fallback_also_exhausts_retries() -> None:
     translator, client = _translator([ServerError(503, {"message": "x"})] * 6)
     with pytest.raises(ServerError):

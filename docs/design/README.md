@@ -2,7 +2,7 @@
 
 Glosa se ve como el multiviewer de una sala de control de TV. Una sala sana está **en calma**: su nombre, una luz verde y sus subtítulos. Todo lo demás es gris. El color aparece solo cuando algo pide atención, y el rojo se ve desde el otro lado de la sala.
 
-Todo está en un solo archivo, `glosa/web/static/css/glosa.css`: CSS puro, sin build. Sirve para las vistas de la audiencia (ya aplicadas) y para el panel de producción (clases listas para la Tarea 12).
+Todo está en un solo archivo, `glosa/web/static/css/glosa.css`: CSS puro, sin build. Sirve para las vistas de la audiencia y para el panel de producción (`/admin`).
 
 | Archivo | Qué es |
 |---|---|
@@ -216,4 +216,4 @@ Referencia de markup: `admin-classes.html`.
 
 Los valores de los medidores se pasan como variables en `style` (`style="--spent: 0.348"`, `style="--level: 0.8"`) y llevan `role="meter"` con `aria-valuenow` y `aria-valuetext` en unidades reales ("US$ 41,80 de 120", "−12 dBFS").
 
-**Alias de v1.** `glosa.css` define `--bg`, `--surface`, `--surface-2`, `--text`, `--text-2`, `--rule`, `--rule-strong`, `--ok`, `--fail`, `--idle`, `--radius-s` y `--radius-m` como alias de los roles v2, para que el admin mínimo de la Tarea 7 no se rompa. Se borran con la Tarea 12.
+**Lo que sumó el panel real (Tarea 12).** `templates/admin.html` y `static/js/admin.js` usan estas clases tal cual y agregan, en la misma capa `glosa.admin`: `.btn--primary` (la tecla que confirma un formulario: tinta, no color), `.notice` y `.toast` (avisos y errores: tinta con una barra, nunca rojo ni ámbar), `.admin--stale` (sin conexión: la pared se apaga), `.form`, `.field` (+ `__label`, `__hint`, `__aside`, `--narrow`), `.field-row`, `.checks`/`.check`, `.form__actions`, `.confirm` (borrar sin diálogo nativo), `.pick` (elegir charla en el cajón), `.drawer__raw` (el estado técnico), `.import__total`/`.import__list`, `.log__empty`, `.schedule__empty` y `.segmented a` (el selector de idioma). Las charlas de la agenda son `<button class="timeline__talk">` (abren su edición). El login es `.login-page` con `.login` y `.login__card`, en `glosa.views`. Los alias de v1 de la Tarea 7 ya no existen.

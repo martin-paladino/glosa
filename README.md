@@ -46,7 +46,7 @@ Secrets live only in `.env` (gitignored) and are read from that file directly, n
 ## What's in the box
 
 - **Audience view** (`/`, `/s/{room}`): live captions per room over SSE, phone-first, EN/ES interface, light/dark/high-contrast themes.
-- **Admin** (`/admin`): log in with `ADMIN_PASSWORD`, see every room's state and current talk, start/stop each one. (A fuller production console — audio levels, quality, cost, an event log — lands in a later milestone; this is the minimum needed to run the MVP.)
+- **Admin** (`/admin`): the production panel, "Sala de control" (log in with `ADMIN_PASSWORD`). Every room is a monitor with its live captions, a status light and its time on air; a healthy room shows nothing else. The Atención bar lists only what needs action now (a room down or degraded and why, the budget at 80 %, a silence alarm), each with its suggested key. Also: spend against the budget, the log (alerts first), today's agenda with the next automatic change, and a side drawer per room (click it or press 1–9; Esc closes) with auto/manual, start and end talk, reconnect, every metric against its limit and the room's history. The agenda is imported and edited in the same drawer. Spanish or English, from the browser or `?lang=`. Screenshots in `docs/screenshots/admin-*.png`.
 - **Docker**: `docker-compose.yml` builds the same app, mounts `.env` and persists `data/` (the SQLite database: agenda, captions, cost) across restarts.
 
 ## Agenda & autopilot
@@ -78,9 +78,10 @@ After a restart, an `auto` room reopens the talk the agenda says is on, and a `m
 | `start-talk` `{"talk_id": "..."}` | End the current talk and open this one now. The room goes `manual`. |
 | `end-talk` | End the current talk; the room goes idle and `manual`. |
 | `reconnect` | Open a new engine session for the running talk (the mode stays). |
+| `restart` | Open the room's audio source again for the talk it runs (after "source is down"). The mode stays. |
 | `start` / `stop` | Start (free session or current talk) or stop the room. The room goes `manual`. |
 
-`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk.
+`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk. `GET /api/admin/stream` is the panel's live feed (Server-Sent Events): every room's status each second, the event log (resumable with `Last-Event-ID`), agenda changes and each room's latest captions; it needs the session cookie but not the `X-Glosa-Admin` header, which a browser's `EventSource` cannot send.
 
 ## How it scales
 

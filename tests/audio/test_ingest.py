@@ -259,6 +259,21 @@ async def test_a_live_stream_that_never_sends_audio_is_restarted(monkeypatch: py
     assert ingest.restarts == 5 and ingest.last_error == "no audio for 0.2 s"
 
 
+async def test_the_restart_budget_starts_over_after_a_recovery(monkeypatch: pytest.MonkeyPatch) -> None:  # M1
+    """Five short blips over a day-long session must not add up to a
+    terminal "source down": each attempt that delivers audio resets the
+    backoff (restarts stays cumulative for RoomWorker)."""
+    calls = _fake_ffmpeg(monkeypatch, f"head -c {CHUNK_BYTES} /dev/zero; exit 1")
+    clock = FakeClock()
+    ingest = AudioIngest(source_type="url", source_url="https://example.test/live", realtime=True, clock=clock)
+
+    chunks = await _take(ingest, 8)  # 8 attempts, each one chunk then a crash
+
+    assert len(chunks) == 8 and len(calls) == 8
+    assert ingest.restarts == 7  # cumulative
+    assert clock.now() == pytest.approx(7 * 1)  # the backoff starts over at 1 s each time
+
+
 # --------------------------------------------------------------- StationHub
 
 

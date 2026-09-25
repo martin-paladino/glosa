@@ -89,7 +89,8 @@ class AudioIngest:
 
     On an unexpected ffmpeg failure (non-zero exit, or failure to even start)
     the process is restarted with growing backoff (1, 2, 4, 8, 16 s), up to
-    MAX_RESTARTS times; `restarts` counts how many restarts have happened and
+    MAX_RESTARTS times in a row (M1: an attempt that delivers audio starts the
+    budget and the backoff over); `restarts` counts every restart so far and
     `last_error` holds the most recent failure's message. After the last
     retry also fails, chunks() ends (a "terminal error": last_error stays
     set, no more chunks are yielded). For a ``file``, a clean ffmpeg exit
@@ -161,6 +162,7 @@ class AudioIngest:
                                     data = await proc.stdout.readexactly(CHUNK_BYTES)
                                 yield AudioChunk(pcm=data, t=self._t)
                                 self._t = round(self._t + CHUNK_S, 2)
+                                attempt = 0  # M1: audio flows again: the restart budget starts over
                         except asyncio.IncompleteReadError:
                             pass  # EOF; any trailing partial (< CHUNK_BYTES) is dropped
                         except TimeoutError:  # I6: a stalled live stream
@@ -190,7 +192,7 @@ class AudioIngest:
 
             wait_s = RESTART_BACKOFFS_S[attempt]
             attempt += 1
-            self.restarts = attempt
+            self.restarts += 1  # cumulative (RoomWorker compares it across chunks)
             await self.clock.sleep(wait_s)
 
 

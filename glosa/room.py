@@ -48,11 +48,12 @@ Fallback to the glossary engine (case 10.5)
     fails 3 times within 2 min (errors, failed connects, stalls, sessions
     that died; not the admin's "Reconectar" nor a 402:
     ``room_text.FlapDetector``) or halts on a non-retryable error (Ruling
-    49), both checked on each tick. Not on a halt for a refused key (401,
-    403, or an error that says "API key", "API_KEY_INVALID" or "permission
-    denied": Gemini reports a bad key as a 400): the glossary engine would
-    be refused too; the room goes red with an ``engine_auth`` error event
-    instead. A 402 only blocks (payment).
+    49), both checked on each tick. Not on a halt for a refused key (a 401,
+    or an error that says "API key" or "API_KEY_INVALID": Gemini reports a
+    bad key as a 400): the glossary engine would be refused too; the room
+    goes red with an ``engine_auth`` error event instead (Ruling 49a: a 403
+    or "permission denied" alone can be a preview model out of reach, so it
+    does fall back). A 402 only blocks (payment).
 
     The switch is hot (Ruling 48, ``_swap_engine``): the audio loop, the
     VAD and the talk go on untouched (no ingest restart, no new "talk"
@@ -192,8 +193,11 @@ SILENCE = bytes(CHUNK_BYTES)
 AGENDA_FIELDS = ("title", "speakers", "language", "targets", "engine", "start", "end", "abstract", "tags", "glossary")
 COST_ENGINE = {"fast": "live_translate", "glossary": "transcribe"}  # costs.component, units: minutes
 COST_TRANSLATE = "translate"  # units: translated segments
-AUTH_CODES = (401, 403)  # a refused API key: no fallback (the glossary engine uses the same key)
-AUTH_HINTS = ("api key", "api_key_invalid", "permission denied")  # Gemini says a bad key with a 400
+# A refused API key: no fallback, the glossary engine uses the same key (Ruling 49a).
+# Gemini says a bad key with a 400; a 403 or "permission denied" alone can be
+# a preview model the key cannot reach, where the glossary engine helps.
+AUTH_CODES = (401,)
+AUTH_HINTS = ("api key", "api_key_invalid")
 
 
 class Ingest(Protocol):

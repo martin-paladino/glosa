@@ -1806,9 +1806,8 @@ async def test_a_rejected_api_key_halts_without_a_fallback(tmp_path: Path, db) -
     [
         "ClientError: 400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.",
         "ClientError: 400 INVALID_ARGUMENT. {'reason': 'API_KEY_INVALID'}",
-        "APIError: 1008 Permission denied on resource project",
     ],
-    ids=["api-key", "API_KEY_INVALID", "permission-denied"],
+    ids=["api-key", "API_KEY_INVALID"],
 )
 async def test_an_error_that_names_the_api_key_counts_as_a_refused_key(tmp_path: Path, db, text: str) -> None:
     """Gemini reports a bad key as a 400 (API_KEY_INVALID), not a 401."""
@@ -1826,6 +1825,26 @@ async def test_an_error_that_names_the_api_key_counts_as_a_refused_key(tmp_path:
     assert [(lvl, typ) for lvl, typ, _ in await _events(db) if typ in ("engine_auth", "fallback")] == [
         ("error", "engine_auth"),
     ]
+    await worker.stop()
+
+
+async def test_a_403_permission_denied_falls_back(tmp_path: Path, db) -> None:
+    """Ruling 49a: a 403 or "permission denied" without "API key" in it can be
+    a preview model the key cannot reach (any more): the glossary engine uses
+    other models, so the talk falls back."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    error = {"t": 0.0, "kind": "error", "meta": {"code": 403, "retryable": False},
+             "text": "ClientError: 403 PERMISSION_DENIED. Permission denied on model gemini-3.5-live-translate-preview"}
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [error]), TR_ES)
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 2.0)
+
+    assert [c.kind for c in factory.configs] == ["fast", "glossary"]
+    types = [t for _, t, _ in await _events(db)]
+    assert "fallback" in types and "engine_auth" not in types
     await worker.stop()
 
 

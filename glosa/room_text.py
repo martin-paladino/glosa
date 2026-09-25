@@ -24,8 +24,8 @@ Translation lane
 
 Fallback (case 10.5, Rulings 48-49)
     A fast talk whose Live Translate keeps failing (``FlapDetector``: 3
-    incidents within 2 min) or halts (a non-retryable error other than
-    401/403) goes on with the glossary engine, hot and for good
+    incidents within 2 min) or halts (a non-retryable error, except a
+    refused API key) goes on with the glossary engine, hot and for good
     (glosa/room.py).
 """
 

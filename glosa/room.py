@@ -1257,7 +1257,8 @@ class RoomWorker:
             )
         )
         if self._quality is not None and seg.target == run.target:  # the run's FIRST target only
-            self._quality.on_target(run.talk.language, run.target, seg.text, t_start, t_end)
+            # the lane knows each translation's exact source cut: score that pair
+            self._quality.on_pair(run.talk.language, run.target, seg.source, seg.text)
 
     def _apply(self, run: _Run, track: _Track, session: int, ops: list[tuple[str, dict]], now: float) -> _Closed:
         """Publish an assembler's ops, all at once (no await), and return the

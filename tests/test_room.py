@@ -2431,6 +2431,8 @@ async def test_quality_feed_scores_glossary_lane_pairs_es_to_en(db, fake_typesaf
     assert meter.calls  # the glossary lane's es->en translations were paired and scored
     for english, spanish in meter.calls:
         assert english.startswith("[en] ")  # es->en swaps: english=target text, spanish=source text
+        # scored against ITS exact source cut, not the whole utterance around it
+        assert english == f"[en] {spanish}"
 
 
 async def test_a_key_with_typesafe_sdk_unimportable_warns_once_and_the_room_runs_unmetered(

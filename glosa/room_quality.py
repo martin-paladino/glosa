@@ -146,6 +146,24 @@ class QualityFeed:
         self._in_flight = True
         self._spawn(self._score(english, spanish, self._generation), "quality")
 
+    def on_pair(self, source_lang: str, target_lang: str, source_text: str, text: str) -> None:
+        """Feed one translation together with ITS exact source text (the
+        glossary engine's lane knows it: TranslatedSegment.source). No time
+        matching: pairing a short cut's translation with the whole source
+        utterance around it makes Jev see "omissions" that aren't there
+        (measured: ~0.14 average on good ES->EN translations). Same language,
+        length and rate rules as on_target()."""
+        direction = _DIRECTIONS.get((source_lang, target_lang))
+        if direction is None:
+            return
+        if _word_count(source_text) < _MIN_WORDS or _word_count(text) < _MIN_WORDS:
+            return
+        if not self._may_start():
+            return
+        english, spanish = (source_text, text) if direction == "direct" else (text, source_text)
+        self._in_flight = True
+        self._spawn(self._score(english, spanish, self._generation), "quality")
+
     def _may_start(self) -> bool:
         if self._in_flight:
             return False

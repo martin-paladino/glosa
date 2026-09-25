@@ -1933,3 +1933,40 @@ async def test_station_hub_queue_is_bounded_and_survives_a_burst(db) -> None:
     for _ in range(200):
         hub.push_audio("r1", SILENCE)  # never awaited/consumed concurrently here
     assert hub.queue("r1").qsize() <= 50
+
+
+async def test_the_hot_engine_swap_keeps_the_station_ingest(tmp_path: Path, db) -> None:
+    """Ruling 48 with a room station: the fallback swaps only the engine
+    side; the same EmitterIngest goes on feeding the new engine, and a quiet
+    station still turns the room red afterwards (the stale check reads the
+    run's ingest, which the swap leaves alone)."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    hub = StationHub(clock)
+    made = []
+
+    def emitter_factory(source_type, source_url, realtime, clock):
+        made.append(EmitterIngest(hub, "r1", clock))
+        return made[-1]
+
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [_error(1.0, 1008, False)]), TR_ES)
+    room = replace(_room(), source_type="emitter", source_url="r1")
+    worker = _worker(room, _settings(), bus, db, clock, factory, emitter_factory, station_hub=hub)
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    for _ in range(30):  # the station streams 3 s; Live Translate halts at 1 s and the room swaps
+        hub.push_audio("r1", TONE)
+        await run_for(clock, 0.1)
+
+    assert [c.kind for c in factory.configs] == ["fast", "glossary"]
+    assert len(made) == 1 and worker._run.ingest is made[0]  # the station's ingest, never reopened
+    glossary_t = factory.engines[1].sent
+    assert glossary_t and all(round(b - a, 3) == 0.1 for a, b in zip(glossary_t, glossary_t[1:]))
+    assert worker.status().state != "red"
+
+    await run_for(clock, STATION_TIMEOUT_S + 1.0)  # the station goes quiet
+    status = worker.status()
+    assert status.state == "red" and "station disconnected" in status.detail
+    assert worker.talk is not None and worker.talk.id == "f1"
+    await worker.stop()
+    assert not _live_tasks()

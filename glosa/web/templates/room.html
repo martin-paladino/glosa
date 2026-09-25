@@ -70,8 +70,22 @@
   </header>
 
   <nav class="room-nav" aria-label="{{ tr('rooms') }}">
-    <h2 class="room-nav__title">{{ tr("rooms") }}</h2>
-    <ul class="room-nav__list">
+    <div class="room-nav__head">
+      <h2 class="room-nav__title">{{ tr("rooms") }}</h2>
+      {%- if nav %}
+      {#- Task ui3: folds the list down to a rail so the captions take its
+          width (desktop only: the phone layout has no side list). room.js
+          remembers the choice (localStorage) and base.html applies it
+          before first paint (<html data-room-nav="closed">). No rooms to
+          list (qr_only), no toggle. #}
+      <button class="room-nav__toggle" type="button" data-action="room-nav"
+              aria-expanded="true" aria-controls="room-nav-list"
+              aria-label="{{ tr('room_list') }}" title="{{ tr('hide_rooms') }}">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="4" width="16" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 4v12" fill="none" stroke="currentColor" stroke-width="2"/><rect class="room-nav__pane" x="3" y="5" width="5" height="10" fill="currentColor"/></svg>
+      </button>
+      {%- endif %}
+    </div>
+    <ul class="room-nav__list" id="room-nav-list">
       {%- for item in nav %}
       <li>
         <a class="room-nav__item" href="{{ item.href }}"{% if item.current %} aria-current="page"{% endif %}>

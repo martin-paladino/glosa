@@ -950,6 +950,7 @@
     drawerEl.setAttribute("aria-label", room.name);
     $("[data-d-led]", d).className = `led led--${room.state}`;
     $("[data-d-state]", d).textContent = room.text.state_line;
+    $("[data-d-qr]", d).href = `/qr/${encodeURIComponent(room.slug)}`;
 
     const talk = room.talk || room.next;
     const section = $("[data-d-talk-sec]", d);

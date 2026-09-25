@@ -87,6 +87,9 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
   const themeButton = $('[data-action="theme"]');
   const fullscreenButton = $('[data-action="fullscreen"]');
   const pipButton = $('[data-action="pip"]');
+  // Task ui3: the side room list's fold toggle. Absent on station.html (no
+  // room list there) and in qr_only mode (no rooms to list): null-guarded.
+  const navToggle = $('[data-action="room-nav"]');
   const summaryToggle = $("[data-summary-toggle]");
   const summaryPanel = $("[data-summary-panel]");
   const summaryScrim = $("[data-summary-scrim]");
@@ -846,6 +849,30 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
     fullscreenButton.setAttribute("aria-pressed", String(Boolean(document.fullscreenElement)));
   });
 
+  // ---- the side room list, folded (Task ui3) --------------------------------------------
+  // Desktop only (the phone layout has no side list): the toggle folds the list
+  // down to a rail and the captions take its width. The state lives on <html
+  // data-room-nav="closed"> -- base.html sets it from localStorage before first
+  // paint, so a folded list never flashes open on load -- and the CSS keys off it.
+
+  const NAV_KEY = "glosa.roomNav";
+
+  function labelNavToggle() {
+    if (!navToggle) return;
+    const open = root.dataset.roomNav !== "closed";
+    navToggle.setAttribute("aria-expanded", String(open));
+    navToggle.title = open ? T.hide_rooms : T.show_rooms;
+  }
+
+  function toggleNav() {
+    if (!navToggle) return;
+    const fold = root.dataset.roomNav !== "closed";
+    if (fold) root.dataset.roomNav = "closed";
+    else delete root.dataset.roomNav;
+    store.set(NAV_KEY, fold ? "closed" : null);
+    labelNavToggle();
+  }
+
   // ---- Picture-in-Picture captions (Task 20) -------------------------------------------
   // Chrome/Edge only (window.documentPictureInPicture.requestWindow): a small
   // floating window that shows the last few caption lines on top of other
@@ -940,6 +967,7 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
     else if (action === "pip") togglePip();
     else if (action === "summary") toggleSummaryPanel();
     else if (action === "summary-close") closeSummaryPanel();
+    else if (action === "room-nav") toggleNav();
   });
 
   // Desktop shortcuts: F full screen, + and − text size.
@@ -977,5 +1005,6 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
 
   labelOptions();
   labelTheme();
+  labelNavToggle();
   connect();
 })();

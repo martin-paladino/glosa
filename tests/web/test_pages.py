@@ -915,9 +915,10 @@ def test_qr_only_room_page_side_list_shows_no_other_rooms() -> None:
 
     assert "Sala Comunidad" not in html
     assert "Sala Talleres" not in html
-    nav_match = re.search(r'<ul class="room-nav__list">(.*?)</ul>', html, re.S)
+    nav_match = re.search(r'<ul class="room-nav__list"[^>]*>(.*?)</ul>', html, re.S)
     assert nav_match, "expected the room-nav list to still be present (possibly empty)"
     assert '<li>' not in nav_match.group(1)
+    assert 'data-action="room-nav"' not in html   # Task ui3: nothing to fold, no toggle
 
 
 def test_all_mode_room_page_side_list_still_shows_every_room() -> None:
@@ -928,6 +929,7 @@ def test_all_mode_room_page_side_list_still_shows_every_room() -> None:
 
     assert "Sala Comunidad" in html
     assert "Sala Talleres" in html
+    assert 'data-action="room-nav"' in html   # Task ui3: the list's fold toggle
 
 
 def test_all_mode_still_serves_the_slug_and_also_accepts_the_token() -> None:

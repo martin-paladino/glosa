@@ -168,6 +168,9 @@ const lang = input.lang;
 // earlier visit on this device had already dragged the panel.
 const storagePreload = new Map();
 if (input.dragStored) storagePreload.set("glosa.summaryPos", JSON.stringify(input.dragStored));
+// Task ui3: any other remembered preference, as {key: value} (e.g. the
+// audience view's folded room list, "glosa.roomNav": "closed").
+for (const [key, value] of Object.entries(input.storage || {})) storagePreload.set(key, String(value));
 
 // input.station: the room station's markup (glosa/web/templates/station.html)
 // -- same room.js, but no summary button/panel, no PiP button and no

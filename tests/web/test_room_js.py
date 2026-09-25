@@ -43,6 +43,7 @@ def _draw(
     viewport: dict | None = None,
     resize: dict | None = None,
     station: bool = False,
+    storage: dict | None = None,
 ) -> dict:
     numbered = [{"id": i, **m} for i, m in enumerate([TALK, *msgs], start=1)]
     payload = {"lang": lang, "i18n": STRINGS["es"], "msgs": numbered}
@@ -62,6 +63,8 @@ def _draw(
         payload["resize"] = resize
     if station:
         payload["station"] = True
+    if storage is not None:
+        payload["storage"] = storage
     payload["scripts"] = _page_scripts("station.html" if station else "room.html")
     done = subprocess.run(
         [NODE, str(HARNESS)], input=json.dumps(payload),
@@ -159,6 +162,18 @@ def test_the_station_page_ignores_a_summary_position_stored_by_the_audience_view
     out = _draw([{"type": "append", "seg": 0, "text": "Hola."}],
                 station=True, drag_stored={"x": 40, "y": 60}, resize={"width": 800, "height": 600})
     assert out["phrases"] == [{"seg": 0, "text": "Hola.", "open": True}]
+
+
+def test_the_station_page_draws_captions_with_the_room_list_folded_on_the_audience_view() -> None:
+    """Task ui3: the room list's fold toggle is audience-only (station.html
+    has no room list), and a fold remembered on /s/{slug} (glosa.roomNav,
+    same origin) reaches the station too: room.js must still draw."""
+    out = _draw([
+        {"type": "append", "seg": 0, "text": "Hola a todos."},
+        {"type": "close", "seg": 0},
+    ], station=True, storage={"glosa.roomNav": "closed"})
+    assert out["url"] == "/api/stream/r1/es"
+    assert out["phrases"] == [{"seg": 0, "text": "Hola a todos.", "open": False}]
 
 
 def test_summary_button_stays_hidden_with_no_summary_yet() -> None:

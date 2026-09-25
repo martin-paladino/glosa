@@ -83,6 +83,44 @@ After a restart, an `auto` room reopens the talk the agenda says is on, and a `m
 
 `GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk. `GET /api/admin/stream` is the panel's live feed (Server-Sent Events): every room's status each second, the event log (resumable with `Last-Event-ID`), agenda changes and each room's latest captions; it needs the session cookie but not the `X-Glosa-Admin` header, which a browser's `EventSource` cannot send.
 
+## Room stations (mini PC per stage)
+
+Configure a room with `source_type: emitter` in `config.yaml` (`source_url` can be any non-empty placeholder — the room's audio comes from a connected station, not a URL) and its mini PC opens `/station/<room>?key=<station_key>` instead of a SaaS tab: it captures the audio desk's feed from the browser, streams it to Glosa, and shows the room's own captions full screen for the stage screens (`docs/field-notes.md` has the story behind this). The URL is stable across a server restart — an unattended station keeps working — and is revoked by changing `ADMIN_PASSWORD`. A remote reload ("F5 remoto", no more RustDesk) is `POST /api/admin/rooms/<id>/station/reload` (same admin auth as the rest of `/api/admin/*`).
+
+**The key never leaks.** Every page sends `Referrer-Policy: same-origin` (a response header and a `<meta>` tag), so a station's `?key=...` in its own address bar is never sent as a Referer to the Google Fonts request `base.html` makes. Glosa's own logs (uvicorn's) have every `key=<...>` rewritten to `key=REDACTED` before they're written — both the HTTP access log (the station page's own load) and the WebSocket log (every capture connection and reconnect, logged separately by uvicorn on its `uvicorn.error` logger, key check included). A reverse proxy in front of Glosa keeps its **own** log, though, so redact there too — for Caddy:
+
+```caddyfile
+log {
+	format filter {
+		wrap console
+		fields {
+			request>uri query {
+				replace key REDACTED
+			}
+		}
+	}
+}
+```
+
+**HTTPS is required.** Browsers only allow microphone capture (`getUserMedia`) in a secure context (HTTPS or `localhost`); a mini PC opening `http://<server>:8000` on the venue network cannot capture audio, and the station page explains this on screen instead of failing silently. Three ways to get there:
+
+1. **A reverse proxy with automatic HTTPS** (recommended for the venue): `deploy/Caddyfile` is a working example — Caddy gets a Let's Encrypt certificate for a real domain on its own, or issues a private one for a LAN-only hostname with `tls internal`. Point it at Glosa's `:8000` and open the mini PC at `https://<your-domain>/station/<room>?key=...`. `docker-compose.yml` has a commented-out `caddy` service that mounts the same Caddyfile. The Caddyfile sets `flush_interval -1`, so it forwards each chunk immediately instead of buffering — without it, a proxy can sit on the audience captions' SSE stream (and the station's own traffic) for a beat, which live captions can't afford.
+2. **A tunnel** (quickest for a single stage or a rehearsal): any HTTPS tunnel to `localhost:8000` (ngrok, Cloudflare Tunnel, Tailscale Funnel...) works — the browser only cares that the *origin it loaded* is secure, not how it got there.
+3. **Lab only, no real HTTPS:** start Chrome with `--unsafely-treat-insecure-origin-as-secure=http://<server-ip>:8000 --user-data-dir=/tmp/glosa-lab` to test over the plain-HTTP venue network without setting up a proxy first. Never do this for the real event — it turns off a real browser security check.
+
+**Kiosk mode**, for an unattended mini PC:
+
+```bash
+google-chrome \
+  --kiosk "https://<your-domain>/station/<room>?key=<station_key>" \
+  --autoplay-policy=no-user-gesture-required \
+  --user-data-dir=/home/glosa/chrome-station-<room>
+```
+
+- `--kiosk`: full screen, no browser chrome; Chrome exits instead of prompting on close.
+- `--autoplay-policy=no-user-gesture-required`: lets the page start its `AudioContext` on load instead of waiting for a click — combined with the persistent mic permission below, the station starts captioning with nobody touching it.
+- A **persistent `--user-data-dir`** (a real path, not the default ephemeral one) is what makes the microphone permission stick: grant it once — click "Allow" the first time the page asks — and Chrome remembers it for that origin in that profile across every later launch, including after `POST .../station/reload` or a full reboot.
+
 ## How it scales
 
 - **One instance comfortably handles about 10-20 rooms captioned at once.** The bottleneck is the number of concurrent Gemini Live sessions and their network I/O (each room keeps 1-2 sessions open for the session-handoff overlap), not CPU: ffmpeg, voice detection and segmentation are cheap per room.
@@ -100,3 +138,5 @@ Sample clips and their provenance: `samples/README.md`.
 ## License
 
 Apache-2.0. See `LICENSE`.
+
+**Trademarks:** the bundled Nerdearla logos are not covered by that license — see `glosa/web/static/branding/nerdearla/NOTICE.md`.

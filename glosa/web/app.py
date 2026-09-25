@@ -29,6 +29,8 @@ to ``create_app(on_talk_end=...)`` if given (Task 11: exports).
   - ``admin_events``: the admin panel's in-process broadcaster
     (glosa/web/admin_events.py);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
+  - ``station_hub``: the one StationHub (Task 14a: ``source_type: emitter``
+    rooms -- glosa/web/station.py's WebSocket handler, EmitterIngest);
   - ``autopilot``: the Autopilot (once started);
   - ``admin_secret``: a fresh per-process key (glosa/web/auth.py) signing
     admin session cookies;
@@ -53,6 +55,14 @@ glosa.web.app:app_from_env`` works too, but then pass
 ``--timeout-graceful-shutdown``: an audience SSE stream never ends on its
 own, and without that timeout uvicorn waits for every open one on SIGTERM,
 so the lifespan never stops the rooms (talks not closed, cost not flushed).
+It also skips two things ``main()`` sets up directly on ``uvicorn.run()``
+(Task 14a fix rounds 1-2): ``RedactStationKeyFilter`` on both the
+``uvicorn.access`` *and* ``uvicorn.error`` loggers (Ruling 50 -- a
+station's ``?key=...`` must never land in a log; the WebSocket protocol
+uvicorn picks when ``websockets`` is installed,
+``WebSocketsSansIOProtocol``, logs accept/reject/response lines with the
+full path through ``uvicorn.error``, not ``uvicorn.access``) and
+``--ws-max-size 65536``; pass both by hand if you run this way.
 """
 
 from __future__ import annotations
@@ -60,6 +70,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -69,8 +80,10 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from glosa.audio.ingest import AudioIngest
+from glosa.audio.ingest import AudioIngest, StationHub
 from glosa.captions.bus import CaptionBus
 from glosa.clock import Clock, RealClock
 from glosa.config import ConfigError, Settings
@@ -81,7 +94,7 @@ from glosa.engines.live_translate import LiveTranslateEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
-from glosa.web import admin_api, admin_stream, pages, public_api
+from glosa.web import admin_api, admin_stream, pages, public_api, station
 from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
 
@@ -128,6 +141,90 @@ def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
     return live
 
 
+class ReferrerPolicyMiddleware:
+    """Adds ``Referrer-Policy: same-origin`` to every HTTP response (Task
+    14a fix round 1, review #1): a station's URL carries a stable secret
+    (``?key=...``, Ruling 38) and base.html loads Google Fonts
+    cross-origin, so without this header (and the matching ``<meta
+    name="referrer">`` in base.html, which covers the HTML case on its
+    own) that secret would leak via the Referer header on the very first
+    cross-origin request the page makes.
+
+    A raw ASGI middleware, not Starlette's ``BaseHTTPMiddleware``: it only
+    ever touches the ``http.response.start`` message, never the body, so
+    it can't interfere with the audience SSE stream (glosa/web/sse.py) or
+    the station WebSocket (the latter isn't HTTP at all, and is skipped
+    outright below).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_header(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Referrer-Policy"] = "same-origin"
+            await send(message)
+
+        await self.app(scope, receive, send_with_header)
+
+
+# Matches a station key up to the next `&` or whitespace, so `?key=<hex>` is
+# redacted but a following `&lang=es` (or the rest of the log line) is not
+# swallowed with it.
+_STATION_KEY_IN_QUERY = re.compile(r"key=[^&\s]+")
+
+
+class RedactStationKeyFilter(logging.Filter):
+    """Rewrites ``key=<...>`` to ``key=REDACTED`` in uvicorn's log records
+    (Task 14a fix rounds 1-2; Ruling 50: keep the logs, but a station's
+    stable secret must never land in them -- every station page load and
+    WS (re)connect otherwise writes ``?key=<secret>`` to stdout as-is).
+    ``main()`` installs one instance on *both* loggers this actually
+    requires:
+
+    - ``uvicorn.access`` -- the HTTP access log, e.g. the station page's
+      own ``GET /station/<room>?key=...`` (``uvicorn.protocols.http.
+      *_impl.py``: ``logger.info('%s - "%s %s HTTP/%s" %d', client_addr,
+      method, full_path, http_version, status)``);
+    - ``uvicorn.error`` -- fix round 2: the WebSocket protocol uvicorn
+      picks when ``websockets`` is installed (the "auto" default, this
+      project's case), ``WebSocketsSansIOProtocol``, logs the WS
+      accept/reject/response lines here, *not* on ``uvicorn.access``
+      (``uvicorn/protocols/websockets/websockets_sansio_impl.py``, e.g.
+      ``logger.info('%s - "WebSocket %s" [accepted]', client_addr,
+      full_path)`` and ``logger.info('%s - "WebSocket %s" 403', ...)`` for
+      a rejected handshake -- our own 4401 key check included, since
+      Starlette's ``WebSocket.close()`` before ``accept()`` sends
+      ``websocket.close``, which uvicorn logs as this same "403" line
+      regardless of the ASGI-level close code). A filter attached only to
+      ``uvicorn.access`` never sees these records at all.
+
+    Every one of those calls formats lazily from ``record.args`` (a
+    tuple), not a pre-rendered string, so this rewrites every string
+    element of ``args`` (defensively -- not just one fixed index, since
+    the query string sits at a different position in the HTTP-access vs.
+    WebSocket shapes above). ``record.msg`` is rewritten too, in case some
+    future call site (or a different uvicorn version) pre-formats instead
+    -- harmless either way, since the pattern only ever matches
+    ``key=...``.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple):
+            record.args = tuple(
+                _STATION_KEY_IN_QUERY.sub("key=REDACTED", a) if isinstance(a, str) else a for a in args
+            )
+        if isinstance(record.msg, str):
+            record.msg = _STATION_KEY_IN_QUERY.sub("key=REDACTED", record.msg)
+        return True
+
+
 def create_app(
     settings: Settings,
     *,
@@ -140,6 +237,10 @@ def create_app(
     clock = clock if clock is not None else RealClock()
     bus = CaptionBus(clock=clock)
     admin_events = AdminEvents()
+    # Task 14a: one StationHub per process, shared by every "emitter" room
+    # (glosa/web/station.py's WebSocket handler feeds it; RoomWorker reads
+    # it back through EmitterIngest and, for status(), directly).
+    station_hub = StationHub(clock)
     factory = engine_factory if engine_factory is not None else make_engine_factory(settings, clock)
     workers: dict[str, RoomWorker] = {}
 
@@ -180,7 +281,10 @@ def create_app(
                 )
                 await db.upsert_room(room)
                 workers[room.id] = RoomWorker(
-                    room, settings, bus, db, clock, factory, ingest_factory=ingest_factory, on_talk_end=talk_ended
+                    room, settings, bus, db, clock, factory,
+                    ingest_factory=station.ingest_factory_for(ingest_factory, station_hub, room.id),
+                    station_hub=station_hub,
+                    on_talk_end=talk_ended,
                 )
             autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
             app.state.autopilot = autopilot
@@ -203,11 +307,13 @@ def create_app(
             db.close()
 
     app = FastAPI(title="Glosa", lifespan=lifespan)
+    app.add_middleware(ReferrerPolicyMiddleware)
     app.state.settings = settings
     app.state.clock = clock
     app.state.bus = bus
     app.state.admin_events = admin_events
     app.state.workers = workers
+    app.state.station_hub = station_hub
     # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
     # invalidates every outstanding admin session cookie.
     app.state.admin_secret = new_admin_secret()
@@ -226,6 +332,8 @@ def create_app(
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)
     app.include_router(admin_stream.stream_router)  # SSE: the session cookie only, no CSRF header
+    app.include_router(station.router)
+    app.include_router(station.api_router)
     app.include_router(pages.router)
     return app
 
@@ -316,12 +424,25 @@ def main() -> None:
     """``python -m glosa.web.app``: serve Glosa on $HOST:$PORT."""
     import uvicorn
 
+    # Ruling 50 / Task 14a fix rounds 1-2: redact station keys before they
+    # ever reach a log (installed on the loggers, not passed to
+    # uvicorn.run(), since uvicorn's own log config doesn't take filters).
+    # Both loggers are needed: uvicorn.access for the HTTP access log, and
+    # uvicorn.error for WebSocketsSansIOProtocol's accept/reject/response
+    # lines (round 2 -- a filter on uvicorn.access alone never saw those).
+    for logger_name in ("uvicorn.access", "uvicorn.error"):
+        logging.getLogger(logger_name).addFilter(RedactStationKeyFilter())
+
     uvicorn.run(
         "glosa.web.app:app_from_env",
         factory=True,
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
         timeout_graceful_shutdown=SHUTDOWN_GRACE_S,
+        # A 3200-byte audio frame or a station's JSON control message never
+        # comes close to this; bounds the per-frame size the station
+        # WebSocket (glosa/web/station.py) will accept.
+        ws_max_size=65536,
     )
 
 

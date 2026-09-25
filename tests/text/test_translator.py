@@ -13,6 +13,7 @@ run once to measure real latency (see task-10a-report.md for the result).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,7 +25,14 @@ from google.genai.errors import ClientError, ServerError
 from glosa.clock import FakeClock
 from glosa.config import Settings
 from glosa.models import GlossaryTerm
-from glosa.text.translator import Translation, Translator, _build_system_instruction
+from glosa.text import translator as translator_module
+from glosa.text.translator import (
+    FakeTranslator,
+    Translation,
+    Translator,
+    _build_system_instruction,
+    load_demo_translations,
+)
 
 ENV_PATH = str(Path(__file__).resolve().parents[2] / ".env")
 
@@ -244,6 +252,77 @@ async def test_aclose_releases_the_client_connections() -> None:
     translator, client = _translator([])
     await translator.aclose()
     assert client.aio.closed == 1
+
+
+# ---- FakeTranslator: engine_mode "fake", optional demo lookup -------------
+
+
+async def test_fake_translator_with_no_lookup_tags_every_segment() -> None:
+    result = await FakeTranslator().translate("Hola a todos.", "en", [], [])
+
+    assert result.text == "[en] Hola a todos."
+    assert result.latency_s == 0.0
+    assert result.usd == 0.0
+
+
+async def test_fake_translator_with_a_lookup_returns_the_recorded_translation() -> None:
+    translator = FakeTranslator(lookup={"Hola a todos.": "Hello everyone."})
+
+    result = await translator.translate("Hola a todos.", "en", [], [])
+
+    assert result.text == "Hello everyone."
+    assert result.usd == 0.0
+
+
+async def test_fake_translator_with_a_lookup_falls_back_to_the_tag_for_an_unknown_segment() -> None:
+    translator = FakeTranslator(lookup={"Hola a todos.": "Hello everyone."})
+
+    result = await translator.translate("Otra frase.", "en", [], [])
+
+    assert result.text == "[en] Otra frase."
+
+
+# ---- load_demo_translations(): FakeTranslator's demo lookup source --------
+
+
+def test_load_demo_translations_returns_the_checked_in_fixture(monkeypatch: pytest.MonkeyPatch,
+                                                                 tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)  # no samples/fixtures/tr_es_en.json under cwd
+
+    result = load_demo_translations()
+
+    assert result  # the real, committed samples/fixtures/tr_es_en.json is non-empty
+    assert all(isinstance(k, str) and isinstance(v, str) for k, v in result.items())
+
+
+def test_load_demo_translations_is_empty_when_no_fixture_is_found(monkeypatch: pytest.MonkeyPatch,
+                                                                    tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(translator_module, "_CHECKOUT_DEMO_TRANSLATIONS_FIXTURE", tmp_path / "missing.json")
+
+    assert load_demo_translations() == {}
+
+
+def test_load_demo_translations_prefers_a_fixture_under_the_current_directory(monkeypatch: pytest.MonkeyPatch,
+                                                                                tmp_path: Path) -> None:
+    cwd_fixture = tmp_path / "samples" / "fixtures" / "tr_es_en.json"
+    cwd_fixture.parent.mkdir(parents=True)
+    cwd_fixture.write_text(json.dumps({"Hola.": "Hello."}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(translator_module, "_CHECKOUT_DEMO_TRANSLATIONS_FIXTURE", tmp_path / "checkout-unused.json")
+
+    assert load_demo_translations() == {"Hola.": "Hello."}
+
+
+def test_load_demo_translations_falls_back_to_the_checkout_fixture(monkeypatch: pytest.MonkeyPatch,
+                                                                     tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)  # nothing under cwd
+    checkout_fixture = tmp_path / "checkout" / "tr_es_en.json"
+    checkout_fixture.parent.mkdir(parents=True)
+    checkout_fixture.write_text(json.dumps({"Hola.": "Hello."}), encoding="utf-8")
+    monkeypatch.setattr(translator_module, "_CHECKOUT_DEMO_TRANSLATIONS_FIXTURE", checkout_fixture)
+
+    assert load_demo_translations() == {"Hola.": "Hello."}
 
 
 @pytest.mark.live

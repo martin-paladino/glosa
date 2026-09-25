@@ -140,6 +140,41 @@ what is actually audible in the trimmed audio (no partially-audible
 leading/trailing word). The `json3` structure (`events[].tStartMs`,
 `events[].segs[].tOffsetMs`/`utf8`) is otherwise unmodified.
 
+## Demo translations (`fixtures/tr_es_en.json`)
+
+`make demo-fake`'s Spanish room (`demo-es` in `config.demo-fake.yaml`)
+replays `fixtures/tr_es.jsonl` (a recorded transcribe-live/glossary-engine
+session) through `FakeTranslator` (`glosa/text/translator.py`), which never
+calls the API. Without a lookup
+it would just tag every segment ("[en] <source text>"); `tr_es_en.json` is
+a real, once-off English translation of every segment that recording
+produces (`{source segment text: translation}`), loaded automatically by
+`FakeTranslator` (via `load_demo_translations()`) so judges running `make
+demo-fake` see real captions in the room's `en` track.
+
+Regenerate it (only needed if `fixtures/tr_es.jsonl` changes) with:
+
+```bash
+uv run python scripts/build_demo_translations.py --env-path /path/to/glosa/.env
+```
+
+It drives an offline `RoomWorker` (`DrivenClock`/`FakeEngine`, no ffmpeg, no
+wall-clock wait) through the whole recording to collect the exact segment
+texts the glossary engine's `TranslationLane` hands to the translator, then
+translates each one, in order, with the real `Translator`
+(`gemini-3.5-flash-lite`, the same system-instruction prompt and rolling
+context production uses) and writes the result to `fixtures/tr_es_en.json`.
+`--env-path` defaults to this checkout's own `.env`; pass another
+checkout's (e.g. the main repo's) if this one doesn't have one. The script
+reads the key with `dotenv_values()` and never prints or logs it, and
+refuses (`--budget-usd`, default $0.02) before any API call that would push
+total spend over the cap. Whole-run cost so far: $0.0016 for 25 segments.
+
+Any segment `TranslationLane` produces that is not a key in this file (a
+different recording, a re-segmented line, etc.) just falls back to
+`FakeTranslator`'s placeholder — this file only needs to cover
+`tr_es.jsonl` as it exists today.
+
 ## Temporary files
 
 All intermediate downloads (`*.webm` full-length audio, full-length

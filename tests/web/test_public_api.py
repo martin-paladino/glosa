@@ -167,7 +167,10 @@ async def test_stream_delivers_captions_for_both_rooms_at_once(server: str) -> N
     # transcribe-live session): the source is "set", the English translated
     assert r2[0]["data"]["talk_id"].startswith("free-r2-")
     assert any(m["type"] == "set" and "cierto" in m["text"] for m in r2)
-    assert any(m["type"] == "append" and m["text"].startswith("[en] ") for m in r2_en)  # FakeTranslator
+    # r2 en: FakeTranslator's recorded demo lookup (samples/fixtures/tr_es_en.json), a real
+    # translation, not the "[en] <source>" placeholder (task-m1-brief.md item 3)
+    assert any(m["type"] == "append" and "Cloud bill" in m["text"] for m in r2_en)
+    assert not any(m["type"] == "append" and m["text"].startswith("[en] ") for m in r2_en)
     assert all(isinstance(m["id"], int) and m["ts"] for m in r1 + r2 + r2_en)
 
 

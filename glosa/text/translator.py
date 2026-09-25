@@ -27,7 +27,9 @@ load test with FakeEngine): no API call, no key needed.
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from google import genai
@@ -40,6 +42,25 @@ from glosa.models import GlossaryTerm
 _MAX_CONSECUTIVE_FAILURES = 3
 _RETRYABLE_CODES = {429, 503}
 _BASE_BACKOFF_S = 0.5
+
+# The demo's recorded {segment: real English translation}, built once by
+# scripts/build_demo_translations.py from samples/fixtures/tr_es.jsonl (see
+# load_demo_translations() below). Resolved relative to cwd first, then to
+# this checkout, the same fallback resolve_fake_fixture() (glosa/web/app.py)
+# uses, so it is found whatever directory the process is launched from.
+_DEMO_TRANSLATIONS_FIXTURE = Path("samples") / "fixtures" / "tr_es_en.json"
+_CHECKOUT_DEMO_TRANSLATIONS_FIXTURE = Path(__file__).resolve().parents[2] / _DEMO_TRANSLATIONS_FIXTURE
+
+
+def load_demo_translations() -> dict[str, str]:
+    """FakeTranslator's optional ``lookup``: {} if the fixture is not found
+    (a checkout that never ran scripts/build_demo_translations.py), so
+    FakeTranslator just falls back to its placeholder for every segment,
+    same as before this existed."""
+    for path in (Path.cwd() / _DEMO_TRANSLATIONS_FIXTURE, _CHECKOUT_DEMO_TRANSLATIONS_FIXTURE):
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return {}
 
 
 @dataclass
@@ -181,7 +202,17 @@ class FakeTranslator:
     """``engine_mode: fake``: the "translation" is the segment itself tagged
     with the target language ("[en] Hola a todos."), at once and for free,
     so a demo shows the glossary engine's and the extra languages' captions
-    without a Gemini key."""
+    without a Gemini key.
+
+    ``lookup`` is an optional {segment: translation} map (e.g. the demo's
+    recorded ``samples/fixtures/tr_es_en.json``, see
+    ``load_demo_translations()`` below): a segment found there returns its
+    real recorded translation verbatim instead of the tagged placeholder.
+    Any segment not in ``lookup`` (or when ``lookup`` is None/empty) still
+    gets the placeholder, so existing callers/tests are unaffected."""
+
+    def __init__(self, lookup: dict[str, str] | None = None) -> None:
+        self._lookup = lookup or {}
 
     async def translate(
         self,
@@ -191,4 +222,7 @@ class FakeTranslator:
         context: list[tuple[str, str | None]],
     ) -> Translation:
         await asyncio.sleep(0)
+        translation = self._lookup.get(segment)
+        if translation is not None:
+            return Translation(text=translation, latency_s=0.0, usd=0.0)
         return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)

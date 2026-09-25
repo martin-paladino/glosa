@@ -6,11 +6,24 @@ Last-Event-ID) can catch up before switching to the live stream.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import deque
 from typing import AsyncIterator
 
 from glosa.clock import Clock, RealClock
 from glosa.models import CaptionMsg
+
+log = logging.getLogger(__name__)
+
+# Bound on each SSE subscriber's per-message queue. A subscriber that can't
+# keep up (e.g. a phone on bad wifi) must never make the publisher block or
+# grow memory without limit. Once its queue is full the subscriber is marked
+# overflowed: nothing more is queued for it, it is handed what it already
+# has, and then its stream ENDS. The browser's EventSource reconnects on its
+# own with its Last-Event-ID and subscribe() replays the gap from the
+# track's buffer -- no silent hole in the middle of a caption (dropping
+# single "append"s would corrupt the text on screen with no way to notice).
+SUBSCRIBER_QUEUE_MAX = 500
 
 
 class _TrackState:
@@ -21,6 +34,9 @@ class _TrackState:
         self.buffer: deque[tuple[CaptionMsg, str | None]] = deque(maxlen=buffer_size)
         self.subscribers: set[asyncio.Queue[CaptionMsg]] = set()
         self.current_talk_id: str | None = None
+        # Subscriber queues that filled up: they get nothing more and their
+        # stream ends once drained (see SUBSCRIBER_QUEUE_MAX).
+        self.overflowed: set[asyncio.Queue[CaptionMsg]] = set()
 
 
 class CaptionBus:
@@ -58,7 +74,21 @@ class CaptionBus:
 
         track.buffer.append((msg, track.current_talk_id))
         for queue in track.subscribers:
-            queue.put_nowait(msg)
+            if queue in track.overflowed:
+                continue
+            try:
+                queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                # Never block the publisher and never raise: end this
+                # subscriber's stream once drained; it reconnects and replays.
+                track.overflowed.add(queue)
+                log.warning(
+                    "room %s lang %s: a subscriber fell %d messages behind: ending its stream "
+                    "(the client reconnects and replays from Last-Event-ID)",
+                    room_id,
+                    lang,
+                    SUBSCRIBER_QUEUE_MAX,
+                )
         return msg
 
     async def subscribe(
@@ -78,7 +108,7 @@ class CaptionBus:
         silently filter out every message that should have been replayed.
         """
         track = self._track(room_id, lang)
-        queue: asyncio.Queue[CaptionMsg] = asyncio.Queue()
+        queue: asyncio.Queue[CaptionMsg] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAX)
         track.subscribers.add(queue)
         try:
             newest_id = track.next_id - 1
@@ -88,10 +118,13 @@ class CaptionBus:
             for msg in backlog:
                 yield msg
             while True:
+                if queue in track.overflowed and queue.empty():
+                    return  # fell behind: the client reconnects and replays the rest
                 msg = await queue.get()
                 yield msg
         finally:
             track.subscribers.discard(queue)
+            track.overflowed.discard(queue)
 
     def history(self, room_id: str, lang: str, talk_id: str) -> list[CaptionMsg]:
         """Buffered messages published while talk_id was current, for latecomers."""

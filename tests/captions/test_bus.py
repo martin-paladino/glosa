@@ -5,11 +5,13 @@ replay buffer (Last-Event-ID resume) and per-talk history for latecomers.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import logging
 import time
 
 import pytest
 
-from glosa.captions.bus import CaptionBus
+from glosa.captions.bus import SUBSCRIBER_QUEUE_MAX, CaptionBus
 from glosa.clock import FakeClock
 from glosa.models import CaptionMsg
 
@@ -127,6 +129,97 @@ async def test_subscribe_with_stale_last_event_id_replays_whole_buffer() -> None
     )
 
     assert [m.id for m in replayed] == [1, 2, 3, 4, 5]
+
+
+async def _prime_and_abandon(gen):
+    """Register a subscriber (so its queue exists) without ever consuming
+    from it, simulating a subscriber stuck behind bad wifi. Returns the
+    pending __anext__ task so the caller can clean it up afterward.
+    """
+    task = asyncio.ensure_future(anext(gen))
+    await asyncio.sleep(0)  # let subscribe() register and suspend on queue.get()
+    return task
+
+
+async def _abandon_cleanup(gen, task) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    await gen.aclose()
+
+
+async def test_publish_never_blocks_or_raises_when_subscriber_queue_is_full() -> None:
+    bus = CaptionBus()
+    sub = bus.subscribe("room1", "es", last_event_id=None)
+    task = await _prime_and_abandon(sub)
+
+    # Flood well past the bound; a naive unbounded/blocking queue would
+    # either grow forever or raise asyncio.QueueFull here.
+    for i in range(SUBSCRIBER_QUEUE_MAX + 50):
+        bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
+
+    await _abandon_cleanup(sub, task)
+
+
+async def test_a_subscriber_that_falls_behind_gets_its_queue_then_its_stream_ends_and_replay_fills_the_gap() -> None:
+    bus = CaptionBus()
+    sub = bus.subscribe("room1", "es", last_event_id=None)
+    bus.publish("room1", "es", "append", seg=0, text="word0")
+    first = await anext(sub)  # registered and reading; now it stops reading while the room keeps publishing
+    assert first.id == 1
+
+    total = SUBSCRIBER_QUEUE_MAX + 50
+    for i in range(1, total):
+        bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
+
+    received = [msg async for msg in sub]  # drains what was queued, then the stream ends
+    assert [m.id for m in received] == list(range(2, SUBSCRIBER_QUEUE_MAX + 2))  # contiguous, no hole
+
+    # What EventSource does next: reconnect with the last id it saw.
+    replay = bus.subscribe("room1", "es", last_event_id=received[-1].id)
+    rest = await _take(replay, total - SUBSCRIBER_QUEUE_MAX - 1)
+    assert [m.id for m in rest] == list(range(SUBSCRIBER_QUEUE_MAX + 2, total + 1))
+
+
+async def test_full_queue_does_not_affect_other_subscribers() -> None:
+    bus = CaptionBus()
+    slow = bus.subscribe("room1", "es", last_event_id=None)
+    normal = bus.subscribe("room1", "es", last_event_id=None)
+    slow_task = await _prime_and_abandon(slow)
+    normal_task = asyncio.ensure_future(anext(normal))
+    await asyncio.sleep(0)
+
+    total = SUBSCRIBER_QUEUE_MAX + 20
+    normal_received: list[CaptionMsg] = []
+    for i in range(total):
+        bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
+        # Actively drain the "normal" subscriber as we go, unlike "slow".
+        msg = await normal_task
+        normal_received.append(msg)
+        normal_task = asyncio.ensure_future(anext(normal))
+
+    normal_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await normal_task
+    await normal.aclose()
+    await _abandon_cleanup(slow, slow_task)
+
+    assert [m.id for m in normal_received] == list(range(1, total + 1))
+
+
+async def test_logs_lagging_subscriber_at_most_once(caplog: pytest.LogCaptureFixture) -> None:
+    bus = CaptionBus()
+    sub = bus.subscribe("room1", "es", last_event_id=None)
+    task = await _prime_and_abandon(sub)
+
+    with caplog.at_level(logging.WARNING, logger="glosa.captions.bus"):
+        for i in range(SUBSCRIBER_QUEUE_MAX + 50):
+            bus.publish("room1", "es", "append", seg=0, text=f"word{i}")
+
+    await _abandon_cleanup(sub, task)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
 
 
 async def test_history_returns_messages_for_a_given_talk() -> None:

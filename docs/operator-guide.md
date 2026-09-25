@@ -99,8 +99,8 @@ rooms:
 `agenda_names` is how an agenda import maps a talk to this room when the
 agenda's own room name doesn't match this room's `id` or `name` (e.g.
 Nerdearla's sessions API uses room slugs like `gran-sala`). For a room
-station (a mini PC on a stage), use `source_type: emitter` with any
-non-empty placeholder `source_url` — see step 6.
+station (a mini PC on a stage), use `source_type: emitter` and omit
+`source_url` entirely — the station brings its own audio — see step 6.
 
 ### 5. Import Nerdearla's agenda, by URL or CSV
 

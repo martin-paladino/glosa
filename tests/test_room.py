@@ -2081,6 +2081,8 @@ async def test_quality_feed_scores_fast_track_pairs_and_status_surfaces_the_aver
     assert english == "Great starting scenario, for sure."
     assert spanish == "Un gran escenario de inicio, sin duda."
     assert worker.status().quality == pytest.approx(round(meter.avg(), 2))
+    assert worker.status().quality == pytest.approx(0.42)
+    assert worker.status().state == "yellow"  # below the 0.5 quality threshold; latency/level otherwise green
     await worker.stop()
     assert meter.closed == 1  # stop() closes the meter's HTTP client after any in-flight score
 

@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     vad: VadCfg = Field(default_factory=VadCfg)
     segmenter: SegmenterCfg = Field(default_factory=SegmenterCfg)
     default_export_shift_s: float = 2.4
+    # Task 19: stop sending audio to the engine after this long with no
+    # speech (glosa/audio/gate.py's SilenceGate); 0 disables the gate.
+    silence_gate_s: float = 20.0
     # Engine an imported English talk gets when the agenda does not say
     # (Spanish talks get "glossary": verbatim transcription).
     default_engine_en: Literal["fast", "glossary"] = "fast"

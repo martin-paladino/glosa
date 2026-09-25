@@ -290,7 +290,7 @@ async def test_each_state_frame_has_every_room_raw_status_mode_talk_and_next(pan
     assert r1["id"] == "r1" and r1["name"] == "Gran sala" and r1["key"] == 1
     assert r1["status"] == {
         "state": "yellow", "level_db": -18.5, "latency_p50_s": 6.1, "quality": 0.9, "cost_usd": 0.42,
-        "talk_id": "t-now", "detail": "latency 6.1s exceeds 5.0s",
+        "talk_id": "t-now", "detail": "latency 6.1s exceeds 5.0s", "gated_s": 0.0,
     }
     assert r1["state"] == "degraded" and r1["mode"] == "auto"
     assert r1["talk"]["id"] == "t-now" and r1["talk"]["target"] == "es"

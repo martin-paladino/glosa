@@ -2,18 +2,20 @@
 
 ::
 
-    AudioIngest -> EnergyVad -> SessionRelay (the talk's engine)
+    AudioIngest -> EnergyVad -> SilenceGate -> SessionRelay (the talk's engine)
       -> source text: CaptionAssembler per (engine session, language), or "set"
       -> translations: Live Translate's own, and/or the translation lane
       -> CaptionBus.publish -> db.save_segment when a segment closes
 
 Per 100 ms chunk (Ruling 23): ``vad.process(chunk)``, then
-``relay.feed(chunk, voiced=vad.in_speech)`` (the watchdog needs ``voiced``),
-then ``relay.on_vad(ev)`` for each VAD event, then ``lane.tick()``. A
-separate task consumes ``relay.events()``: ``source_delta``/``source_final``
-go to the talk's language, ``target_delta`` to the first translation
-language (routed by kind, not by ``ev.lang``), and every ``meta["usd"]``
-increment is added to the room's cost.
+``gate.update(chunk, voiced=vad.in_speech)`` (task-19: after 20 s with no
+speech, withholds it instead of returning it -- see "Silence gate" below),
+then ``relay.feed(c, voiced=vad.in_speech)`` for whatever it returns (the
+watchdog needs ``voiced``), then ``relay.on_vad(ev)`` for each VAD event,
+then ``lane.tick()``. A separate task consumes ``relay.events()``:
+``source_delta``/``source_final`` go to the talk's language, ``target_delta``
+to the first translation language (routed by kind, not by ``ev.lang``), and
+every ``meta["usd"]`` increment is added to the room's cost.
 
 Engines (glosa/room_text.py)
     Each talk runs its own ``Talk.engine``; a free session, the default for
@@ -106,6 +108,54 @@ Costs
     cost and are written as one costs row per component every
     ``COST_FLUSH_S`` and at the end of a run.
 
+Silence gate (task-19, glosa/audio/gate.py)
+    ``_feed`` still runs the VAD, ``relay.on_vad``, the lane's ``tick`` and
+    level tracking on every chunk; only ``relay.feed()`` (the audio actually
+    billed) is gated, via ``run.gate.update(chunk, voiced)``. So (b), (c),
+    (d), (e) of the design are free consequences of what already existed,
+    not new machinery:
+
+    - Watchdog: ``SessionRelay._poll()`` -- the only place that checks
+      ``StallWatchdog.stalled()`` -- runs solely inside ``feed()``. No
+      ``feed()`` calls while gated means no stall check, so a silent room
+      can never trip "audio present but no engine output" (also why
+      ``status()`` hardcodes ``stall_active=False``: the relay always
+      reconnects a stall itself, at once).
+    - Rotation / keep-alive: per SessionRelay's own docstring ("Timers"),
+      every deadline (standby/force rotation, backoff, connect timeout) is
+      only checked from ``feed()``/``_poll()`` too -- "if audio stops
+      flowing, the deadlines wait for the next feed() call". Gating simply
+      stops calling ``feed()``, so those timers freeze along with it: no
+      rotation fires while gated. The underlying session is left to age
+      past its real lifetime; the relay's ordinary reconnect (a session that
+      "closed unexpectedly") picks it up, quietly, whenever that happens --
+      this was already how the relay behaves for any pause in audio, gate
+      or not, so nothing new was added for it. In practice sessions live
+      minutes and ``FlapDetector``'s window is 120 s, so a single such
+      reconnect during a long silence never reaches the 3-incidents
+      fallback threshold; feeding again (the moment speech returns) is what
+      lets a session close to its deadline rotate normally.
+    - The glossary engine's ``end_utterance()`` (transcribe-live's
+      ``audio_stream_end``) is called from a VAD ``pause`` event, which
+      fires ~``pause_ms`` (400 ms) after speech ends -- long before
+      ``GATE_AFTER_S`` (20 s) is even reached, so gating never delays it.
+    - Level metrics: ``run.levels`` is appended every chunk regardless of
+      gating, so ``status()``'s "level below threshold with active talk"
+      check still reflects the real, silent room -- not the gate's own
+      state.
+    - Cost: engines only bill audio actually handed to ``send_audio()``, so
+      not calling ``relay.feed()`` while gated already keeps cost
+      accounting exact; no separate bookkeeping was needed.
+
+    The gate itself is transparent to a fallback/engine swap
+    (``_swap_engine``): it lives on ``_Run``, untouched by
+    ``_apply_engine``, so it keeps counting across an engine change.
+    ``run.gate.gated_s`` is the cumulative audio (seconds) never sent (not
+    counting the pre-roll, which is sent, just delayed); ``status()``
+    appends "silence gate: paused Ns" to the admin-only detail string while
+    gated (``run.gate.paused_s``), after every other detail so it never
+    changes ``state``.
+
 Sources
     ``start(talk)`` plays the room's configured source; ``play_file(path)``
     replaces the source of the running talk (or starts the free session).
@@ -150,6 +200,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from glosa.audio.gate import SilenceGate
 from glosa.audio.ingest import CHUNK_BYTES, CHUNK_S, AudioIngest, StationHub
 from glosa.audio.vad import EnergyVad
 from glosa.captions.assembler import CaptionAssembler
@@ -267,6 +318,7 @@ class _Run:
     target: str  # the first translation language (Live Translate's, with "fast")
     source: tuple[str, str, bool]  # what the audio loop plays: (source_type, source_url, realtime)
     vad: EnergyVad
+    gate: SilenceGate  # Task 19: what NOT to forward to the engine while silent
     tracks: dict[str, _Track]
     t0: float
     # Task 14b (Ruling 5, the admin "Escuchar el audio" feature): the clock
@@ -532,6 +584,8 @@ class RoomWorker:
                     state, detail = "red", "engine halted: non-retryable error, waiting for a reconnect"
         if self.room.source_type == "emitter" and self._station_hub is not None:
             detail = f"{detail} | {self._station_summary()}"
+        if run is not None and run.gate.gated:  # Task 19: admin-only, does not affect state
+            detail = f"{detail} | silence gate: paused {run.gate.paused_s:.0f}s"
         return RoomStatus(
             state=state,
             level_db=level,
@@ -540,6 +594,7 @@ class RoomWorker:
             cost_usd=self._cost_usd,
             talk_id=talk_id,
             detail=detail,
+            gated_s=round(run.gate.gated_s, 1) if run is not None else 0.0,
         )
 
     def latency_p50(self, min_samples: int = 10) -> float | None:
@@ -635,6 +690,7 @@ class RoomWorker:
             target=langs[0],
             source=(source_type, source_url, realtime),
             vad=EnergyVad(self._settings.vad.pause_ms, self._settings.vad.min_speech_s),
+            gate=SilenceGate(self._settings.silence_gate_s),
             tracks=tracks,
             t0=now - elapsed,
             last_cost_flush=now,
@@ -914,7 +970,9 @@ class RoomWorker:
 
     async def _feed(self, run: _Run, chunk: AudioChunk) -> None:
         events = run.vad.process(chunk)
-        await run.relay.feed(chunk, voiced=run.vad.in_speech)
+        voiced = run.vad.in_speech
+        for to_send in run.gate.update(chunk, voiced):  # [] while gated; pre-roll + chunk on return
+            await run.relay.feed(to_send, voiced=voiced)
         now = self._clock.now()
         for ev in events:
             run.relay.on_vad(ev)

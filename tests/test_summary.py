@@ -33,8 +33,9 @@ from glosa.summary import (
     SummaryStore,
 )
 
-ENV_PATH = "/Users/mpaladino/repos/glosa/.env"
-BENCH_JSONL = Path("/Users/mpaladino/repos/glosa-wt/t15c-bench/bench/raw/en_clip_fast.jsonl")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+ENV_PATH = _REPO_ROOT / ".env"
+BENCH_JSONL = _REPO_ROOT / "bench" / "raw" / "en_clip_fast.jsonl"
 
 
 def _seg(text: str, t_start: float, t_end: float, *, lang: str = "es", talk_id: str = "t1") -> Segment:
@@ -471,6 +472,18 @@ def _build_es_text_from_bench(path: Path, window_s: float = SUMMARY_WINDOW_S) ->
     ref = closed[-1][0]
     window = [text for t, text in closed if t >= ref - window_s]
     return " ".join(window), title
+
+
+def test_live_test_paths_are_repo_relative_not_a_hardcoded_local_path() -> None:
+    # B-I5: these used to be absolute paths under one developer's home
+    # directory, which leaked the username/layout into the public repo
+    # and broke as soon as a worktree was removed.
+    # Resolve them from the repo root instead, like tests/test_quality.py's
+    # MAIN_REPO_ENV already does.
+    repo_root = Path(__file__).resolve().parents[1]
+    assert ENV_PATH == repo_root / ".env"
+    assert BENCH_JSONL == repo_root / "bench" / "raw" / "en_clip_fast.jsonl"
+    assert BENCH_JSONL.exists()
 
 
 @pytest.mark.live

@@ -50,7 +50,7 @@ from glosa.talk_check import (  # noqa: E402
     build_talk_checker,
 )
 
-MAIN_REPO_ENV = Path("/Users/mpaladino/repos/glosa/.env")
+MAIN_REPO_ENV = Path(__file__).resolve().parents[1] / ".env"
 
 
 def _seg(text: str, t_start: float, t_end: float, *, lang: str = "en", talk_id: str = "t1") -> Segment:
@@ -551,7 +551,20 @@ def _build_source_text_from_bench(path: Path, lang: str, window_s: float = CHECK
     return " ".join(window), title
 
 
-BENCH_DIR = Path("/Users/mpaladino/repos/glosa/bench/raw")
+BENCH_DIR = Path(__file__).resolve().parents[1] / "bench" / "raw"
+
+
+def test_live_test_paths_are_repo_relative_not_a_hardcoded_local_path() -> None:
+    # B-I5: these used to be absolute paths under one developer's home
+    # directory, leaking the username/layout into the public repo
+    # (db52e98 already scrubbed this once). Resolve them
+    # from the repo root instead, like tests/test_quality.py's
+    # MAIN_REPO_ENV already does, and point BENCH_DIR at the repo's own
+    # bench/raw/, not a worktree that gets cleaned up.
+    repo_root = Path(__file__).resolve().parents[1]
+    assert MAIN_REPO_ENV == repo_root / ".env"
+    assert BENCH_DIR == repo_root / "bench" / "raw"
+    assert BENCH_DIR.is_dir()
 
 
 @pytest.mark.live

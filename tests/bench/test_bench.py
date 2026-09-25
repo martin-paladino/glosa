@@ -6,11 +6,9 @@ results-table rendering. No network.
 bench/bench.py's own orchestration (run_one, live_run, dry_run, ...) is not
 unit-tested here: it only ever does real I/O (RoomWorker, ffmpeg, the
 Gemini API), which the task brief keeps out of the always-green test suite
-("No network in tests"); its --only parsing (parse_only) is exercised by
-hand while running the bench, not here, to avoid importing the `bench.bench`
-submodule (same leaf name as the `bench` package) under pytest's test
-collection, which the exact combination of a same-named submodule and
-same-named sibling test directory (tests/bench/) confuses.
+("No network in tests"). Its pure helpers (``parse_only``, the --only
+filter, and ``to_glossary_terms``, the terms.yaml -> Talk.glossary
+conversion) are tested directly, network-free.
 """
 
 from __future__ import annotations
@@ -21,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from bench.bench import CLIPS, ENGINES, parse_only, to_glossary_terms
 from bench.json3 import Word, full_text, latency_stats, load_words, match_next, pct, utterances
 from bench.report import RunStats, render_table
 from bench.terms import Term, TermReport, best_count, count_occurrences, load_terms, normalize, overall_pct, score_terms
@@ -214,3 +213,35 @@ def test_render_table_pct_nan_renders_as_na() -> None:
     lines = [line for line in table.splitlines() if line.startswith("| en_clip")]
     assert len(lines) == 1
     assert " n/a " in lines[0]
+
+
+# -------------------------------------------------------------------- bench.py
+
+
+def test_parse_only_defaults_to_every_clip_engine_combination() -> None:
+    assert parse_only(None) == [(clip["name"], engine) for clip in CLIPS for engine in ENGINES]
+    assert parse_only([]) == parse_only(None)  # empty is also "no filter"
+
+
+def test_parse_only_filters_to_the_given_pairs_preserving_default_order() -> None:
+    combos = parse_only(["es_clip:fast", "en_clip:glossary"])
+    assert combos == [("en_clip", "glossary"), ("es_clip", "fast")]
+
+
+def test_to_glossary_terms_keep_in_english_has_no_translation() -> None:
+    terms = [Term(term="Grafana", source_patterns=("Grafana",), targets=("Grafana",), keep_in_english=True)]
+    [glossary_term] = to_glossary_terms(terms)
+    assert glossary_term.keep_in_english is True
+    assert glossary_term.translation is None
+
+
+def test_to_glossary_terms_translated_gets_an_explicit_translation() -> None:
+    # Regression: glosa/text/translator.py's _build_system_instruction treats
+    # keep_in_english=False *without* a translation the same as
+    # keep_in_english=True ("leave it as is, untranslated") -- a term meant
+    # to be translated must carry one, or the glossary engine's translator
+    # is silently told to keep it in English (the bug this test guards).
+    terms = [Term(term="agents", source_patterns=("agent",), targets=("agente", "agentes"), keep_in_english=False)]
+    [glossary_term] = to_glossary_terms(terms)
+    assert glossary_term.keep_in_english is False
+    assert glossary_term.translation == "agente"  # the first accepted target spelling

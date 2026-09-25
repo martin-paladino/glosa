@@ -159,6 +159,22 @@ def resolve_api_key() -> str:
     raise SystemExit(f"GEMINI_API_KEY not found (tried: {tried})")
 
 
+def to_glossary_terms(terms: list[Term]) -> list[GlossaryTerm]:
+    """bench/terms.yaml's terms -> the Talk.glossary the room actually uses.
+    A term meant to be translated (``keep_in_english`` False) needs an
+    explicit ``translation``: glosa/text/translator.py's
+    ``_build_system_instruction`` treats keep_in_english=False *without*
+    one the same as keep_in_english=True -- "leave it as is, untranslated"
+    -- so a bare ``GlossaryTerm(term, False)`` silently tells the glossary
+    engine's translator to keep that term in English, the opposite of what
+    bench/terms.yaml's ``targets`` (the accepted translated spellings)
+    means. Its first accepted target spelling is used as that translation."""
+    return [
+        GlossaryTerm(t.term, t.keep_in_english, translation=None if t.keep_in_english else t.targets[0])
+        for t in terms
+    ]
+
+
 def build_room_and_talk(clip: dict, engine: str, glossary: list[GlossaryTerm]) -> tuple[Room, Talk]:
     rid = f"bench-{clip['name']}-{engine}"
     room = Room(
@@ -204,7 +220,7 @@ async def run_one(clip: dict, engine: str, terms: list[Term], api_key: str, *, l
     AudioIngest, at real-time pace, recording every bus message. ``live``
     False: engine_mode "fake" (FakeEngine replaying a canned fixture, no
     network) -- only used by the dry run, to prove this function's wiring."""
-    glossary = [GlossaryTerm(t.term, t.keep_in_english) for t in terms]
+    glossary = to_glossary_terms(terms)
     room, talk = build_room_and_talk(clip, engine, glossary)
     settings = build_settings(api_key, "live" if live else "fake", room, clip)
     clock = RealClock()

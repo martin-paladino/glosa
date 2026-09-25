@@ -369,3 +369,27 @@ async def test_live_corrects_english_segments_to_spanish() -> None:
     )
     for src, corrected in list(zip(sentences, result))[:5]:
         print(f"  EN: {src}\n  ES: {corrected}")
+
+
+class _HangingModels(_FakeModels):
+    """A call that never answers (google-genai's default timeout is None)."""
+
+    async def generate_content(self, *, model: str, contents: str, config: Any) -> _FakeResponse:
+        import asyncio
+
+        self.calls.append({"model": model, "contents": contents, "config": config})
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+async def test_a_hung_block_call_times_out_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:  # M2
+    from glosa.text import corrector as corrector_module
+
+    monkeypatch.setattr(corrector_module, "BLOCK_TIMEOUT_S", 0.05)
+    corrector, client = _corrector([])
+    client.models = client.aio.models = _HangingModels([])
+
+    result = await corrector.correct(_sentences(2), source_lang="en", target_lang="es", glossary=[], abstract="")
+
+    assert result == [None, None]  # the block's fallback, not a hang until shutdown
+    assert len(client.models.calls) == 2  # 1 try + 1 retry

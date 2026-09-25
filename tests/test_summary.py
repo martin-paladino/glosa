@@ -494,3 +494,21 @@ async def test_live_summarizes_five_minutes_of_real_captions() -> None:
     print(f"\nLIVE summary bullets (es, title={title!r}, usd={result.usd:.6f}):")
     for bullet in result.bullets:
         print(f"  - {bullet}")
+
+
+async def test_a_hung_summary_call_times_out(monkeypatch: pytest.MonkeyPatch) -> None:  # M2
+    """google-genai's default timeout is None: one hung call would freeze the
+    room's summary loop until restart."""
+    import glosa.summary as summary_module
+
+    monkeypatch.setattr(summary_module, "SUMMARY_TIMEOUT_S", 0.05)
+    summarizer, client = _summarizer([])
+
+    async def hang(*, model: str, contents: str, config: Any) -> _FakeResponse:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    client.models.generate_content = hang
+
+    with pytest.raises(TimeoutError):
+        await summarizer.summarize("hi", "es", "T")

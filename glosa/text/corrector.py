@@ -39,6 +39,7 @@ builds a real genai.Client(api_key=...).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -55,6 +56,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 2  # 1 try + 1 retry per block, per task-11a-brief.md
+# M2: google-genai's default HTTP timeout is None; a hung call would hold a
+# talk-end export until shutdown. A timed-out block is a failed attempt.
+BLOCK_TIMEOUT_S = 60.0
 _CONTEXT_SENTENCES = 2
 
 
@@ -167,11 +171,12 @@ class Corrector:
             thinking_config=types.ThinkingConfig(thinking_level="LOW"),
         )
         try:
-            response = await self._client.aio.models.generate_content(
-                model=self.model,
-                contents=_format_block(block),
-                config=config,
-            )
+            async with asyncio.timeout(BLOCK_TIMEOUT_S):
+                response = await self._client.aio.models.generate_content(
+                    model=self.model,
+                    contents=_format_block(block),
+                    config=config,
+                )
         except Exception as exc:  # noqa: BLE001 - a block failure falls back to None, see module docstring
             logger.info("correct_segments: API call failed for a block: %s", exc)
             return None

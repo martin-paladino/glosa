@@ -57,6 +57,7 @@ log = logging.getLogger(__name__)
 SUMMARY_EVERY_S = 180  # how often a room is considered for a fresh summary
 SUMMARY_WINDOW_S = 300  # how much of the talk (its last ~5 min) a summary covers
 MIN_NEW_WORDS = 40  # cost guard: skip a language with fewer new words than this
+SUMMARY_TIMEOUT_S = 30.0  # M2: one Gemini call; a hung one must not freeze the room's loop
 _FAILURE_LOG_EVERY_S = 60.0
 _MAX_BULLETS = 5
 
@@ -157,7 +158,8 @@ class Summarizer:
             system_instruction=_build_prompt(title, target),
             thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
         )
-        response = await self._client.aio.models.generate_content(model=self.model, contents=text, config=config)
+        async with asyncio.timeout(SUMMARY_TIMEOUT_S):  # M2: google-genai's default timeout is None
+            response = await self._client.aio.models.generate_content(model=self.model, contents=text, config=config)
         bullets = _parse_bullets(response.text or "")
         return SummarizeResult(bullets=bullets, usd=self._cost_usd(response.usage_metadata))
 

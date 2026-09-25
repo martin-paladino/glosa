@@ -370,3 +370,13 @@ async def test_cost_by_room_sums_each_room(db) -> None:  # Task 12: the drawer's
     costs = await db.cost_by_room()
 
     assert costs == pytest.approx({"r1": 0.06, "r2": 0.02, None: 0.03})
+
+
+async def test_pending_exports_lists_every_build_left_pending(db) -> None:  # final-review-A I4
+    await db.set_export_status("t1", "es", "pending")
+    await db.set_export_status("t1", "pt", "ready")
+    await db.set_export_status("t2", "en", "failed")
+    await db.set_export_status("t3", "es", "pending")
+    await db.set_export_status("t3", "pt", "pending")
+
+    assert await db.get_pending_exports() == [("t1", "es"), ("t3", "es"), ("t3", "pt")]

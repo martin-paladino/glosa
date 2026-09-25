@@ -239,10 +239,12 @@ async def test_export_talk_builds_every_target_language_but_not_the_source_one(
     monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
     events = _FakeAdminEvents()
     talk = _talk("t1", language="en", targets=("en", "es", "pt"))  # "en" target == source: skipped
+    db = _StatusDb()
 
-    await _export_talk(talk, db=object(), settings=_FakeSettings(), admin_events=events)
+    await _export_talk(talk, db=db, settings=_FakeSettings(), admin_events=events)
 
     assert sorted(calls) == [("t1", "es"), ("t1", "pt")]
+    assert db.statuses == [("t1", "es", "pending"), ("t1", "pt", "pending")]  # I4: all queued first
     assert sorted(events.published) == [
         ("export_failed", {"talk_id": "t1", "room_id": "r1", "lang": "pt"}),
         ("export_ready", {"talk_id": "t1", "room_id": "r1", "lang": "es"}),
@@ -251,6 +253,14 @@ async def test_export_talk_builds_every_target_language_but_not_the_source_one(
 
 class _FakeSettings:
     gemini_api_key = "unused"
+
+
+class _StatusDb:
+    def __init__(self) -> None:
+        self.statuses: list[tuple[str, str, str]] = []
+
+    async def set_export_status(self, talk_id: str, lang: str, status: str) -> None:
+        self.statuses.append((talk_id, lang, status))
 
 
 # No TestClient-based integration test for the WS 4401 case: Starlette's

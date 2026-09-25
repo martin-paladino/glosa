@@ -654,3 +654,97 @@ async def test_restart_reopens_the_source_for_the_same_talk(tmp_path: Path) -> N
             assert idle.status_code == 409
             assert (await client.post("/api/admin/rooms/nope/restart")).status_code == 404
             assert (await client.post("/api/admin/rooms/r1/restart", headers={"X-Glosa-Admin": ""})).status_code == 403
+
+
+# ------------------------------------------ corrected exports left pending (final-review-A I4)
+
+
+async def test_boot_requeues_the_corrected_exports_left_pending(tmp_path: Path) -> None:
+    """A shutdown that cut a corrected build off left it "pending": the next
+    boot queues it again, in the background (the boot hooks, drained at
+    shutdown), for the pending languages only. A talk still live is closed
+    as stale and goes through on_talk_end instead (never both)."""
+    settings = _settings(tmp_path)
+    past = _talk("past", "r1", -120, -60)
+    past.targets = ["es", "pt"]
+    stale = _talk("stale", "r2", -60, -30)
+    await _seed(settings, past, stale)
+    await _mark(settings, "past", status="done", actual_start=T0 - timedelta(minutes=120),
+                actual_end=T0 - timedelta(minutes=60))
+    await _mark(settings, "stale", status="live", actual_start=T0 - timedelta(minutes=60))
+    db = init_db(settings.db_path)
+    try:
+        await db.set_export_status("past", "es", "pending")
+        await db.set_export_status("past", "pt", "ready")
+        await db.set_export_status("stale", "es", "pending")
+    finally:
+        db.close()
+
+    retried: list[tuple[str, str, list[str]]] = []
+    ended: list[str] = []
+    done = asyncio.Event()
+
+    async def retry(talk: Talk, langs: list[str]) -> None:
+        retried.append((talk.id, talk.status, langs))
+        done.set()
+
+    async def hook(talk: Talk) -> None:
+        ended.append(talk.id)
+
+    async with _open(settings, on_talk_end=hook, on_export_retry=retry):
+        await asyncio.wait_for(done.wait(), 2)
+
+    assert retried == [("past", "done", ["es"])]
+    assert "stale" in ended
+
+
+async def test_export_talk_marks_every_language_pending_so_an_interrupted_build_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shutdown's HOOK_GRACE_S cancels a corrected build in progress:
+    every target language not built yet must be left "pending" (what the
+    next boot retries), not missing."""
+    started = asyncio.Event()
+
+    async def blocking_build(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        await db.set_export_status(talk_id, lang, "pending")
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(app_module, "build_corrected", blocking_build)
+    db = init_db(tmp_path / "glosa.db")
+    try:
+        talk = _talk("t", "r1", -60, -10)
+        talk.targets = ["es", "pt"]
+        task = asyncio.create_task(
+            app_module._export_talk(talk, db=db, settings=_settings(tmp_path), admin_events=app_module.AdminEvents())
+        )
+        await asyncio.wait_for(started.wait(), 1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert await db.get_export_status("t", "es") == "pending"
+        assert await db.get_export_status("t", "pt") == "pending"  # never started, still queued
+    finally:
+        db.close()
+
+
+async def test_export_talk_can_rebuild_only_some_languages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        return "ready"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build)
+    db = init_db(tmp_path / "glosa.db")
+    try:
+        talk = _talk("t", "r1", -60, -10)
+        talk.targets = ["es", "pt"]
+        await app_module._export_talk(
+            talk, db=db, settings=_settings(tmp_path), admin_events=app_module.AdminEvents(), langs=["pt"]
+        )
+    finally:
+        db.close()
+
+    assert calls == [("t", "pt")]

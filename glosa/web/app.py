@@ -25,6 +25,11 @@ rooms. The lifespan:
      every room, gives the talk-end hooks ``HOOK_GRACE_S``, then does the
      same for any boot-time stale-talk hooks still running (below).
 
+A corrected build that a shutdown cut off stays "pending" (``_export_talk``
+marks every language pending before building any); the next boot queues it
+again (``on_export_retry``, the pending languages only) as a boot hook,
+after ``_boot_rooms`` (final-review-A I4).
+
 Every talk that ends publishes ``talk_ended`` on ``admin_events``, then goes
 to ``create_app(on_talk_end=...)`` if given -- generic extensibility (tests
 inject their own hook this way); ``app_from_env()`` (the real entry point)
@@ -93,7 +98,7 @@ import logging
 import os
 import re
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime
@@ -125,6 +130,10 @@ from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
 
 log = logging.getLogger(__name__)
+
+# final-review-A I4: rebuild these languages' corrected export of a talk
+# (the boot's retry of the builds a shutdown left "pending").
+ExportRetryHook = Callable[[Talk, list[str]], Awaitable[None]]
 
 STATIC_DIR = Path(__file__).parent / "static"
 FAKE_FIXTURE = Path("samples") / "fixtures" / "lt_en.jsonl"
@@ -327,6 +336,7 @@ def create_app(
     engine_factory: EngineFactory | None = None,
     ingest_factory: IngestFactory = AudioIngest,
     on_talk_end: TalkEndHook | None = None,
+    on_export_retry: ExportRetryHook | None = None,
     autopilot_interval_s: float = TICK_S,
 ) -> FastAPI:
     clock = clock if clock is not None else RealClock()
@@ -396,7 +406,12 @@ def create_app(
                 )
             autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
             app.state.autopilot = autopilot
+            # I4: read before the boot closes stale talks (those go through
+            # on_talk_end) or the autopilot reopens one (built at its end).
+            pending = await _pending_exports(db) if on_export_retry is not None else {}
             await _boot_rooms(autopilot, workers, db, clock.wall(), on_talk_end, boot_hooks)
+            if on_export_retry is not None:
+                _queue_export_retries(pending, workers, on_export_retry, boot_hooks)
             pilot = asyncio.create_task(autopilot.run(autopilot_interval_s), name="autopilot")
             summary_tasks = [
                 asyncio.create_task(
@@ -586,6 +601,51 @@ async def _close_stale_live_talks(
         log.exception("could not close the talks left live by a previous run")
 
 
+async def _pending_exports(db) -> dict[str, tuple[Talk, list[str]]]:
+    """final-review-A I4: the corrected builds a shutdown cut off (left
+    "pending"), by talk -- only for agenda talks already done (a live one
+    is closed as stale and goes through on_talk_end)."""
+    by_talk: dict[str, list[str]] = {}
+    try:
+        for talk_id, lang in await db.get_pending_exports():
+            by_talk.setdefault(talk_id, []).append(lang)
+        pending: dict[str, tuple[Talk, list[str]]] = {}
+        for talk_id, langs in by_talk.items():
+            talk = await db.get_talk(talk_id)
+            if talk is not None and talk.status == "done" and not is_free_talk(talk_id):
+                pending[talk_id] = (talk, langs)
+        return pending
+    except Exception:
+        log.exception("could not read the corrected exports left pending")
+        return {}
+
+
+def _queue_export_retries(
+    pending: dict[str, tuple[Talk, list[str]]],
+    workers: dict[str, RoomWorker],
+    retry: ExportRetryHook,
+    boot_hooks: set[asyncio.Task],
+) -> None:
+    """Queue each pending build again as a tracked boot hook (drained at
+    shutdown, like the stale-talk hooks), except for a talk a room runs now
+    (the autopilot reopened it: its end rebuilds it)."""
+    held = {w.talk.id for w in workers.values() if w.talk is not None}
+    for talk_id, (talk, langs) in pending.items():
+        if talk_id in held:
+            continue
+        log.info("boot: rebuilding the corrected export of %s (%s), left pending", talk_id, ", ".join(langs))
+        task = asyncio.get_running_loop().create_task(_run_export_retry(retry, talk, langs), name=f"boot-hook-{talk_id}")
+        boot_hooks.add(task)
+        task.add_done_callback(boot_hooks.discard)
+
+
+async def _run_export_retry(retry: ExportRetryHook, talk: Talk, langs: list[str]) -> None:
+    try:
+        await retry(talk, langs)
+    except Exception:
+        log.exception("room %s: export retry failed for %s", talk.room_id, talk.id)
+
+
 async def _run_boot_hook(hook: TalkEndHook, talk: Talk) -> None:
     try:
         await hook(talk)
@@ -618,7 +678,9 @@ async def _start_free_session(worker: RoomWorker, db) -> None:
             log.exception("room %s: could not log the failure", worker.room.id)
 
 
-async def _export_talk(talk: Talk, *, db, settings: Settings, admin_events: AdminEvents) -> None:
+async def _export_talk(
+    talk: Talk, *, db, settings: Settings, admin_events: AdminEvents, langs: list[str] | None = None
+) -> None:
     """Task 11-rest, decision 1: after a talk ends (through RoomWorker's own
     on_talk_end, or _close_stale_live_talks above for one the boot closed),
     rebuild the "corrected" export for every one of the talk's TARGET
@@ -630,12 +692,18 @@ async def _export_talk(talk: Talk, *, db, settings: Settings, admin_events: Admi
     already runs in the background (RoomWorker._end_talk spawns and tracks
     the hook, drained with HOOK_GRACE_S at shutdown), so a talk ending never
     waits on it.
+
+    final-review-A I4: every language to build is marked "pending" first,
+    so a shutdown that cancels this (HOOK_GRACE_S) leaves the ones not built
+    yet "pending" too, and the next boot builds them again (``langs``: only
+    those, create_app's ``on_export_retry``).
     """
     if is_free_talk(talk.id):
         return
-    for lang in talk.targets:
-        if lang == talk.language:
-            continue
+    todo = [lang for lang in (langs if langs is not None else talk.targets) if lang != talk.language]
+    for lang in todo:
+        await db.set_export_status(talk.id, lang, "pending")
+    for lang in todo:
         status = await build_corrected(talk.id, lang, db=db, api_key=settings.gemini_api_key)
         admin_events.publish(
             "export_ready" if status == "ready" else "export_failed",
@@ -658,7 +726,11 @@ def app_from_env() -> FastAPI:
         app = app_holder["app"]
         await _export_talk(talk, db=app.state.db, settings=settings, admin_events=app.state.admin_events)
 
-    app = create_app(settings, on_talk_end=on_talk_end)
+    async def on_export_retry(talk: Talk, langs: list[str]) -> None:
+        app = app_holder["app"]
+        await _export_talk(talk, db=app.state.db, settings=settings, admin_events=app.state.admin_events, langs=langs)
+
+    app = create_app(settings, on_talk_end=on_talk_end, on_export_retry=on_export_retry)
     app_holder["app"] = app
     return app
 

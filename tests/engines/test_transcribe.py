@@ -335,6 +335,38 @@ def test_a_short_real_repeat_keeps_its_final(said_before: str, said_now: str) ->
     assert events[-1].kind == "source_final" and events[-1].text == said_now
 
 
+@pytest.mark.parametrize(
+    ("said_before", "said_now"),
+    [
+        ("lo que tenemos que hacer es desplegar", "lo que tenemos que hacer es desplegarlo en producción."),
+        ("Vamos a usar el patrón sidecar", "Vamos a usar el patrón sidecars en todos lados."),
+    ],
+    ids=["desplegarlo", "sidecars"],
+)
+def test_a_real_repeat_that_continues_the_last_word_keeps_its_final_whole(said_before: str, said_now: str) -> None:
+    """Fix round 3: the no-separator cut ("…particularEs") is for interims
+    only. A final is never cut inside a word: a 6+ word repeat whose last
+    word goes on ("desplegar" -> "desplegarlo") keeps its final whole."""
+    engine = _engine()
+    _map_all(engine, [_interim(said_before), _final(said_before)])
+    words = said_now.rstrip(".").split()
+
+    events = _map_all(engine, [_interim(" ".join(words[:n])) for n in range(1, len(words) + 1)])
+    events += engine._map_message(_final(said_now))
+
+    assert events[-1].kind == "source_final" and events[-1].text == said_now
+
+
+def test_run_5_interims_glued_with_nothing_in_between_are_still_cut() -> None:
+    last = "o dentro de este cluster en este particular"
+    engine = _engine()
+    _map_all(engine, [_interim(last), _final("o dentro de este clúster en este particular namespace.")])
+
+    events = _map_all(engine, [_interim(last + "Es"), _interim(last + "esa visibilidad, esa")])
+
+    assert [ev.text for ev in events] == ["Es", "esa visibilidad, esa"]
+
+
 def test_the_server_repeats_seen_live_are_long_enough_to_cut_finals() -> None:
     assert STALE_MIN_WORDS == 3 and FINAL_STALE_MIN_WORDS == 6
 

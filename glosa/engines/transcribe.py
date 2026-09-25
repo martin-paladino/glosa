@@ -69,9 +69,11 @@ Events:
   "cluster?O dentro", "Azure.que tienen"), so the cut reads the raw text:
   the closed segment's words may end at punctuation followed by a letter.
   The fifth showed it glued with nothing in between ("…en este
-  particularEs", "…particularesa visibilidad"): an exact prefix of 6+
-  words that is the closed segment's last interim or final is cut
-  wherever it ends.
+  particularEs", "…particularesa visibilidad"): in an interim, an exact
+  prefix of 6+ words that is the closed segment's last interim or final is
+  cut wherever it ends. Never in a final (finals were never glued): a real
+  repeat that goes on with its last word ("…es desplegar", then "…es
+  desplegarlo en producción.") keeps its final whole.
   Every drop or cut is logged at INFO. A new segment that really starts
   with the words of the one before shows up with its next interim (~0.5 s).
 - ``go_away`` with ``meta["time_left_s"]``, like LiveTranslateEngine.
@@ -281,7 +283,9 @@ class TranscribeLiveEngine:
         repeats the closed segment."""
         if self._just_closed is None or not text:
             return text
-        cut = _stale_cut(text, self._just_closed)
+        # never the no-separator cut: in a final it would cut into a real
+        # word ("…es desplegar" then "…es desplegarlo en producción.")
+        cut = _stale_cut(text, self._just_closed, glued=False)
         if cut is None or _count_words(text[:cut]) < FINAL_STALE_MIN_WORDS:
             return text  # no final is ever cut for a short match: it may be a real repeat
         if cut >= len(text) or not _count_words(text[cut:]):
@@ -318,7 +322,7 @@ def _count_words(text: str) -> int:
     return sum(1 for word in text.split() if _norm(word))
 
 
-def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
+def _stale_cut(text: str, closed: tuple[str, str], *, glued: bool = True) -> int | None:
     """Where the closed segment's text ends at the start of ``text``: None
     if ``text`` does not start with it; ``len(text)`` if ``text`` is only (a
     start of) its last interim or final, possibly ending mid-word; else the
@@ -334,7 +338,9 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
     ``FINAL_STALE_MIN_WORDS`` or more words counts even with no space or
     punctuation before the new words ("…en este particularEs",
     "…particularesa visibilidad"), while a shorter one never cuts into a
-    word ("cluster" is not the start of "clustering")."""
+    word ("cluster" is not the start of "clustering"). ``glued=False``
+    leaves that no-separator case out: finals (never glued in the live
+    runs) must not lose part of a word a real repeat goes on with."""
     norms = [n for n in map(_norm, text.split()) if n]
     if not norms:
         return len(text)  # only punctuation
@@ -348,7 +354,7 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
     # The server's own text, glued as is: an exact prefix, even with no
     # space or punctuation before the new words ("…particularEs").
     end = None
-    for prev in closed:
+    for prev in closed if glued else ():
         prev = prev.rstrip()
         if _count_words(prev) >= FINAL_STALE_MIN_WORDS and len(text) > len(prev) and text.startswith(prev):
             end = max(end or 0, len(prev))

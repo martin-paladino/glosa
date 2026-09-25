@@ -100,6 +100,8 @@ class FakeElement extends FakeNode {
     n.parentNode = this;
     return n;
   }
+  addEventListener(type, fn) { (this._listeners ??= {})[type] ??= []; this._listeners[type].push(fn); }
+  dispatchEvent(type, evt) { for (const fn of (this._listeners && this._listeners[type]) || []) fn(evt); }
   removeChild(node) {
     const i = this.childNodes.indexOf(node);
     if (i >= 0) this.childNodes.splice(i, 1);
@@ -117,7 +119,6 @@ class FakeElement extends FakeNode {
   get firstElementChild() { return this.children[0] || null; }
   get textContent() { return this.childNodes.map((n) => n.textContent).join(""); }
   set textContent(v) { this.replaceChildren(String(v)); }
-  addEventListener() {}
   closest(selector) {
     for (let n = this; n; n = n.parentNode) if (n.nodeType === 1 && matches(n, selector)) return n;
     return null;
@@ -148,13 +149,22 @@ const input = JSON.parse(fs.readFileSync(0, "utf8"));
 const lang = input.lang;
 
 const config = {
-  slug: "r1", streamBase: "/api/stream/r1/", langs: [lang], defaultLang: lang, forcedLang: lang,
+  slug: "r1", streamBase: "/api/stream/r1/", summaryBase: "/api/summary/r1/",
+  langs: [lang], defaultLang: lang, forcedLang: lang,
   source: lang, talkId: null, endonyms: {}, langNames: {}, i18n: input.i18n,
 };
 const select = h("select", { "data-lang-select": "" });
 select.options = [h("option", { value: lang })];
 const transcript = h("div", { "data-transcript": "", "data-layout": "single" },
   h("p", { "data-stage-note": "waiting" }, "waiting"));
+const summaryToggle = h("button", { "data-action": "summary", "data-summary-toggle": "", "aria-expanded": "false" });
+summaryToggle.hidden = true;
+const summaryScrim = h("div", { "data-action": "summary-close", "data-summary-scrim": "" });
+const summaryBullets = h("ul", { "data-summary-bullets": "" });
+const summaryAgo = h("p", { "data-summary-ago": "" });
+const summaryPanel = h("div", { "data-summary-panel": "" },
+  h("button", { "data-action": "summary-close", "data-summary-close": "" }, "×"),
+  summaryBullets, summaryAgo);
 const html = h("html", {},
   h("body", {},
     h("span", { "data-direction": "" }),
@@ -166,9 +176,11 @@ const html = h("html", {},
     h("button", { "data-action": "fullscreen" }),
     h("main", { "data-stage": "" }, transcript),
     h("button", { "data-action": "live", hidden: "" }),
+    summaryToggle, summaryScrim, summaryPanel,
     h("script", { id: "glosa-room" }, JSON.stringify(config)),
   ));
 
+const documentListeners = {};
 const document = {
   documentElement: html,
   fullscreenEnabled: false,
@@ -179,7 +191,8 @@ const document = {
   querySelectorAll: (s) => html.querySelectorAll(s),
   createElement: (tag) => new FakeElement(tag),
   createElementNS: (_, tag) => new FakeElement(tag),
-  addEventListener() {},
+  addEventListener(type, fn) { (documentListeners[type] ??= []).push(fn); },
+  dispatchEvent(type, evt) { for (const fn of documentListeners[type] || []) fn(evt); },
 };
 
 const sources = [];
@@ -189,12 +202,30 @@ class EventSource {
 }
 EventSource.CLOSED = 2;
 
+// Task 17: a single canned response ({"status", "body"}) every fetch() call
+// resolves to (default: 404, no summary) -- input.fetch overrides it. Real
+// timers (setInterval/clearInterval) are stubbed out: the harness drives the
+// summary poll itself (init call, then optionally one simulated click).
+const fetchResponse = input.fetch || { status: 404 };
+let fetchCalls = 0;
+async function fetchStub(url) {
+  fetchCalls += 1;
+  return {
+    ok: fetchResponse.status >= 200 && fetchResponse.status < 300,
+    status: fetchResponse.status,
+    json: async () => fetchResponse.body,
+  };
+}
+
 const storage = new Map();
 const context = {
   document,
   EventSource,
   ResizeObserver: class { observe() {} },
   requestAnimationFrame: () => 0,
+  fetch: fetchStub,
+  setInterval: () => 0,
+  clearInterval: () => {},
   localStorage: {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
@@ -204,6 +235,7 @@ const context = {
   location: { href: "http://localhost/s/r1" },
   history: { replaceState() {} },
   URL,
+  Date,
   performance,
   setTimeout,
   clearTimeout,
@@ -216,16 +248,53 @@ const [source] = sources;
 if (source.onopen) source.onopen();
 for (const msg of input.msgs) source.onmessage({ data: JSON.stringify(msg) });
 
-const page = transcript.querySelector("[data-page]");
-const phrases = page.querySelectorAll("[data-seg]").map((span) => ({
-  seg: Number(span.getAttribute("data-seg")),
-  text: span.textContent,
-  open: span.hasAttribute("data-open"),
-}));
-const live = page.querySelector("[data-live]");
-process.stdout.write(JSON.stringify({
-  url: source.url,
-  phrases,
-  text: page.querySelectorAll("p").map((p) => p.textContent).join(" | "),
-  live: live ? live.textContent : null,
-}));
+// A real macrotask flushes every microtask queued so far (Node drains the
+// whole microtask queue, however many await hops each one has, before a
+// macrotask runs) -- used both before and after simulating a click, so the
+// click lands the way a reader's would: after the page's own initial
+// summary poll has already resolved (real life: the button stays hidden
+// until then), and its own re-poll gets to resolve too before we read state.
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+(async () => {
+  await flush();   // the init pollSummary() resolves
+
+  // input.click: a data-action name (or list of them, dispatched in order,
+  // each flushed before the next -- e.g. ["summary", "summary-close"] opens
+  // then closes the panel). input.keys: key names dispatched as keydown
+  // events on document, same way (e.g. "Escape").
+  const clicks = Array.isArray(input.click) ? input.click : input.click ? [input.click] : [];
+  for (const action of clicks) {
+    const target = html.querySelector(`[data-action="${action}"]`);
+    document.dispatchEvent("click", { target, preventDefault() {} });
+    await flush();   // that click's own re-poll (if any) resolves before the next one
+  }
+  for (const key of input.keys || []) {
+    document.dispatchEvent("keydown", { key, target: html, closest: () => null, preventDefault() {} });
+    await flush();
+  }
+
+  const page = transcript.querySelector("[data-page]");
+  const phrases = page.querySelectorAll("[data-seg]").map((span) => ({
+    seg: Number(span.getAttribute("data-seg")),
+    text: span.textContent,
+    open: span.hasAttribute("data-open"),
+  }));
+  const live = page.querySelector("[data-live]");
+  process.stdout.write(JSON.stringify({
+    url: source.url,
+    phrases,
+    text: page.querySelectorAll("p").map((p) => p.textContent).join(" | "),
+    live: live ? live.textContent : null,
+    summary: {
+      fetchCalls,
+      toggleHidden: summaryToggle.hidden,
+      ariaExpanded: summaryToggle.getAttribute("aria-expanded"),
+      ariaDisabled: summaryToggle.getAttribute("aria-disabled"),
+      panelOpen: summaryPanel.classList.contains("summary-panel--open"),
+      scrimOpen: summaryScrim.classList.contains("summary-scrim--open"),
+      bullets: summaryBullets.querySelectorAll("li").map((li) => li.textContent),
+      ago: summaryAgo.textContent,
+    },
+  }));
+})();

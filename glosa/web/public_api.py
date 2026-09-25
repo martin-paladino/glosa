@@ -19,6 +19,11 @@
     instead (same rule as ``pages.room_page()``'s ``/s/{slug}`` vs.
     ``/s/{token}``) -- otherwise anyone who knows or guesses a room's slug
     could read its captions without ever having the token.
+  - ``GET /api/summary/{slug}/{lang}`` (Task 17, "¿Qué me perdí?"): the
+    latest summary glosa/summary.py's SummaryScheduler built for this room
+    and language -- ``{"talk_id", "generated_at", "bullets"}`` or 404 when
+    there is none yet (or ``lang`` is not one of ``stream_langs()``). Same
+    slug/token rule as the stream route above (``_resolve_worker``).
   - ``GET /exports/{talk_id}/{lang}.{srt|vtt|txt}?version=live|corrected``
     (task-11r-brief.md Ruling 2): a finished talk's captions, rendered by
     glosa/exports.py from db.get_segments(talk_id, lang, version). 404 for
@@ -36,7 +41,8 @@
   - ``GET /healthz``.
 
 create_app() (glosa/web/app.py) provides ``app.state.workers`` (room id ->
-RoomWorker), ``app.state.bus``, ``app.state.db`` and ``app.state.settings``.
+RoomWorker), ``app.state.bus``, ``app.state.db``, ``app.state.settings`` and
+``app.state.summaries`` (Task 17: glosa.summary.SummaryStore).
 """
 
 from __future__ import annotations
@@ -81,6 +87,22 @@ async def stream(slug: str, lang: str, request: Request):
         raise HTTPException(status_code=404)
     last_event_id = _last_event_id(request)
     return sse_response(request.app.state.bus.subscribe(worker.room.id, lang, last_event_id))
+
+
+@router.get("/api/summary/{slug}/{lang}")
+async def summary(slug: str, lang: str, request: Request) -> dict:
+    qr_only = _audience_mode(request) == "qr_only"
+    worker = _resolve_worker(_workers(request), slug, qr_only)
+    if worker is None or lang not in worker.stream_langs():
+        raise HTTPException(status_code=404)
+    result = request.app.state.summaries.get(worker.room.id, lang)
+    # Only the current talk's summary: the scheduler notices a talk change
+    # on its next tick (up to SUMMARY_EVERY_S later), so a stored summary of
+    # the previous talk must never be served under the new one.
+    talk = worker.talk
+    if result is None or talk is None or result.talk_id != talk.id:
+        raise HTTPException(status_code=404)
+    return {"talk_id": result.talk_id, "generated_at": result.generated_at, "bullets": result.bullets}
 
 
 @router.get("/exports/{talk_id}/{lang}.{fmt}")

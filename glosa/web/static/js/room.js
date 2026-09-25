@@ -41,6 +41,7 @@
   const BACKLOG_GAP_MS = 250;      // the replayed history arrives as one burst
   const BACKLOG_MAX_MS = 2000;
   const RETRY_MS = 5000;           // when the server refuses the stream outright
+  const SUMMARY_POLL_MS = 60000;   // "¿Qué me perdí?": how often the summary is refreshed in the background
 
   // Visual class names, all in one place. room.js only ever writes them (for the
   // CSS); it finds elements through data-* hooks and keeps its own state, so a
@@ -70,6 +71,11 @@
   const toLive = $('[data-action="live"]');
   const themeButton = $('[data-action="theme"]');
   const fullscreenButton = $('[data-action="fullscreen"]');
+  const summaryToggle = $("[data-summary-toggle]");
+  const summaryPanel = $("[data-summary-panel]");
+  const summaryScrim = $("[data-summary-scrim]");
+  const summaryBullets = $("[data-summary-bullets]");
+  const summaryAgo = $("[data-summary-ago]");
 
   // ---- small helpers ---------------------------------------------------------
 
@@ -443,12 +449,14 @@
     const title = $("[data-talk-title]");
     const meta = $("[data-talk-meta]");
     const id = data.talk_id || null;
+    const talkChanged = id !== state.talkId;
     if (!id) {
       state.talkId = null;
       state.roomState = "idle";
       title.hidden = true;
       meta.hidden = true;
       renderStatus();
+      if (talkChanged) pollSummary();   // the room went idle: no summary for it any more
       return;
     }
     const sourceChanged = (data.language || null) !== state.source;
@@ -462,6 +470,7 @@
     meta.hidden = false;
     if (!feeds.some((feed) => feed.page.hasContent())) showWaitingNote();
     renderStatus();
+    if (talkChanged) pollSummary();   // a new talk starts with no summary of its own yet
     if (sourceChanged) {
       labelOptions();
       if (state.bilingual && live) connect();   // the original's column changed language
@@ -521,6 +530,71 @@
     if (note) note.replaceWith(waiting);
     else transcript.prepend(waiting);
   }
+
+  // ---- "¿Qué me perdí?" (Task 17): GET /api/summary/{slug}/{lang}, polled -----------------
+  // in the background every SUMMARY_POLL_MS (and once right away, and again on a caption
+  // language change) so the button knows whether to show at all; a click refreshes it once
+  // more (freshest) and opens the panel. Esc and the close button/scrim both dismiss it.
+
+  const summary = { data: null, open: false };
+
+  function summaryOpenFor(lang) {
+    return cfg.summaryBase ? cfg.summaryBase + encodeURIComponent(lang) : null;
+  }
+
+  async function pollSummary() {
+    const url = summaryOpenFor(state.lang);
+    if (!url) return;
+    let data = null;
+    try {
+      const res = await fetch(url);
+      if (res.ok) data = await res.json();
+    } catch {
+      data = null;
+    }
+    summary.data = data;
+    summaryToggle.hidden = !data;
+    summaryToggle.setAttribute("aria-disabled", data ? "false" : "true");
+    if (!data && summary.open) closeSummaryPanel();
+    else if (summary.open) renderSummaryPanel();
+  }
+
+  function renderSummaryPanel() {
+    const data = summary.data;
+    summaryBullets.replaceChildren(...(data ? data.bullets : []).map((text) => el("li", {}, text)));
+    if (data) {
+      const minutes = Math.max(0, Math.floor((Date.now() / 1000 - data.generated_at) / 60));
+      summaryAgo.textContent = format(T.summary_ago, { n: minutes });
+    } else {
+      summaryAgo.textContent = "";
+    }
+  }
+
+  function openSummaryPanel() {
+    if (!summary.data) return;
+    summary.open = true;
+    summaryToggle.setAttribute("aria-expanded", "true");
+    summaryPanel.classList.add("summary-panel--open");
+    summaryScrim.classList.add("summary-scrim--open");
+    renderSummaryPanel();
+    pollSummary();   // freshest bullets right as the reader opens it
+  }
+
+  function closeSummaryPanel() {
+    summary.open = false;
+    summaryToggle.setAttribute("aria-expanded", "false");
+    summaryPanel.classList.remove("summary-panel--open");
+    summaryScrim.classList.remove("summary-scrim--open");
+  }
+
+  function toggleSummaryPanel() {
+    if (summary.open) closeSummaryPanel();
+    else openSummaryPanel();
+  }
+
+  summaryToggle.setAttribute("aria-disabled", "true");
+  pollSummary();
+  setInterval(pollSummary, SUMMARY_POLL_MS);
 
   // ---- following the live text --------------------------------------------------------
 
@@ -587,6 +661,7 @@
       }
     }
     connect();
+    pollSummary();   // a language change may show a different (or no) button/panel
   });
 
   function currentScale() {
@@ -639,10 +714,16 @@
     if (action === "size") stepScale(Number(button.dataset.step));
     else if (action === "theme") cycleTheme();
     else if (action === "fullscreen") toggleFullscreen();
+    else if (action === "summary") toggleSummaryPanel();
+    else if (action === "summary-close") closeSummaryPanel();
   });
 
   // Desktop shortcuts: F full screen, + and − text size.
   document.addEventListener("keydown", (event) => {
+    if (summary.open && event.key === "Escape") {
+      closeSummaryPanel();
+      return;
+    }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target;
     if (target.closest && target.closest("input, select, textarea, [contenteditable]")) return;

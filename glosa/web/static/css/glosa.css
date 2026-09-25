@@ -951,6 +951,93 @@
   /* ---- Pie: la definición ----------------------------------------------------- */
   .colophon { color: var(--ink-3); }
   .colophon b { font: 700 1em/1 var(--font-caption); color: var(--ink-2); }
+
+  /* ---- "¿Qué me perdí?" (Tarea 17): botón + panel con las últimas viñetas ------
+     Mismo patrón que el cajón del panel (.scrim/.drawer--open): siempre en el
+     DOM, animado con transform + visibility, nunca con [hidden]. El botón sí
+     usa [hidden]: aparece/desaparece según haya o no un resumen (room.js). */
+  .summary-toggle {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 30px;
+    padding: 0 14px;
+    border: var(--border-w) solid var(--line-2);
+    border-radius: var(--radius-key);
+    background: var(--key);
+    color: var(--ink);
+    font: 600 var(--step--1)/1 var(--font-label);
+    font-stretch: 90%;
+    white-space: nowrap;
+  }
+  .summary-toggle:hover { background: var(--key-hover); }
+  .summary-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms;
+  }
+  .summary-scrim--open { opacity: 1; pointer-events: auto; }
+  .summary-panel {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    z-index: 31;
+    max-block-size: min(70vh, 32rem);
+    overflow-y: auto;
+    padding: var(--space-5) var(--gutter) var(--space-6);
+    background: var(--drawer);
+    border-start-start-radius: 14px;
+    border-start-end-radius: 14px;
+    box-shadow: var(--shadow-float);
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform 200ms var(--ease-out), visibility 0s 200ms;
+  }
+  .summary-panel--open {
+    transform: none;
+    visibility: visible;
+    transition: transform 200ms var(--ease-out), visibility 0s;
+  }
+  .summary-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .summary-panel__title { font: 750 var(--step-2)/1.1 var(--font-label); font-stretch: var(--narrow-2); }
+  .summary-panel__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 32px;
+    block-size: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--ink-2);
+    font-size: 22px;
+    line-height: 1;
+  }
+  .summary-panel__close:hover { background: var(--key-hover); }
+  .summary-panel__bullets {
+    display: grid;
+    gap: 10px;
+    margin-block-start: var(--space-4);
+    padding-inline-start: 1.1em;
+    list-style: disc;
+  }
+  .summary-panel__bullets li { font: 400 var(--step-1)/1.4 var(--font-caption); color: var(--cap); }
+  .summary-panel__ago { margin-block-start: var(--space-4); font-size: var(--step--1); color: var(--ink-3); }
+
+  @media (min-width: 640px) {
+    .summary-panel {
+      inset-inline-start: auto;
+      inset-inline-end: var(--space-6);
+      inset-block-end: var(--space-6);
+      inline-size: min(24rem, calc(100vw - 2 * var(--space-6)));
+      max-block-size: min(60vh, 28rem);
+      border-radius: 14px;
+      transform: translateY(12px);
+    }
+  }
 }
 
 

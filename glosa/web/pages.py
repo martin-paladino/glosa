@@ -17,13 +17,20 @@ Task 5's create_app() includes `router` and provides on app.state:
     always off).
 
 Interface language: `?lang=es|en` wins, then Accept-Language, then Spanish.
-Live captions arrive over SSE (`/api/stream/{slug}/{lang}`), handled by
-static/js/room.js; the page embeds what room.js needs as JSON.
+Live captions arrive over SSE (`/api/stream/{slug}/{lang}`, glosa/web/
+public_api.py), handled by static/js/room.js; the page embeds what room.js
+needs as JSON.
 
 ``Settings.audience_mode`` (glosa/config.py): "all" (default) or "qr_only".
-In `qr_only`, `/` lists no rooms and `/s/{slug}` 404s -- only `/s/{token}`
-(a room's ``Room.public_token``) works, which is what `/qr/{room}` then
-encodes instead of the slug (plan case 14.2).
+Ruling 56: in `qr_only`, nothing public may reveal a room's slug->token
+mapping or its captions without the token. `/` lists no rooms; `/s/{slug}`
+and `/overlay/{slug}` 404 -- only the token forms, `/s/{token}` and
+`/overlay/s/{token}`, work (a room's ``Room.public_token``), which is what
+`/qr/{room}` then encodes instead of the slug (plan case 14.2); `/qr/{room}`
+itself requires an admin session in this mode (it's the page that hands out
+that token); and `/api/stream/{slug}/{lang}` (public_api.py) only resolves
+by the token too, so both `room_page()`'s and `overlay_page_by_token()`'s
+embedded JSON config point room.js/overlay.js at the token, not the slug.
 """
 
 from __future__ import annotations
@@ -34,6 +41,7 @@ from typing import cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from glosa.i18n import (
@@ -107,10 +115,15 @@ def room_page(slug: str, request: Request):
     forced_caption = requested if requested in langs else None
     caption_lang = forced_caption or _default_caption_lang(ui, langs, now)
     source = now["language"] if now else None
+    # Ruling 56: /api/stream/{slug}/{lang} (public_api.py) itself refuses a
+    # plain slug in qr_only mode, same as this page -- stream by the token
+    # instead (``worker`` is always set here when qr_only: the only way
+    # ``room`` is non-None above is via the token match).
+    stream_slug = worker.room.public_token if qr_only else room["slug"]
 
     config = {
         "slug": room["slug"],
-        "streamBase": f"/api/stream/{quote(room['slug'], safe='')}/",
+        "streamBase": f"/api/stream/{quote(stream_slug, safe='')}/",
         "langs": langs,
         "defaultLang": caption_lang,
         "forcedLang": forced_caption,
@@ -148,11 +161,38 @@ def room_page(slug: str, request: Request):
 def overlay_page(slug: str, request: Request):
     """`/overlay/{room}?lang=&lines=&size=&logo=1`: the transparent,
     chrome-less page a vMix browser input or an OBS browser source reads
-    (docs/design/overlay.html; static/js/overlay.js). Not gated by
-    ``qr_only`` -- it's for the production booth, not the audience."""
+    (docs/design/overlay.html; static/js/overlay.js). It's for the
+    production booth, not the audience, but it directly serves live
+    captions, so Ruling 56 applies the same as `room_page()`'s: in
+    `qr_only` mode this slug form 404s (like `/s/{slug}`) -- use
+    `/overlay/s/{public_token}` (below) instead, the same token the
+    audience's `/s/{token}` URL uses."""
+    if _audience_mode(request) == "qr_only":
+        raise HTTPException(status_code=404)
     worker = _find_worker(request, slug)
     if worker is None:
         raise HTTPException(status_code=404)
+    return _overlay_response(worker, request, stream_slug=worker.room.slug)
+
+
+@router.get("/overlay/s/{token}", include_in_schema=False)
+def overlay_page_by_token(token: str, request: Request):
+    """`/overlay/s/{public_token}`: the token form of `/overlay/{room}`,
+    works in both `all` and `qr_only` mode (plan case 14.2, Ruling 56) --
+    admins printing/pasting a station's overlay link in `qr_only` mode use
+    this form (they already know the token from the `/qr/{room}` page or
+    the admin drawer)."""
+    worker = next(
+        (w for w in _workers(request).values() if getattr(w.room, "public_token", None) == token), None
+    )
+    if worker is None:
+        raise HTTPException(status_code=404)
+    qr_only = _audience_mode(request) == "qr_only"
+    stream_slug = worker.room.public_token if qr_only else worker.room.slug
+    return _overlay_response(worker, request, stream_slug=stream_slug)
+
+
+def _overlay_response(worker, request: Request, *, stream_slug: str):
     langs = worker.langs()
     requested = request.query_params.get("lang")
     lang = requested if requested in langs else (langs[0] if langs else "es")
@@ -164,7 +204,7 @@ def overlay_page(slug: str, request: Request):
         "show_logo": request.query_params.get("logo") == "1",
         "logo_url": branding.get("logo_url"),
         "brand_css": _brand_css(branding),
-        "config": {"streamBase": f"/api/stream/{quote(worker.room.slug, safe='')}/", "lang": lang},
+        "config": {"streamBase": f"/api/stream/{quote(stream_slug, safe='')}/", "lang": lang},
     }
     return templates.TemplateResponse(request, "overlay.html", context)
 
@@ -174,22 +214,23 @@ def qr_page(slug: str, request: Request):
     """`/qr/{room}`: a printable/projectable page with the room's QR --
     `/s/{slug}`, or `/s/{token}` in `qr_only` mode (plan case 14.1).
 
-    Deliberately public, no admin session required, both to print this from
-    a kiosk browser and because the brief's own interface lists it as a
-    plain page (not one of the `/api/admin/*` routes). One consequence in
-    `qr_only` mode worth flagging for anyone tightening the threat model
-    later: this route is still keyed by the room's plain `slug`, so a
-    caller who can guess or already knows a room's slug (its config.yaml
-    id, not usually treated as secret) gets straight to that room's
-    unguessable `public_token` here -- `qr_only`'s guarantee is "not
-    listed and not guessable from the room's own link", not "the token
-    is unobtainable by anyone who knows the room exists"."""
+    Public in `all` mode, no admin session required, both to print this
+    from a kiosk browser and because the brief's own interface lists it as
+    a plain page (not one of the `/api/admin/*` routes). In `qr_only` mode
+    this page is the one place that turns a room's plain `slug` into its
+    secret `public_token` (Ruling 56: nothing public may do that), so it
+    requires an admin session there -- same dependency and redirect
+    `/admin` uses (glosa/web/admin_api.py:admin_page)."""
     ui, forced = _ui_lang(request)
+    qr_only = _audience_mode(request) == "qr_only"
+    if qr_only and not is_authenticated(request):
+        suffix = f"?lang={forced}" if forced else ""
+        return RedirectResponse(f"/admin/login{suffix}", status_code=303)
     worker = _find_worker(request, slug)
     base = _base_context(request, ui, forced)
     if worker is None:
         return templates.TemplateResponse(request, "not_found.html", base, status_code=404, headers=_VARY)
-    key = worker.room.public_token if _audience_mode(request) == "qr_only" else worker.room.slug
+    key = worker.room.public_token if qr_only else worker.room.slug
     url = f"{public_base(request)}/s/{quote(key, safe='')}"
     context = base | {
         "room_name": worker.room.name,

@@ -110,7 +110,11 @@ def _ensure_transcoding(source: Path, cache: Path) -> None:
     if existing is not None and not existing.done():
         return  # already being made; this poll just waits for the next one
     LISTEN_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    _inflight[key] = asyncio.create_task(_transcode(source, cache), name=f"listen-transcode-{key}")
+    task = asyncio.create_task(_transcode(source, cache), name=f"listen-transcode-{key}")
+    # Otherwise _inflight grows by one finished Task per distinct clip ever
+    # played, for the life of the process (review finding 4).
+    task.add_done_callback(lambda t: _inflight.pop(key, None) if _inflight.get(key) is t else None)
+    _inflight[key] = task
 
 
 async def _transcode(source: Path, cache: Path) -> None:

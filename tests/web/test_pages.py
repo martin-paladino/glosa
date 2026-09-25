@@ -495,6 +495,47 @@ def test_overlay_of_an_unknown_room_is_404() -> None:
     assert client.get("/overlay/nope").status_code == 404
 
 
+# ---- overlay under qr_only (Task 14b fix round 1, Ruling 56) ------------------
+
+
+def test_overlay_slug_404s_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    assert client.get("/overlay/r1").status_code == 404
+
+
+def test_overlay_token_form_works_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    response = client.get("/overlay/s/tok-r1")
+    html = response.text
+
+    assert response.status_code == 200
+    assert _json_script(html, "glosa-overlay") == {"streamBase": "/api/stream/tok-r1/", "lang": "en"}
+
+
+def test_overlay_token_form_also_works_in_all_mode() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    response = client.get("/overlay/s/tok-r1")
+    html = response.text
+
+    assert response.status_code == 200
+    # all mode: the stream endpoint isn't gated by token, so the overlay
+    # still keys the SSE stream by the room's real slug.
+    assert _json_script(html, "glosa-overlay") == {"streamBase": "/api/stream/r1/", "lang": "en"}
+
+
+def test_overlay_token_form_of_an_unknown_token_is_404() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    assert client.get("/overlay/s/nope").status_code == 404
+
+
 # ---- QR page (Task 14b, plan case 14.1) ----------------------------------------
 
 
@@ -553,6 +594,27 @@ def test_qr_only_mode_404s_the_slug_but_the_token_works() -> None:
     assert "Gran sala" in ok.text
 
 
+def test_room_config_uses_the_token_as_the_stream_base_in_qr_only_mode() -> None:
+    """Ruling 56: /api/stream/{slug}/{lang} is itself gated by the token in
+    qr_only mode (public_api.py), so the embedded config must ask room.js
+    to stream from the token, not the real (now-inaccessible) slug."""
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    config = _room_config(client.get("/s/tok-r1", headers=SPANISH).text)
+
+    assert config["streamBase"] == "/api/stream/tok-r1/"
+
+
+def test_room_config_still_uses_the_slug_as_the_stream_base_in_all_mode() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    config = _room_config(client.get("/s/r1", headers=SPANISH).text)
+
+    assert config["streamBase"] == "/api/stream/r1/"
+
+
 def test_all_mode_still_serves_the_slug_and_also_accepts_the_token() -> None:
     app = _make_full_app(audience_mode="all")
     client = TestClient(app)
@@ -563,12 +625,43 @@ def test_all_mode_still_serves_the_slug_and_also_accepts_the_token() -> None:
 
 def test_qr_page_encodes_the_token_url_in_qr_only_mode() -> None:
     app = _make_full_app(audience_mode="qr_only")
-    client = TestClient(app)
+    client = TestClient(app, cookies=_admin_cookies(app))
 
     html = client.get("/qr/r1", headers=SPANISH).text
 
     assert "http://testserver/s/tok-r1" in html
     assert "http://testserver/s/r1<" not in html and ">http://testserver/s/r1\n" not in html
+
+
+# ---- /qr/{room} requires an admin session in qr_only mode (Task 14b fix round 1,
+# Ruling 56: nothing public may hand out a room's slug->token mapping) ----------
+
+
+def test_qr_page_redirects_to_admin_login_when_unauthenticated_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    response = client.get("/qr/r1?lang=en", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login?lang=en"
+
+
+def test_qr_page_works_with_an_admin_session_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app, cookies=_admin_cookies(app))
+
+    response = client.get("/qr/r1")
+
+    assert response.status_code == 200
+    assert "http://testserver/s/tok-r1" in response.text
+
+
+def test_qr_page_stays_public_without_a_session_in_all_mode() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    assert client.get("/qr/r1").status_code == 200
 
 
 # ---- "Escuchar el audio" flag on the public page (Task 14b, Ruling 5) ---------

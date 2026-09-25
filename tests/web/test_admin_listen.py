@@ -202,6 +202,37 @@ async def test_a_first_poll_kicks_off_exactly_one_transcode_task(tmp_path: Path,
         await _drain_inflight()
 
 
+async def test_inflight_entry_is_removed_once_the_transcode_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Task 14b fix round 1, review finding 4: a done ``_inflight`` task must
+    be popped by a done-callback, not just by tests' own ``_drain_inflight``
+    helper -- otherwise it stays in the dict for the life of the process."""
+    clip = tmp_path / "clip.wav"
+    clip.write_bytes(FIXTURE_CLIP.read_bytes())
+
+    class _FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_exec(*cmd, **kw):
+        return _FakeProc()
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+    app = _make_app({"r1": _worker(test_file=(str(clip), 0.0))})
+    async with _client(app) as client:
+        await client.get("/api/admin/listen/r1")  # kicks off the in-flight transcode
+
+        assert admin_listen._inflight  # one entry, in flight
+        (task,) = admin_listen._inflight.values()
+        await task  # let the (fake, instant) transcode finish
+        await asyncio.sleep(0)  # let the done-callback run (scheduled via call_soon)
+
+        assert admin_listen._inflight == {}
+
+
 # ---- real ffmpeg end to end -----------------------------------------------------
 
 

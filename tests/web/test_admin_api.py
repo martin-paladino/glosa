@@ -615,3 +615,13 @@ def test_each_drawer_metric_has_an_accessible_explanation() -> None:
     assert 'role="tooltip"' in es
     assert "Qué tan fiel es la traducción al original, de 0 a 1." in es and "Jev" not in es.split("hint-metric_quality")[1][:400]
     assert "How faithful the translation is to the original, from 0 to 1." in en
+
+
+def test_the_admin_has_the_shared_theme_button() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    html = client.get("/admin?lang=es").text
+
+    assert 'data-action="theme"' in html and "/static/js/theme.js" in html
+    assert "Tema" in html
+    assert "GlosaTheme.cycle" in client.get("/static/js/admin.js").text

@@ -11,7 +11,11 @@
 # Spanish transcribe-live session (samples/fixtures/tr_es.jsonl). Spanish
 # rooms get the glossary engine by default, English ones the fast engine,
 # so this file matches; a talk in another language logs a warning. The
-# text translations are FakeTranslator's ("[en] <source text>").
+# demo-es room's English track shows FakeTranslator's real recorded
+# translations of that Spanish recording (samples/fixtures/tr_es_en.json,
+# built by scripts/build_demo_translations.py -- see samples/README.md);
+# any segment not in that recording (e.g. a different talk's Spanish audio)
+# falls back to FakeTranslator's placeholder ("[en] <source text>").
 
 event_name: Glosa demo
 timezone: UTC

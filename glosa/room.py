@@ -174,7 +174,7 @@ from glosa.room_text import (
     translation_langs,
 )
 from glosa.text.pipeline import TranslatedSegment, TranslateFn
-from glosa.text.translator import FakeTranslator, Translator
+from glosa.text.translator import FakeTranslator, Translator, load_demo_translations
 
 log = logging.getLogger(__name__)
 
@@ -690,7 +690,7 @@ class RoomWorker:
         if lane_targets:
             translate = self._translate
             if translate is None and self._settings.engine_mode == "fake":
-                translate = FakeTranslator().translate
+                translate = FakeTranslator(lookup=load_demo_translations()).translate
             elif translate is None:
                 prices = self._settings.prices
                 side.translator = Translator(

@@ -44,15 +44,14 @@ rooms:
     source_url: "samples/en_clip.opus"
     language: en
     default_targets: [es]
-  # A room station (Task 14a): a mini PC opens /station/<id>?key=<station_key>
+  # A room station: a mini PC opens /station/<id>?key=<station_key>
   # (glosa.web.station.station_url), captures the audio desk's feed in the
   # browser and streams it to Glosa over a WebSocket -- see the README's
-  # "Room stations (mini PC per stage)" section. source_url isn't a URL for
-  # this source_type; any non-empty placeholder works.
+  # "Room stations (mini PC per stage)" section. No source_url needed: the
+  # station brings its own audio.
   # - id: main-station
   #   name: Main Stage (station)
   #   source_type: emitter
-  #   source_url: main-station
   #   language: es
   #   default_targets: [en]
 

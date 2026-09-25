@@ -229,16 +229,20 @@ flowchart LR
   degradada y por qué, el presupuesto al 80 %, una alarma de silencio); la
   fila de una sala trae un botón de un clic para reconectar/reabrir la
   fuente. Además: el medidor de gasto, el log de eventos, la agenda de hoy
-  con el próximo cambio automático, y un cajón por sala (hacé clic o
-  apretá 1–9; Esc cierra) con auto/manual, iniciar/terminar charla,
-  reconectar, **"Probar con audio"** (reproducir una muestra o un archivo
-  subido a través de la sala para juzgar la calidad sin una charla en
-  vivo), **"Escuchar el audio"** (un admin puede escuchar ese audio de
-  prueba sincronizado con los subtítulos), una lista de exportaciones,
-  cada métrica contra su límite y el historial de la sala, y — para una
-  estación de sala — su estado de conexión, link, código QR y **"Recargar
-  estación"**. Ver [`docs/operator-guide.md`](docs/operator-guide.md) (en
-  inglés) para la referencia completa de botones.
+  con el próximo cambio automático, el mismo selector de tema claro/oscuro/
+  alto contraste (**Tema**) y el botón **Atajos** de las páginas del
+  público, tooltips en los botones de motor/modo/cajón, y un cajón por
+  sala (hacé clic o apretá 1–9; Esc cierra) con auto/manual, iniciar/
+  terminar charla, reconectar, **"Probar con audio"** (reproducir una
+  muestra o un archivo subido a través de la sala para juzgar la calidad
+  sin una charla en vivo — rechazado mientras hay una charla agendada
+  abierta o por empezar), **"Escuchar el audio"** (un admin puede escuchar
+  ese audio de prueba sincronizado con los subtítulos), una lista de
+  exportaciones (incluye las sesiones libres ya terminadas), cada métrica
+  contra su límite y el historial de la sala, y — para una estación de
+  sala — su estado de conexión, link, código QR y **"Recargar estación"**.
+  Ver [`docs/operator-guide.md`](docs/operator-guide.md) (en inglés) para
+  la referencia completa de botones.
 - **Sugerencia de Jev de charla no coincidente** ("¿Pasar a manual?", solo
   admin, necesita `TYPESAFE_API_KEY`): un aviso en el panel — nunca
   automático — cuando el último minuto de subtítulos de una sala en modo

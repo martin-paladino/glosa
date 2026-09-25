@@ -108,7 +108,16 @@ class QuickFakeEngine(FakeEngine):
         self._closing = asyncio.Event()
         self._usd = usd
         self.end_utterances = 0
+        self.sent: list[float] = []  # audio clock of each chunk it got
         super().__init__(cfg, _SleepUntilClosed(clock, self._closing), fail_after_s=fail_after_s)
+
+    @property
+    def closed(self) -> bool:
+        return self._closing.is_set()
+
+    async def send_audio(self, chunk: AudioChunk) -> None:
+        self.sent.append(chunk.t)
+        await super().send_audio(chunk)
 
     async def end_utterance(self) -> None:
         self.end_utterances += 1
@@ -144,6 +153,34 @@ class Factory:
         engine = QuickFakeEngine(replace(cfg, fixture_path=str(fixture)), self.clock, self.usd, self.fail_after_s)
         self.engines.append(engine)
         return engine
+
+
+class RecordingTranslator:
+    """Stands in for glosa.room.Translator (monkeypatched): records every
+    instance a room makes and whether it was closed."""
+
+    made: list[RecordingTranslator] = []
+
+    def __init__(self, api_key: str, **kwargs) -> None:
+        self.api_key = api_key
+        self.closed = 0
+        type(self).made.append(self)
+
+    async def translate(self, segment, target, glossary, context) -> Translation:
+        await asyncio.sleep(0)
+        return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+@pytest.fixture
+def translators(monkeypatch: pytest.MonkeyPatch) -> list[RecordingTranslator]:
+    """The Translators rooms make (no FakeTranslate injected), in order."""
+    made: list[RecordingTranslator] = []
+    monkeypatch.setattr(RecordingTranslator, "made", made)
+    monkeypatch.setattr("glosa.room.Translator", RecordingTranslator)
+    return made
 
 
 class FakeTranslate:
@@ -1346,24 +1383,8 @@ async def test_a_glossary_talk_translates_to_every_target(tmp_path: Path, db) ->
         assert msgs[-1].type == "talk" and msgs[-1].data["talk_id"] is None
 
 
-async def test_each_run_gets_a_translator_of_its_own_closed_with_the_run(
-    db, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    made: list = []
-
-    class RecordingTranslator:
-        def __init__(self, api_key: str, **kwargs) -> None:
-            self.api_key = api_key
-            self.closed = 0
-            made.append(self)
-
-        async def translate(self, segment, target, glossary, context) -> Translation:
-            return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)
-
-        async def aclose(self) -> None:
-            self.closed += 1
-
-    monkeypatch.setattr("glosa.room.Translator", RecordingTranslator)
+async def test_each_run_gets_a_translator_of_its_own_closed_with_the_run(db, translators) -> None:
+    made = translators
     clock = DrivenClock()
     bus = CaptionBus(clock=clock)
     worker = RoomWorker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, TR_ES),
@@ -1382,6 +1403,24 @@ async def test_each_run_gets_a_translator_of_its_own_closed_with_the_run(
     await run_for(clock, 1.0)
     await worker.stop()
     assert len(made) == 2
+
+
+async def test_more_than_100_glossary_terms_are_capped_with_a_warning(db, caplog: pytest.LogCaptureFixture) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, TR_ES)
+    glossary = tuple(GlossaryTerm(f"term{i}", True) for i in range(130)) + (GlossaryTerm("TERM0", True),)
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("g1", glossary=glossary))
+    await run_for(clock, 0.5)
+    await worker.stop()
+
+    assert factory.configs[0].vocabulary == [f"term{i}" for i in range(100)]
+    assert "130 glossary terms" in caplog.text
+    assert ("warning", "vocabulary", "g1: 130 glossary terms: only the first 100 go to transcribe-live") in (
+        await _events(db)
+    )
 
 
 async def test_the_free_session_engine_follows_the_room_language(db) -> None:
@@ -1485,12 +1524,16 @@ async def test_three_failed_connects_in_two_minutes_switch_the_talk_to_the_gloss
     hook = HookRecorder()
     fail = _failing_connect(tmp_path)
     factory = Factory(clock, fail, fail, fail, TR_ES)
-    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory(), on_talk_end=hook)
+    ingests = IngestFactory()
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, ingests, on_talk_end=hook)
 
     await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
     await run_for(clock, 12.0)
 
     assert [c.kind for c in factory.configs] == ["fast", "fast", "fast", "glossary"]
+    assert len(ingests.made) == 1  # hot: the source was never reopened
+    assert [m.type for m in _track(bus, "en", "f1")].count("talk") == 1  # nor the talk announced again
+    assert worker._run.relay.last_seq == 4  # the glossary relay numbers its sessions after Live Translate's
     assert worker.talk is not None and worker.talk.id == "f1" and worker.talk.engine == "glossary"
     stored = await db.get_talk("f1")
     assert stored.engine == "glossary" and stored.status == "live"  # persisted; the talk goes on
@@ -1522,6 +1565,7 @@ async def test_three_hung_sessions_in_two_minutes_switch_to_the_glossary_engine(
 
     # the third stall already opened a fourth Live Translate session; then the switch
     assert [c.kind for c in factory.configs] == ["fast", "fast", "fast", "fast", "glossary"]
+    assert all(engine.closed for engine in factory.engines[:4])
     assert (await db.get_talk("f1")).engine == "glossary"
     await worker.stop()
     assert not _live_tasks()
@@ -1555,5 +1599,141 @@ async def test_a_glossary_talk_has_no_fallback(tmp_path: Path, db) -> None:
     await run_for(clock, 12.0)
 
     assert len(factory.configs) >= 4 and {c.kind for c in factory.configs} == {"glossary"}
+    assert "fallback" not in [t for _, t, _ in await _events(db)]
+    await worker.stop()
+
+
+def _error(t: float, code: int, retryable: bool) -> dict:
+    return {"t": t, "kind": "error", "text": f"error {code}", "meta": {"code": code, "retryable": retryable}}
+
+
+def _recording(path: Path, rows: list[dict]) -> Path:
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    return path
+
+
+async def test_a_halted_live_translate_swaps_to_the_glossary_engine_hot(tmp_path: Path, db, translators) -> None:
+    """Rulings 48-49: a non-retryable Live Translate error (here 1008, a model
+    that is gone) switches the talk to the glossary engine at the next tick,
+    on the fly: same ingest and VAD, continuous audio clock, no new "talk"
+    message, nothing captioned twice; the old relay, lane and Translator are
+    closed."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    lt = _recording(tmp_path / "lt.jsonl", [
+        {"t": 1.0, "kind": "source_delta", "text": " We deploy."},
+        {"t": 1.2, "kind": "target_delta", "text": " Desplegamos."},
+        {"t": 3.0, "kind": "source_delta", "text": " With Helm."},
+        {"t": 3.2, "kind": "target_delta", "text": " Con Helm."},
+        _error(6.0, 1008, False),
+    ])
+    tr = _transcript(tmp_path / "tr.jsonl", [(1.0, "interim", "Then we"), (1.5, "final", "Then we scale.")])
+    factory = Factory(clock, lt, tr)
+    ingests = IngestFactory()
+    worker = RoomWorker(_room(), _settings(), bus, db, clock, factory, ingest_factory=ingests, realtime=False)
+
+    await worker.start(_talk("f1", language="en", targets=("es", "pt"), engine="fast"))
+    await run_for(clock, 5.0)
+    old_relay, old_lane = worker._run.relay, worker._run.lane
+    assert old_lane is not None and len(translators) == 1  # pt: the fast engine's extra language
+    await run_for(clock, 1.5)  # the error at ~6 s halts the relay; the next tick swaps
+
+    assert [c.kind for c in factory.configs] == ["fast", "glossary"]
+    assert worker._run.relay is not old_relay and worker._run.engine == "glossary"
+    assert factory.engines[0].closed and old_lane.pipeline._closed  # the old side is gone
+    assert [t.closed for t in translators] == [1, 0]
+    await run_for(clock, 3.0)
+
+    assert len(ingests.made) == 1 and not ingests.made[0].closed  # the same source, never reopened
+    fast_t, glossary_t = factory.engines[0].sent, factory.engines[1].sent
+    assert glossary_t and 0 < glossary_t[0] - fast_t[-1] < 1.0  # the audio clock goes on
+    assert all(round(b - a, 3) == 0.1 for a, b in zip(glossary_t, glossary_t[1:]))
+    assert factory.configs[1].source_lang == "en"
+    await worker.stop()
+
+    assert [t.closed for t in translators] == [1, 1]
+    for lang in ("en", "es", "pt"):
+        msgs = _track(bus, lang, "f1")
+        assert [m.data["talk_id"] for m in msgs if m.type == "talk"] == ["f1", None]  # announced once, ended once
+        texts = _closed_texts(msgs)
+        assert len(texts) == len(set(texts)), texts  # nothing captioned twice
+    assert [t.strip() for t in _closed_texts(_track(bus, "en", "f1"))] == ["We deploy.", "With Helm.", "Then we scale."]
+    es = [t.strip() for t in _closed_texts(_track(bus, "es", "f1"))]
+    assert es[:2] == ["Desplegamos.", "Con Helm."] and "[es] Then we scale." in es
+    for lang in ("en", "es", "pt"):
+        saved = [x.text for x in await db.get_segments("f1", lang, "live")]
+        assert len(saved) == len(set(saved)), saved
+    assert (await db.get_talk("f1")).engine == "glossary"
+    events = await _events(db)
+    assert ("warning", "fallback", "fallback: glossary engine") in events
+    assert [t for _, t, _ in events].count("talk_start") == 1
+    assert not _live_tasks()
+
+
+class NoEngineWritesDb:
+    """A Database whose update_talk(engine=...) fails."""
+
+    def __init__(self, db) -> None:
+        self._db = db
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+    async def update_talk(self, talk_id, **fields):
+        if "engine" in fields:
+            raise RuntimeError("disk full")
+        return await self._db.update_talk(talk_id, **fields)
+
+
+async def test_a_fallback_that_cannot_save_the_engine_says_so_and_still_switches(
+    tmp_path: Path, db, caplog: pytest.LogCaptureFixture
+) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [_error(0.5, 1008, False)]), TR_ES)
+    worker = _worker(_room(), _settings(), bus, NoEngineWritesDb(db), clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 2.0)
+
+    assert [c.kind for c in factory.configs] == ["fast", "glossary"]
+    assert "could not save engine=glossary for f1" in caplog.text
+    await worker.stop()
+
+
+async def test_a_rejected_api_key_halts_without_a_fallback(tmp_path: Path, db) -> None:
+    """401/403: the glossary engine would be refused too. The room goes red
+    with a clear event instead."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [_error(0.0, 401, False)]))
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 3.0)
+
+    assert [c.kind for c in factory.configs] == ["fast"]
+    status = worker.status()
+    assert status.state == "red" and "401" in status.detail
+    events = await _events(db)
+    assert [e for e in events if e[1] == "engine_auth"] == [
+        ("error", "engine_auth", "Live Translate refused the API key (401): check GEMINI_API_KEY"),
+    ]
+    assert "fallback" not in [t for _, t, _ in events]
+    await worker.stop()
+
+
+async def test_no_credit_never_falls_back(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    payment = {"t": 0.0, "kind": "error", "text": "402", "meta": {"code": 402, "retryable": False, "payment": True}}
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [payment]))
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 3.0)
+
+    assert [c.kind for c in factory.configs] == ["fast"]
+    assert worker.status().state == "red"  # payment blocked
     assert "fallback" not in [t for _, t, _ in await _events(db)]
     await worker.stop()

@@ -817,6 +817,20 @@ async def test_events_merge_active_and_draining_sessions_only(steady: Path) -> N
     assert forwarded == pytest.approx(emitted)  # usd increments are never dropped
 
 
+async def test_session_numbers_can_start_after_another_relays(steady: Path) -> None:
+    """A room that swaps engines numbers the new relay's sessions after the
+    old one's, so the two never share a session number."""
+    h = Harness([Plan(steady)], first_seq=4)
+    assert h.relay.last_seq == 3  # none opened yet
+    await h.start()
+    await h.run_until(530, vad=talking(0, pauses=[520]))
+    await h.stop()
+
+    sessions = {ev.meta["session"] for ev in h.events if ev.kind in TEXT_KINDS}
+    assert sessions == {4, 5}
+    assert h.relay.last_seq == 5
+
+
 async def test_events_can_be_consumed_while_feeding(steady: Path) -> None:
     h = Harness([Plan(steady)])
     got: list[EngineEvent] = []

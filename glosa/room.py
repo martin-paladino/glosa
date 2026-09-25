@@ -22,7 +22,10 @@ Engines (glosa/room_text.py)
     - ``fast``: Live Translate transcribes and translates into the first
       target. If the talk has more targets, the translation lane translates
       the source deltas into the rest (Task 11's extra languages); each VAD
-      pause closes the lane's open utterance.
+      pause closes the lane's open utterance. At a session rotation, the
+      draining session's late source text is still shown but does not reach
+      the lane once the new session has spoken (the lane follows one
+      session at a time): those words miss the extra languages.
     - ``glossary``: transcribe-live (verbatim, the talk's glossary as its
       vocabulary, up to 100 terms) gives the source text; the lane
       translates it into every target. Each VAD pause calls
@@ -41,16 +44,22 @@ Engines (glosa/room_text.py)
     session's late text is dropped.
 
 Fallback to the glossary engine (case 10.5)
-    If a fast talk's Live Translate fails 3 times within 2 min (errors,
-    failed connects, stalls, sessions that died; not the admin's
-    "Reconectar" nor a 402: ``room_text.FlapDetector``, checked on each
-    tick), the room switches to the glossary engine on the fly: the run is
-    torn down and the same talk starts again with ``engine="glossary"``,
-    without ending it (no talk_end, no hook, the audience keeps the talk).
-    ``talk.engine`` is saved, so it never goes back to fast by itself, and
-    the admin log gets a warning, "fallback: glossary engine". The source
-    is opened again: a live stream reconnects (a second or so of audio is
-    lost), a file plays from its beginning.
+    A fast talk switches to the glossary engine when its Live Translate
+    fails 3 times within 2 min (errors, failed connects, stalls, sessions
+    that died; not the admin's "Reconectar" nor a 402:
+    ``room_text.FlapDetector``) or halts on a non-retryable error (Ruling
+    49), both checked on each tick. Not on a halt for 401/403: the key was
+    refused, the glossary engine would be too; the room goes red with an
+    ``engine_auth`` error event instead. A 402 only blocks (payment).
+
+    The switch is hot (Ruling 48, ``_swap_engine``): the audio loop, the
+    VAD and the talk go on untouched (no ingest restart, no new "talk"
+    message, nothing captioned again); only the engine side (relay, lane,
+    Translator) is replaced. The new relay takes the audio at once (it holds
+    2 s while it connects) and numbers its sessions after the old one's; the
+    old relay's late events only count for the cost. ``talk.engine`` is
+    saved (a failure to save is logged), so it never goes back to fast by
+    itself, and the admin log gets a warning, "fallback: glossary engine".
 
 Translation lane
     A LivePipeline (glosa/room_text.TranslationLane) with a Translator of the
@@ -178,6 +187,7 @@ SILENCE = bytes(CHUNK_BYTES)
 AGENDA_FIELDS = ("title", "speakers", "language", "targets", "engine", "start", "end", "abstract", "tags", "glossary")
 COST_ENGINE = {"fast": "live_translate", "glossary": "transcribe"}  # costs.component, units: minutes
 COST_TRANSLATE = "translate"  # units: translated segments
+AUTH_CODES = (401, 403)  # a refused API key: no fallback (the glossary engine uses the same key)
 
 
 class Ingest(Protocol):
@@ -233,19 +243,22 @@ class _Run:
     """The pipeline of the talk being captioned."""
 
     talk: Talk
-    engine: str  # "fast" | "glossary"
     target: str  # the first translation language (Live Translate's, with "fast")
     source: tuple[str, str, bool]  # what the audio loop plays: (source_type, source_url, realtime)
-    relay: SessionRelay
     vad: EnergyVad
     tracks: dict[str, _Track]
     t0: float
+    # The engine side, set by RoomWorker._install_engine (again on a hot swap):
+    engine: str = "fast"  # "fast" | "glossary"
+    relay: SessionRelay = None  # type: ignore[assignment]
     lane: TranslationLane | None = None  # translations the engine does not make itself
     translator: Translator | None = None  # the lane's, when the run made its own (closed with it)
     text_session: int = 0  # the engine session whose source text is in use (the newest that spoke)
     flaps: FlapDetector = field(default_factory=FlapDetector)
     manual_reconnects: int = 0  # the admin's, which the fallback rule ignores
     falling_back: bool = False
+    halt_code: int | None = None  # code of the last non-retryable error (why the relay halted)
+    auth_reported: bool = False
     latency: LatencyTracker = field(default_factory=LatencyTracker)
     levels: collections.deque = field(default_factory=lambda: collections.deque(maxlen=LEVEL_WINDOW_CHUNKS))
     audio: asyncio.Task | None = None
@@ -428,7 +441,10 @@ class RoomWorker:
             if self._source_down is not None and state == "red":
                 detail = f"source is down: {self._source_down}"
             elif run is not None and run.relay.halted and state != "red":
-                state, detail = "red", "engine halted: non-retryable error, waiting for a reconnect"
+                if run.halt_code in AUTH_CODES:
+                    state, detail = "red", f"engine halted: the API key was refused ({run.halt_code})"
+                else:
+                    state, detail = "red", "engine halted: non-retryable error, waiting for a reconnect"
         return RoomStatus(
             state=state,
             level_db=level,
@@ -473,11 +489,8 @@ class RoomWorker:
         source_type: str,
         source_url: str | None,
         realtime: bool,
-        *,
-        engine: EngineKind | None = None,
     ) -> None:
-        """Start ``talk`` (or the free session). ``engine`` overrides the
-        talk's (the fallback: it must win over the reload from the DB)."""
+        """Start ``talk`` (or the free session) on ``source_url``."""
         if not source_url:
             raise ValueError(f"room {self.room.id!r} has no audio source")
         if self._run is not None:
@@ -487,8 +500,6 @@ class RoomWorker:
         talk = talk or self.talk or self.free_talk()
         if talk is self.talk:  # the running talk again: an admin may have edited it since
             await self._reload_agenda_fields(talk)
-        if engine is not None:
-            talk.engine = engine
         wall = self._clock.wall()
         if talk.actual_start is None:
             talk.actual_start = wall
@@ -500,15 +511,6 @@ class RoomWorker:
 
         kind = engine_of(talk.engine)
         langs = translation_langs(talk.language, talk.targets)
-        target = langs[0]
-        if kind == "glossary":  # transcribe-live: the lane translates every target
-            terms = vocabulary((term.term for term in talk.glossary), MAX_VOCABULARY)
-            cfg = EngineConfig(kind="glossary", source_lang=talk.language, target_lang=None, vocabulary=terms)
-            lane_targets = langs
-        else:  # Live Translate covers the first target; the lane, the others
-            cfg = EngineConfig(kind="fast", source_lang=talk.language, target_lang=target)
-            lane_targets = langs[1:]
-        relay = SessionRelay(self._engine_factory, cfg, self._clock, **self._settings.relay.model_dump())
         now = self._clock.now()
         # Segment times count from the talk's actual start, also when the
         # same talk restarts (a source that came back, play_file()).
@@ -517,15 +519,48 @@ class RoomWorker:
         tracks |= {lang: _Track(lang, "translation") for lang in langs}
         run = _Run(
             talk=talk,
-            engine=kind,
-            target=target,
+            target=langs[0],
             source=(source_type, source_url, realtime),
-            relay=relay,
             vad=EnergyVad(self._settings.vad.pause_ms, self._settings.vad.min_speech_s),
             tracks=tracks,
             t0=now - elapsed,
             last_cost_flush=now,
         )
+        await self._install_engine(run, kind)
+        self._run = run
+        self._publish_all(run.tracks, "talk", data=_talk_data(talk))
+        await run.relay.start()
+        run.consumer = self._spawn(self._consume(run, run.relay, kind), "events")
+        run.ticker = self._spawn(self._tick_loop(run), "ticker")
+        run.audio = self._spawn(self._audio_loop(run, source_type, source_url, realtime), "audio")
+        direction = f"{talk.language} -> {', '.join(langs)}, {kind} engine"
+        log.info("room %s: talk %s started (%s)", self.room.id, talk.id, direction)
+        await self._log("info", "talk_start", f"{talk.id}: {talk.title} ({direction})")
+
+    async def _install_engine(self, run: _Run, kind: EngineKind, first_seq: int = 1) -> None:
+        """Give ``run`` its engine side for ``kind``: the relay (sessions
+        numbered from ``first_seq``), the translation lane and its
+        Translator, with the per-engine counters at zero. Nothing is started
+        or consumed yet."""
+        talk = run.talk
+        langs = translation_langs(talk.language, talk.targets)
+        if kind == "glossary":  # transcribe-live: the lane translates every target
+            terms = vocabulary(term.term for term in talk.glossary)
+            if len(terms) > MAX_VOCABULARY:
+                message = f"{len(terms)} glossary terms: only the first {MAX_VOCABULARY} go to transcribe-live"
+                log.warning("room %s: %s", self.room.id, message)
+                await self._log("warning", "vocabulary", f"{talk.id}: {message}")
+                terms = terms[:MAX_VOCABULARY]
+            cfg = EngineConfig(kind="glossary", source_lang=talk.language, target_lang=None, vocabulary=terms)
+            lane_targets = langs
+        else:  # Live Translate covers the first target; the lane, the others
+            cfg = EngineConfig(kind="fast", source_lang=talk.language, target_lang=langs[0])
+            lane_targets = langs[1:]
+        run.engine = kind
+        run.relay = SessionRelay(
+            self._engine_factory, cfg, self._clock, first_seq=first_seq, **self._settings.relay.model_dump()
+        )
+        run.lane = run.translator = None
         if lane_targets:
             translate = self._translate
             if translate is None and self._settings.engine_mode == "fake":
@@ -547,16 +582,36 @@ class RoomWorker:
                 segmenter=self._settings.segmenter,
                 on_segment=lambda seg: self._on_translation(run, seg),
             )
-        self._run = run
-        self._publish_all(run.tracks, "talk", data=_talk_data(talk))
-        await relay.start()
-        run.consumer = self._spawn(self._consume(run), "events")
-        run.ticker = self._spawn(self._tick_loop(run), "ticker")
-        run.audio = self._spawn(self._audio_loop(run, source_type, source_url, realtime), "audio")
-        direction = f"{talk.language} -> {', '.join(langs)}, {kind} engine"
-        log.info("room %s: talk %s started (%s)", self.room.id, talk.id, direction)
-        await self._log("info", "talk_start", f"{talk.id}: {talk.title} ({direction})")
+        run.text_session = run.newest_session = 0
+        run.rotations = run.reconnects = run.manual_reconnects = 0
+        run.flaps = FlapDetector()
+        run.falling_back = run.auth_reported = False
+        run.halt_code = None
 
+    async def _swap_engine(self, run: _Run, kind: EngineKind) -> None:
+        """Ruling 48, the fallback: ``run`` goes on with ``kind``, hot. The
+        audio loop (ingest, VAD) and the talk are left alone: the new relay
+        is in place before the old one stops, so the audio goes to it at
+        once (it holds 2 s while it connects). Its sessions are numbered
+        after the old relay's, and the old relay's late events only count
+        for the cost (``_consume``). Then the old side is retired: relay,
+        its consumer, its sessions' open segments (closed and saved), lane
+        (drained), Translator. Caller holds the lock."""
+        if run.ticker is not None:
+            run.ticker.cancel()
+            self._report(await asyncio.gather(run.ticker, return_exceptions=True), "ticker")
+        if run.tick is not None:
+            self._report(await asyncio.gather(run.tick, return_exceptions=True), "tick")
+        old_relay, old_consumer, old_lane, old_translator = run.relay, run.consumer, run.lane, run.translator
+        first_seq = old_relay.last_seq + 1
+        try:
+            await self._install_engine(run, kind, first_seq)
+            await run.relay.start()
+            run.consumer = self._spawn(self._consume(run, run.relay, kind), "events")
+            await self._retire_engine(run, old_relay, old_consumer, old_lane, old_translator, sessions_below=first_seq)
+        finally:
+            if self._run is run:
+                run.ticker = self._spawn(self._tick_loop(run), "ticker")
     async def _reload_agenda_fields(self, talk: Talk) -> None:
         """Take ``talk``'s agenda fields from the database, so the insert
         that (re)starts it never writes an out-of-date copy back over an
@@ -581,30 +636,47 @@ class RoomWorker:
         if run.audio is not None:
             run.audio.cancel()
             self._report(await asyncio.gather(run.audio, return_exceptions=True), "audio")
+        await self._retire_engine(run, run.relay, run.consumer, run.lane, run.translator)
+
+    async def _retire_engine(
+        self,
+        run: _Run,
+        relay: SessionRelay,
+        consumer: asyncio.Task | None,
+        lane: TranslationLane | None,
+        translator: Translator | None,
+        *,
+        sessions_below: int | None = None,
+    ) -> None:
+        """Stop one engine side of ``run``: the relay, then its consumer;
+        close and save the open segments of its sessions (all of them, or
+        those numbered below ``sessions_below`` on a hot swap); drain and
+        close the lane; close the Translator; record the pending cost."""
         try:
-            await run.relay.stop()  # its events() ends with `closed`
+            await relay.stop()  # its events() ends with `closed`
         except Exception:
             log.exception("room %s: relay stop failed", self.room.id)
-        if run.consumer is not None:
-            _, late = await asyncio.wait({run.consumer}, timeout=CONSUMER_GRACE_S)
+        if consumer is not None:
+            _, late = await asyncio.wait({consumer}, timeout=CONSUMER_GRACE_S)
             for task in late:
                 log.error("room %s: event consumer still busy after %s s", self.room.id, CONSUMER_GRACE_S)
                 task.cancel()
-            self._report(await asyncio.gather(run.consumer, return_exceptions=True), "event consumer")
+            self._report(await asyncio.gather(consumer, return_exceptions=True), "event consumer")
         now = self._clock.now()
         closed: _Closed = []
         for track in run.tracks.values():
             for session in track.sessions():
-                closed += self._close_session(run, track, session, now)
+                if sessions_below is None or session < sessions_below:
+                    closed += self._close_session(run, track, session, now)
         await self._save(run, closed)
-        if run.lane is not None:  # after the source closed: its last words get translated too
+        if lane is not None:  # after the source closed: its last words get translated too
             try:
-                await run.lane.close()
+                await lane.close()
             except Exception:
                 log.exception("room %s: translation lane close failed", self.room.id)
-        if run.translator is not None:  # its HTTP connections
+        if translator is not None:  # its HTTP connections
             try:
-                await run.translator.aclose()
+                await translator.aclose()
             except Exception:
                 log.exception("room %s: translator close failed", self.room.id)
         await self._flush_cost(run, self._clock.now())
@@ -641,14 +713,24 @@ class RoomWorker:
                 return  # stopped or restarted meanwhile
             talk = run.talk
             log.warning(
-                "room %s: Live Translate keeps failing: %s goes on with the glossary engine", self.room.id, talk.id
+                "room %s: Live Translate failed (%s): %s goes on with the glossary engine",
+                self.room.id,
+                "halted" if run.relay.halted else "3 failures in 2 min",
+                talk.id,
             )
             await self._log("warning", "fallback", "fallback: glossary engine")
             talk.engine = "glossary"
-            await self._db_call(self._db.update_talk(talk.id, engine="glossary"))
-            source_type, source_url, realtime = run.source
             try:
-                await self._start_locked(talk, source_type, source_url, realtime, engine="glossary")
+                await self._db.update_talk(talk.id, engine="glossary")
+            except Exception:
+                log.warning(
+                    "room %s: could not save engine=glossary for %s: after a restart it runs fast again",
+                    self.room.id,
+                    talk.id,
+                    exc_info=True,
+                )
+            try:
+                await self._swap_engine(run, "glossary")
             except Exception as exc:
                 log.exception("room %s: the fallback to the glossary engine failed", self.room.id)
                 await self._log("error", "fallback_failed", repr(exc))
@@ -717,19 +799,28 @@ class RoomWorker:
 
     # ------------------------------------------------------------ engine events
 
-    async def _consume(self, run: _Run) -> None:
-        async for ev in run.relay.events():
+    async def _consume(self, run: _Run, relay: SessionRelay, engine: str) -> None:
+        """The events of ``relay``. Once it has been swapped out (the
+        fallback), its late events only count for the cost: their text
+        would land on the new engine's state."""
+        async for ev in relay.events():
             try:
-                await self._on_event(run, ev)
+                if relay is run.relay:
+                    await self._on_event(run, ev)
+                else:
+                    self._engine_cost(run, engine, ev)
             except Exception:
                 log.exception("room %s: failed to handle %s", self.room.id, ev.kind)
 
-    async def _on_event(self, run: _Run, ev: EngineEvent) -> None:
+    def _engine_cost(self, run: _Run, engine: str, ev: EngineEvent) -> None:
         usd = float(ev.meta.get("usd") or 0.0)
         if usd:
             prices = self._settings.prices
-            price = prices.lt_per_min if run.engine == "fast" else prices.transcribe_per_min
-            self._add_cost(run, COST_ENGINE[run.engine], usd, usd / price if price > 0 else 0.0)
+            price = prices.lt_per_min if engine == "fast" else prices.transcribe_per_min
+            self._add_cost(run, COST_ENGINE.get(engine, engine), usd, usd / price if price > 0 else 0.0)
+
+    async def _on_event(self, run: _Run, ev: EngineEvent) -> None:
+        self._engine_cost(run, run.engine, ev)
         session = int(ev.meta.get("session") or 0)
         now = self._clock.now()
         if ev.kind in ("source_delta", "source_final"):
@@ -750,7 +841,10 @@ class RoomWorker:
                 run.lane.final(None, now)  # its open utterance will get no final
             await self._save(run, closed)
             code = int(ev.meta.get("code") or 0)
-            fatal = bool(ev.meta.get("payment")) or code == 402 or not ev.meta.get("retryable", True)
+            payment = bool(ev.meta.get("payment")) or code == 402
+            fatal = payment or not ev.meta.get("retryable", True)
+            if fatal and not payment:
+                run.halt_code = code  # the relay halts on it (payment only blocks)
             await self._log(
                 "error" if fatal else "warning", "engine_error", f"session {session}: error {code}: {ev.text}"
             )
@@ -942,9 +1036,22 @@ class RoomWorker:
             run.last_reconnect_at = now
             await self._log("warning", "reconnect", f"engine reconnect #{run.reconnects}")
         flapping = run.flaps.update(stats, run.manual_reconnects, now)
-        if flapping and run.engine == "fast" and not run.falling_back:
-            run.falling_back = True
-            self._spawn_aux(self._fall_back(run), "fallback")
+        # Ruling 49: halted (a non-retryable error) falls back at once, unless
+        # the key was refused (glossary would be too); the halt's code comes
+        # with its error event, so a halt waits for that event to be handled.
+        if not run.relay.halted:  # a reconnect lifted it (or the error came from a draining session)
+            run.halt_code, run.auth_reported = None, False
+        halted = run.relay.halted and run.halt_code is not None
+        if run.engine == "fast" and not run.falling_back:
+            if halted and run.halt_code in AUTH_CODES:
+                if not run.auth_reported:
+                    run.auth_reported = True
+                    message = f"Live Translate refused the API key ({run.halt_code}): check GEMINI_API_KEY"
+                    log.error("room %s: %s", self.room.id, message)
+                    await self._log("error", "engine_auth", message)
+            elif flapping or halted:
+                run.falling_back = True
+                self._spawn_aux(self._fall_back(run), "fallback")
         restarts = getattr(run.ingest, "restarts", 0) if run.ingest is not None else 0
         if restarts > run.ingest_restarts:
             run.ingest_restarts = restarts

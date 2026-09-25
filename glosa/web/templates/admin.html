@@ -87,12 +87,13 @@
         {%- endfor %}
       </nav>
       <span class="masthead__keys">
-        <button class="btn btn--link" type="button" aria-describedby="hint-shortcuts" title="{{ at('shortcuts_help') }}">
+        <button class="btn btn--link" type="button" aria-describedby="hint-shortcuts" popovertarget="shortcuts-pop">
           <svg viewBox="0 0 20 14" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 5h2M8 5h2M12 5h2M5 9h10" stroke="currentColor" stroke-width="1.6"/></svg>
           {{ at("shortcuts") }}
         </button>
-        {#- the top bar clips overflowing children: the native title shows it; this is for screen readers #}
         <span class="visually-hidden" id="hint-shortcuts">{{ at("shortcuts_help") }}</span>
+        {#- a popover lives in the top layer: the top bar can't clip it #}
+        <div class="shortcuts-pop" id="shortcuts-pop" popover>{{ at("shortcuts_help") }}</div>
       </span>
       <button class="btn btn--link masthead__theme" type="button" data-action="theme"
         data-theme-label="{{ tr('theme') }}"

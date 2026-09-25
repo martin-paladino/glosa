@@ -1725,6 +1725,14 @@
   .masthead__keys > .btn { display: inline-flex; align-items: center; gap: 5px; }
   .masthead__keys > .btn:hover + .hint__tip, .masthead__keys > .btn:focus-visible + .hint__tip { visibility: visible; opacity: 1; }
   .hint__tip--end { inset-inline-start: auto; inset-inline-end: 0; }
+  .shortcuts-pop {
+    position: fixed; inset: 58px 16px auto auto; margin: 0;
+    inline-size: min(320px, 80vw); padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel); color: var(--ink-2);
+    font: 400 13px/1.45 var(--font-body, inherit);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  }
 
   /* Medidor de audio: gris, porque es un nivel y no un estado. --level de 0 a 1. */
   .vu {

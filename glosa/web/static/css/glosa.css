@@ -2210,9 +2210,12 @@
   }
 
   /* ---- Panel de producción ------------------------------------------------------ */
-  /* Siempre oscuro: es una sala de control. */
+  /* Oscuro por defecto (es una sala de control); el botón Tema lo pasa a claro
+     o alto contraste (data-theme en <html>, static/js/theme.js). */
+  :root:not([data-theme]) :is(.admin, .login-page),
+  [data-theme="dark"] :is(.admin, .login-page) { color-scheme: dark; }
+  [data-theme="light"] :is(.admin, .login-page) { color-scheme: light; }
   .admin {
-    color-scheme: dark;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 52px auto minmax(0, 1fr) auto;
@@ -2251,7 +2254,6 @@
 
   /* El login del panel: la misma franja y un solo panel sobre la sala. */
   .login-page {
-    color-scheme: dark;
     display: grid;
     grid-template-rows: 52px minmax(0, 1fr);
     min-block-size: 100dvh;

@@ -129,6 +129,7 @@ from glosa.i18n import ADMIN_STRINGS, SUPPORTED, Lang, admin_t, detect_lang
 from glosa.models import GlossaryTerm, Talk
 from glosa.room import RoomWorker, is_free_talk
 from glosa.scheduler import NoTalkToRestart
+from glosa.text.glossary import GlossarySuggester
 from glosa.web import admin_stream
 from glosa.web.auth import (
     COOKIE_MAX_AGE_S,
@@ -678,6 +679,70 @@ async def get_talk(talk_id: str, request: Request) -> dict:
     if talk is None:
         raise HTTPException(status_code=404, detail=f"no talk {talk_id!r}")
     return talk_json(talk)
+
+
+@api_router.post("/talks/{talk_id}/suggest-glossary")
+async def suggest_glossary_endpoint(talk_id: str, request: Request) -> list[dict]:
+    """task-11r-brief.md Ruling 3: suggests a glossary for the talk (its
+    title/abstract/tags/language/targets) with glosa.text.glossary's
+    GlossarySuggester and returns it WITHOUT saving it -- the admin panel's
+    "Sugerir glosario" button fills the edit drawer's glossary field with
+    it, the operator reviews/edits, and saves with the existing
+    PUT /talks/{id}. Cost is added to the total under the "glossary_suggest"
+    component.
+
+    502 (not 200 with an empty list) when the model call itself failed
+    every attempt -- GlossarySuggester.last_error is how this tells that
+    apart from the model genuinely suggesting nothing (both come back as
+    []): a real API failure also logs a red ("error") event to the room's
+    registro, not just "empty glossary"."""
+    db = request.app.state.db
+    settings = request.app.state.settings
+    talk = await db.get_talk(talk_id)
+    if talk is None:
+        raise HTTPException(status_code=404, detail=f"no talk {talk_id!r}")
+    suggester = GlossarySuggester(api_key=settings.gemini_api_key)
+    terms = await suggester.suggest(talk)
+    if suggester.usd_total:
+        await db.add_cost(talk.room_id, "glossary_suggest", 1.0, suggester.usd_total)
+    if not terms and suggester.last_error is not None:
+        await db.log_event(talk.room_id, "error", "suggest_glossary_failed", f"{talk_id}: {suggester.last_error}")
+        raise HTTPException(status_code=502, detail="could not suggest a glossary right now; try again")
+    return [asdict(t) for t in terms]
+
+
+@api_router.get("/exports")
+async def list_exports(request: Request) -> list[dict]:
+    """task-11r-brief.md Ruling 2: every finished agenda talk (free sessions
+    excluded) with its live/corrected export links per language and the
+    corrected version's build status ("pending"/"ready"/"failed", or
+    "pending" if on_talk_end never even ran for it yet -- no exports row).
+    The source language never gets a "corrected" entry (build_corrected
+    only runs for target languages, task-11r-brief.md decision 1)."""
+    db = request.app.state.db
+    talks = await db.get_done_talks()
+    out = []
+    for talk in talks:
+        langs = [talk.language, *[lang for lang in talk.targets if lang != talk.language]]
+        exports = []
+        for lang in langs:
+            entry: dict[str, Any] = {"lang": lang, "live": _export_links(talk.id, lang, "live")}
+            if lang == talk.language:
+                entry["corrected"] = None
+            else:
+                status = await db.get_export_status(talk.id, lang) or "pending"
+                entry["corrected"] = {
+                    "status": status,
+                    "links": _export_links(talk.id, lang, "corrected") if status == "ready" else None,
+                }
+            exports.append(entry)
+        out.append({"talk_id": talk.id, "room_id": talk.room_id, "title": talk.title, "exports": exports})
+    return out
+
+
+def _export_links(talk_id: str, lang: str, version: str) -> dict[str, str]:
+    suffix = "" if version == "live" else f"?version={version}"
+    return {fmt: f"/exports/{talk_id}/{lang}.{fmt}{suffix}" for fmt in ("srt", "vtt", "txt")}
 
 
 @api_router.delete("/talks/{talk_id}")

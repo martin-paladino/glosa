@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from glosa.exports import ExportSegment, to_srt, to_txt, to_vtt
+from glosa.exports import CONTENT_TYPE, ExportSegment, export_filename, render, slugify, to_srt, to_txt, to_vtt
 
 
 def test_to_srt_basic_numbering_and_time_format() -> None:
@@ -170,3 +170,35 @@ def test_to_srt_empty_segments_returns_empty_string() -> None:
 
 def test_to_vtt_empty_segments_returns_just_header() -> None:
     assert to_vtt([], shift_s=0.0) == "WEBVTT\n"
+
+
+# ---- render / slugify / export_filename (task-11r-brief.md Ruling 2) -----------
+
+
+def test_render_dispatches_to_the_matching_format() -> None:
+    segs = [ExportSegment(text="Hi", t_start=0.0, t_end=1.0)]
+    assert render("srt", segs, shift_s=0.0) == to_srt(segs, shift_s=0.0)
+    assert render("vtt", segs, shift_s=0.0) == to_vtt(segs, shift_s=0.0)
+    assert render("txt", segs, shift_s=0.0) == to_txt(segs)  # shift_s ignored for txt
+
+
+def test_render_rejects_an_unknown_format() -> None:
+    with pytest.raises(ValueError):
+        render("pdf", [], shift_s=0.0)
+
+
+def test_content_type_covers_every_format() -> None:
+    assert set(CONTENT_TYPE) == {"srt", "vtt", "txt"}
+
+
+def test_slugify_strips_accents_and_punctuation() -> None:
+    assert slugify("¿Qué Onda, Kubernetes?!") == "que-onda-kubernetes"
+
+
+def test_slugify_never_returns_empty() -> None:
+    assert slugify("!!!") == "x"
+
+
+def test_export_filename_matches_the_slug_titulo_lang_version_pattern() -> None:
+    name = export_filename("gran-sala", "¿Qué es Kubernetes?", "es", "corrected", "srt")
+    assert name == "gran-sala-que-es-kubernetes-es-corrected.srt"

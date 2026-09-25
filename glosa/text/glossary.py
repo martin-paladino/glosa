@@ -109,6 +109,15 @@ class GlossarySuggester:
         self.price_out_per_m = price_out_per_m
         self._client = client if client is not None else genai.Client(api_key=api_key)
         self.usd_total = 0.0
+        # None while suggest() hasn't run, or after a call that returned
+        # terms (possibly zero, legitimately); set to the last attempt's
+        # exception when suggest() falls back to [] because every attempt
+        # failed. task-11r-brief.md's POST /suggest-glossary endpoint reads
+        # this to tell "the model genuinely found nothing" (200, []) apart
+        # from "the API call itself failed" (502) -- suggest() itself must
+        # still never raise (see module docstring), so this is an opt-in
+        # side channel, not a change to its return contract.
+        self.last_error: Exception | None = None
 
     def _cost_usd(self, usage_metadata: Any) -> float:
         if usage_metadata is None:
@@ -157,6 +166,7 @@ class GlossarySuggester:
     async def suggest(self, talk: Talk, max_terms: int = 60) -> list[GlossaryTerm]:
         target = talk.targets[0] if talk.targets else None
         last_exc: Exception | None = None
+        self.last_error = None
         for attempt in range(1, _MAX_ATTEMPTS + 1):
             try:
                 raw = await self._call(talk, max_terms, target)
@@ -178,6 +188,7 @@ class GlossarySuggester:
             talk.id,
             last_exc,
         )
+        self.last_error = last_exc
         return []
 
 

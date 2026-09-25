@@ -16,10 +16,19 @@ between those cues in proportion to each cue's character count.
 shift_s (Ruling 6) is always explicit - there is no default - and is added
 to every timestamp; the result is clipped to 0 (subtitles can't start
 before the file does).
+
+render()/CONTENT_TYPE/slugify()/export_filename() (task-11r-brief.md Ruling 2)
+are the small pieces glosa/web/public_api.py's GET /exports/{talk_id}/{lang}.{fmt}
+route needs on top of to_srt/to_vtt/to_txt: a format-keyed dispatcher (to_txt
+alone takes no shift_s -- a plain transcript has no timestamps to shift), the
+response Content-Type per format, and the "slug-titulo-lang-version.ext"
+filename the route sets in Content-Disposition.
 """
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 
 _MAX_LINE_CHARS = 42
@@ -133,3 +142,38 @@ def to_txt(segs: list[ExportSegment]) -> str:
     if not segs:
         return ""
     return "\n".join(seg.text for seg in segs) + "\n"
+
+
+CONTENT_TYPE = {
+    "srt": "application/x-subrip",
+    "vtt": "text/vtt",
+    "txt": "text/plain; charset=utf-8",
+}
+
+
+def render(fmt: str, segs: list[ExportSegment], shift_s: float) -> str:
+    """Dispatch to to_srt/to_vtt/to_txt by extension ("srt"|"vtt"|"txt"):
+    what glosa/web/public_api.py's export route needs given just the {fmt}
+    path parameter. Raises ValueError for any other fmt (the route turns
+    that into a 404, same as an unknown talk/lang)."""
+    if fmt == "srt":
+        return to_srt(segs, shift_s=shift_s)
+    if fmt == "vtt":
+        return to_vtt(segs, shift_s=shift_s)
+    if fmt == "txt":
+        return to_txt(segs)
+    raise ValueError(f"unknown export format: {fmt!r}")
+
+
+def slugify(text: str) -> str:
+    """ASCII, lowercase, hyphen-separated slug for a filename component
+    (accents and punctuation stripped, runs of anything else collapsed to
+    one hyphen); "x" for text that slugifies to nothing."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", ascii_text).strip("-").lower()
+    return slug or "x"
+
+
+def export_filename(room_slug: str, title: str, lang: str, version: str, fmt: str) -> str:
+    """"slug-titulo-lang-version.ext" (task-11r-brief.md Ruling 2)."""
+    return f"{slugify(room_slug)}-{slugify(title)}-{lang}-{version}.{fmt}"

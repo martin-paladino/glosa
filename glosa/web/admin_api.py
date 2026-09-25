@@ -103,6 +103,7 @@ an EventSource cannot send.
 from __future__ import annotations
 
 import asyncio
+import base64
 import http.client
 import json
 import urllib.error
@@ -114,6 +115,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import qrcode
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -136,6 +138,7 @@ from glosa.web.auth import (
     sign_session,
     verify_password,
 )
+from glosa.web.station import station_url
 
 # Pages, login and logout: no auth dependency (login can't require the
 # session it's about to create; logout only ever needs to clear one).
@@ -179,6 +182,7 @@ async def admin_page(request: Request):
             "level": admin_stream.LEVEL_MIN_DB,
         },
         "nerdearlaUrl": NERDEARLA_AGENDA_URL,
+        "stations": _stations(request),
         "state": view,
     }
     context = _page_context(request, ui) | {"view": view, "config": config}
@@ -193,6 +197,46 @@ def login_page(request: Request):
     config = {"page": "login", "ui": ui, "tz": request.app.state.settings.timezone, "i18n": ADMIN_STRINGS[ui]}
     context = _page_context(request, ui) | {"config": config}
     return templates.TemplateResponse(request, "admin_login.html", context, headers=_VARY)
+
+
+def _stations(request: Request) -> dict[str, dict[str, str]]:
+    """Each emitter room's station link (Task 14a, glosa/web/station.py) and
+    its QR, for the drawer. The link carries the station key: it only ever
+    goes into this admin-only page."""
+    password = request.app.state.settings.admin_password
+    base = str(request.base_url).rstrip("/")
+    stations = {}
+    for worker in _workers(request):
+        if worker.room.source_type == "emitter":
+            url = station_url(worker.room.id, password)
+            stations[worker.room.id] = {"url": url, "qr": qr_data_uri(base + url)}
+    return stations
+
+
+def qr_data_uri(text: str) -> str:
+    """``text`` as a QR code: an SVG data URI (black on white, one path of
+    horizontal runs) the page can show with a plain <img>."""
+    code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    code.add_data(text)
+    code.make(fit=True)
+    matrix = code.get_matrix()
+    size = len(matrix)
+    runs = []
+    for y, row in enumerate(matrix):
+        x = 0
+        while x < size:
+            if not row[x]:
+                x += 1
+                continue
+            start = x
+            while x < size and row[x]:
+                x += 1
+            runs.append(f"M{start} {y}h{x - start}v1h-{x - start}z")
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" shape-rendering="crispEdges">'
+        f'<rect width="{size}" height="{size}" fill="#fff"/><path d="{"".join(runs)}" fill="#000"/></svg>'
+    )
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("ascii")).decode("ascii")
 
 
 def _ui_lang(request: Request) -> tuple[Lang, Lang | None]:
@@ -357,19 +401,17 @@ async def reconnect_room(room_id: str, request: Request) -> dict:
 async def restart_room(room_id: str, request: Request) -> dict:
     """The panel's "Reconectar" for a room whose source is down: open the
     source again for the talk it was running, the same talk (no talk end, no
-    free session; its actual_start stays). The mode stays. ``reconnect``
-    cannot do this (the pipeline is gone) and ``start`` would end the talk.
-    409 without a talk or without a source."""
+    free session; its actual_start stays), under the room's autopilot lock
+    (``Autopilot.restart``). The mode stays. ``reconnect`` cannot do this
+    (the pipeline is gone) and ``start`` would end the talk. 409 without a
+    talk or without a source."""
     worker = _worker(request, room_id)
-    talk = worker.talk
-    if talk is None:
-        raise HTTPException(status_code=409, detail="the room has no talk to restart")
     try:
-        await worker.start(talk)
+        await request.app.state.autopilot.restart(room_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail="the room has no talk to restart") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    await request.app.state.db.log_event(room_id, "info", "restart", f"{talk.id}: source reopened by the operator")
-    request.app.state.admin_events.publish("room_restart", {"room_id": room_id, "talk_id": talk.id})
     return _control_reply(request, worker)
 
 

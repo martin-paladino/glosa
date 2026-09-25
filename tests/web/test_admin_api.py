@@ -46,6 +46,7 @@ from glosa.web import admin_api
 from glosa.web.admin_events import AdminEvents
 from glosa.web.app import create_app
 from glosa.web.auth import COOKIE_NAME, new_admin_secret, sign_session
+from glosa.web.station import station_url
 
 STATIC_DIR = Path(admin_api.__file__).parent / "static"
 ADMIN_PASSWORD = "s3cr3t-pw"
@@ -316,6 +317,49 @@ def test_the_login_page_is_the_panel_s_own() -> None:
     assert 'action="/admin/login"' in spanish and 'name="password" type="password"' in spanish
     assert ">Entrar</button>" in spanish and "data-admin-login-error" in spanish
     assert ">Log in</button>" in english and _config(english)["page"] == "login"
+
+
+def test_the_drawer_is_a_modal_dialog_and_each_monitor_opens_it_with_a_button() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    html = client.get("/admin").text
+
+    assert re.search(r'<aside class="drawer" id="admin-drawer" data-drawer role="dialog" aria-modal="true"', html)
+    assert re.search(r'<button class="monitor__open" type="button" aria-expanded="false" aria-controls="admin-drawer"'
+                     r'[^>]*>Sala Uno</button>', html)
+    article = re.search(r'<article [^>]*data-monitor="r1"[^>]*>', html).group(0)
+    assert "tabindex" not in article and "aria-expanded" not in article  # not on an article
+
+
+def test_an_issue_without_an_action_renders_no_action() -> None:
+    status = _status(state="red", talk_id="t", detail="payment blocked: budget exhausted")
+    worker = _worker("r1", "r1", "Sala Uno", talk=_talk("t", "r1", "Charla"), status=status)
+    client = _client(_make_app(workers={"r1": worker}))
+
+    html = client.get("/admin").text
+
+    assert 'data-action="None"' not in html
+    assert re.search(r'data-action="" data-room-id="r1" hidden', html)
+
+
+def test_an_emitter_room_gets_its_station_link_and_qr_in_the_panel_only() -> None:
+    station_room = _worker("st", "st", "Sala Estación")
+    station_room.room.source_type = "emitter"
+    file_room = _worker("r1", "r1", "Sala Uno")
+    file_room.room.source_type = "file"
+    client = _client(_make_app(workers={"st": station_room, "r1": file_room}))
+
+    html = client.get("/admin").text
+
+    stations = _config(html)["stations"]
+    assert list(stations) == ["st"]
+    assert stations["st"]["url"] == station_url("st", ADMIN_PASSWORD)
+    assert stations["st"]["qr"].startswith("data:image/svg+xml;base64,")
+    for hook in ("data-d-station-sec", "data-d-station-state", "data-d-station-url", "data-d-station-copy",
+                 "data-d-station-qr", 'data-slot="station-reload"'):
+        assert hook in html, hook
+    anonymous = _client(_make_app(workers={"st": station_room}), authenticated=False).get("/admin/login").text
+    assert station_url("st", ADMIN_PASSWORD).split("key=")[1] not in anonymous
 
 
 # ---- POST /api/admin/rooms/{id}/start, /stop -------------------------------

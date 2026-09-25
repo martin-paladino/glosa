@@ -414,6 +414,56 @@ async def test_reconnect_asks_the_worker_and_keeps_the_mode(db) -> None:  # 9.4
     assert pilot.mode("r1") == "auto"
 
 
+# ------------------------------------------------------------------ restart (Task 12)
+
+
+async def test_restart_reopens_the_running_talk_and_keeps_the_mode(db) -> None:
+    clock, workers, pilot, events = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")],
+                                                 at_time=at("14:10"))
+    await pilot.tick()
+    worker = workers["r1"]
+    assert worker.starts() == ["A"]
+    sub = events.subscribe()
+
+    talk = await pilot.restart("r1")
+
+    assert talk.id == "A" and worker.starts() == ["A", "A"]  # the same talk again: no end, no free session
+    assert not [c for c in worker.calls if c[0] == "end"]
+    assert pilot.mode("r1") == "auto"
+    event = sub.get_nowait()
+    assert event.kind == "room_restart" and event.data == {"room_id": "r1", "talk_id": "A"}
+    logged = [e for e in await db.recent_events(10) if e.type == "restart"]
+    assert logged and logged[0].message.startswith("A:")
+
+
+async def test_restart_reads_the_talk_under_the_room_lock(db) -> None:
+    # A tick (or an operator action) that holds the room's lock changes the
+    # talk; restart must see the talk as it is once it gets the lock.
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")],
+                                            at_time=at("14:10"))
+    await pilot.tick()
+    worker = workers["r1"]
+    lock = pilot._lock("r1")
+    await lock.acquire()
+    restarting = asyncio.create_task(pilot.restart("r1"))
+    await asyncio.sleep(0)
+    await worker.stop()  # the holder ends the talk meanwhile
+    lock.release()
+
+    with pytest.raises(LookupError):
+        await restarting
+    assert worker.starts() == ["A"]
+
+
+async def test_restart_needs_a_talk_and_a_known_room(db) -> None:
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), at_time=at("14:10"))
+
+    with pytest.raises(LookupError):
+        await pilot.restart("r1")
+    with pytest.raises(KeyError):
+        await pilot.restart("nope")
+
+
 # ---------------------------------------------------------------- server restart (9.4b)
 
 

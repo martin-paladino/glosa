@@ -101,6 +101,7 @@ class Issue:
     values: dict[str, Any] = field(default_factory=dict)
 
 
+STATION_SUFFIX = " | station:"
 _NUMBER = r"(-?\d+(?:\.\d+)?)"
 _LEVEL_RE = re.compile(rf"level {_NUMBER}\s*dB")
 _LATENCY_RE = re.compile(rf"latency {_NUMBER}")
@@ -113,7 +114,11 @@ def classify(status: RoomStatus) -> Issue | None:
     severity = STATE_CSS.get(status.state)
     if severity not in ("down", "degraded"):
         return None
-    detail = status.detail or ""
+    # An emitter room's detail ends with its station (RoomWorker._station_summary,
+    # Task 14a); the panel reads the station from its own field instead.
+    detail = (status.detail or "").split(STATION_SUFFIX, 1)[0]
+    if detail.startswith("source is down: station"):
+        return Issue("station", severity, "open")
     if detail.startswith("source is down"):
         _, _, error = detail.partition(": ")
         return Issue("source_down", severity, "restart", {"error": _first_line(error) or "ffmpeg"})
@@ -310,7 +315,8 @@ class AdminMonitor:
                 "state": css,
                 "status": asdict(status),
                 "issue": asdict(issue) if issue is not None else None,
-                "since": self._track(room_id, (css, issue.kind if issue else None), wall),
+                "since": self._track(room_id, (css, _age_key(issue)), wall),
+                "station": _station(state, worker),
                 "talk": talk_brief(talk, zone) if talk is not None else None,
                 "next": talk_brief(nxt, zone) if nxt is not None else None,
                 "lang": talk.language if talk is not None else worker.language,
@@ -375,6 +381,30 @@ class AdminMonitor:
             except Exception:
                 log.exception("admin: room %s: could not log the silence alarm", room_id)
         return Issue("silence", issue.severity, "open", {"seconds": seconds, "level": issue.values.get("level")})
+
+
+def _age_key(issue: Issue | None) -> str | None:
+    """What a room's Atención age counts from: the silence alarm is the same
+    episode as the low level that became it (its row keeps its age)."""
+    if issue is None:
+        return None
+    return "level" if issue.kind == "silence" else issue.kind
+
+
+def _station(state: Any, worker: Any) -> dict[str, Any] | None:
+    """An emitter room's station (Task 14a, glosa/web/station.py), admin-only
+    like the rest of this stream: connected or not, device, last level and
+    seconds since its last audio. None for every other source type."""
+    hub = getattr(state, "station_hub", None)
+    if hub is None or worker.room.source_type != "emitter":
+        return None
+    info = hub.info(worker.room.id)
+    return {
+        "connected": info.connected,
+        "device": info.device,
+        "level_db": info.level_db,
+        "last_audio_age_s": info.last_audio_age_s,
+    }
 
 
 def monitor_for(app: Any) -> AdminMonitor:
@@ -567,8 +597,12 @@ def describe_event(ev: Any, lang: Lang, titles: dict[str, str]) -> str:
         return say("ev_autopilot_error", error=_first_line(msg.removeprefix("could not open ")))
     if kind == "mode" and msg.endswith(("auto", "manual")):
         return say("ev_mode_auto" if msg.endswith("auto") else "ev_mode_manual")
+    if kind == "source_down" and msg.startswith("station"):
+        return say("ev_station_down")
     if kind == "source_down":
         return say("ev_source_down", error=_first_line(msg))
+    if kind == "source_recovered" and msg.startswith("station"):
+        return say("ev_station_back")
     if kind == "source_restart" and (m := _SOURCE_RESTART.match(msg)):
         return say("ev_source_restart", n=m["n"], error=_first_line(m["error"]))
     if kind in ("reconnect", "rotation") and (m := _NUMBERED.search(msg)):

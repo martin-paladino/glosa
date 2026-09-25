@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi import FastAPI
 
+from glosa.audio.ingest import StationHub
 from glosa.captions.bus import CaptionBus
 from glosa.clock import RealClock
 from glosa.config import Settings
@@ -43,6 +44,7 @@ from glosa.web.admin_stream import (
     classify,
     describe_event,
     localize,
+    monitor_for,
 )
 from glosa.web.app import create_app
 from glosa.web.auth import COOKIE_NAME, new_admin_secret, sign_session
@@ -84,9 +86,10 @@ class FakeWorker:
     """The part of RoomWorker the admin stream reads."""
 
     def __init__(self, room_id: str, name: str, *, status: RoomStatus | None = None, talk: Talk | None = None,
-                 language: str = "en", mode: str = "auto") -> None:
-        self.room = Room(id=room_id, slug=room_id, name=name, source_type="file", source_url=f"fake://{room_id}",
-                         mode=mode, public_token=f"tok-{room_id}", default_targets=["es"])
+                 language: str = "en", mode: str = "auto", source_type: str = "file") -> None:
+        self.room = Room(id=room_id, slug=room_id, name=name, source_type=source_type,  # type: ignore[arg-type]
+                         source_url=f"fake://{room_id}", mode=mode, public_token=f"tok-{room_id}",
+                         default_targets=["es"])
         self.talk = talk
         self.language = language
         self.has_source = True
@@ -123,6 +126,7 @@ async def panel(tmp_path: Path) -> AsyncIterator[Callable[..., Panel]]:
         app.state.admin_events = AdminEvents()
         app.state.workers = by_id
         app.state.autopilot = Autopilot(db, by_id, clock, tz=TZ, events=app.state.admin_events)
+        app.state.station_hub = StationHub(clock)
         app.state.admin_secret = new_admin_secret()
         app.state.session_epoch = 0
         app.include_router(admin_stream.stream_router)
@@ -592,3 +596,85 @@ def test_the_log_shows_the_first_line_of_an_ffmpeg_error() -> None:
     down = Ev(1, "2030-09-24T18:00:00+00:00", "r1", "error", "source_down",
               "[in#0 @ 0x1] Error opening input: No such file or directory\nError opening input file /srv/x.opus.")
     assert describe_event(down, "es", {}) == "Fuente caída: Error opening input: No such file or directory"
+
+
+# ---- fix round 1 -------------------------------------------------------------------------------
+
+
+async def test_a_disconnected_panel_leaves_nothing_subscribed(panel) -> None:
+    talk = _talk("t", "r1", -5, 30)
+    p = panel(FakeWorker("r1", "Sala Uno", talk=talk, status=_status(state="green", detail="ok", talk_id="t")),
+              FakeWorker("r2", "Sala Dos"))
+    p.app.state.bus.publish("r1", "en", "append", seg=0, text="Hello")
+
+    await _sse(p.app, cookie=p.cookie, until=lambda fs: any(f.event == "cc" for f in fs))
+    await asyncio.sleep(0)
+
+    assert p.app.state.admin_events.subscribers == 0
+    assert monitor_for(p.app).panels == 0
+    tracks = p.app.state.bus._tracks  # no public count: every (room, lang) track the stream opened
+    assert tracks and all(not track.subscribers for track in tracks.values())
+
+
+async def test_the_silence_row_keeps_its_age_when_it_becomes_the_alarm(panel) -> None:
+    quiet = _status(state="yellow", level_db=-80.0, talk_id="t", detail="level -80.0dB below -50dB with active talk")
+    p = panel(FakeWorker("r1", "Sala Uno", talk=_talk("t", "r1", -5, 30), status=quiet))
+    monitor = AdminMonitor(p.app, silence_alarm_s=0.3)
+
+    first = await monitor.snapshot()
+    await asyncio.sleep(1.1)
+    later = await monitor.snapshot()
+
+    assert (first["rooms"][0]["issue"]["kind"], later["rooms"][0]["issue"]["kind"]) == ("level", "silence")
+    assert later["rooms"][0]["since"] == first["rooms"][0]["since"]
+
+
+async def test_an_emitter_room_carries_its_station_admin_only(panel) -> None:
+    detail = "ok | station: Focusrite Scarlett 2i2, -23.0 dBFS, last audio 0.4s ago"
+    station = FakeWorker("st", "Sala Estación", source_type="emitter", talk=_talk("t", "st", -5, 30),
+                         status=_status(state="green", detail=detail, talk_id="t"))
+    p = panel(station, FakeWorker("r1", "Sala Uno"))
+    hub = p.app.state.station_hub
+    await hub.connect("st", object())  # a station socket; only its presence matters here
+    hub.set_hello("st", "Focusrite Scarlett 2i2")
+    hub.set_level("st", -23.0)
+    hub.push_audio("st", bytes(3200))
+
+    snap = await AdminMonitor(p.app).snapshot()
+
+    st, r1 = snap["rooms"]
+    assert st["station"]["connected"] is True and st["station"]["device"] == "Focusrite Scarlett 2i2"
+    assert st["station"]["level_db"] == -23.0 and st["station"]["last_audio_age_s"] is not None
+    assert r1["station"] is None
+    assert st["issue"] is None  # the station suffix of the raw detail is not an issue
+
+
+def test_a_silent_station_is_an_issue_of_its_own() -> None:
+    issue = classify(_status(state="red", talk_id="t",
+                             detail="source is down: station disconnected | station: not connected"))
+    assert (issue.kind, issue.severity, issue.action) == ("station", "down", "open")
+    texts = localize_issue(issue, "es")
+    assert texts["what"] == "La estación de la sala no manda audio."
+    degraded = classify(_status(state="yellow", latency_p50_s=6.1, talk_id="t",
+                                detail="latency 6.1s exceeds 5.0s | station: Mic, -20.0 dBFS, last audio 0.1s ago"))
+    assert degraded.kind == "latency"
+
+
+def localize_issue(issue, lang):
+    return admin_stream.issue_texts({"kind": issue.kind, "action": issue.action, "values": issue.values}, lang)
+
+
+def test_the_station_events_read_as_such() -> None:
+    @dataclass
+    class Ev:
+        id: int
+        ts: str
+        room_id: str | None
+        level: str
+        type: str
+        message: str
+
+    down = Ev(1, "2030-09-24T18:00:00+00:00", "st", "error", "source_down", "station disconnected")
+    back = Ev(2, "2030-09-24T18:01:00+00:00", "st", "info", "source_recovered", "station reconnected")
+    assert describe_event(down, "es", {}) == "La estación dejó de mandar audio."
+    assert describe_event(back, "es", {}) == "La estación volvió a mandar audio."

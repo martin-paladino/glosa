@@ -21,11 +21,12 @@
 {% macro monitor(room) -%}
 {%- set issue = room.issue -%}
 {%- set nxt = room.next if room.next and room.next.start[:10] == view.now[:10] else none -%}
-<article class="monitor monitor--{{ room.state }}" data-monitor="{{ room.id }}" data-key="{{ room.key or '' }}" tabindex="0" aria-expanded="false"
+<article class="monitor monitor--{{ room.state }}" data-monitor="{{ room.id }}" data-key="{{ room.key or '' }}"
          aria-label="{{ room.name }}{% if room.text.state_word %}, {{ room.text.state_word }}{% endif %}">
   <header class="monitor__head">
     <i class="led led--{{ room.state }}" data-m-led></i>
-    <h3 class="monitor__name">{{ room.name }}</h3>
+    {#- The name is the key that opens the room in the drawer (a click anywhere on the monitor does too). #}
+    <h3 class="monitor__name"><button class="monitor__open" type="button" aria-expanded="false" aria-controls="admin-drawer" data-open-room="{{ room.id }}">{{ room.name }}</button></h3>
     <em class="monitor__state" data-m-state{% if room.state == 'live' or not room.text.state_word %} hidden{% endif %}>{{ room.text.state_word }}</em>
     <span class="monitor__tc tc" data-m-tc data-start="{{ room.talk.actual_start if room.talk and room.state != 'idle' else '' }}"></span>
     {%- if room.key %}<kbd>{{ room.key }}</kbd>{% endif %}
@@ -41,7 +42,7 @@
   </div>
   <footer class="monitor__issue" data-m-issue{% if not issue %} hidden{% endif %}>
     <span data-m-issue-text><b>{{ room.text.title }}</b> {{ room.text.note }}</span>
-    <button class="btn btn--compact{% if issue %} btn--{{ issue.severity }}{% endif %}" type="button" data-action="{{ issue.action if issue else '' }}" data-room-id="{{ room.id }}"{% if not issue or not issue.action %} hidden{% endif %}>{{ room.text.action_label }}</button>
+    <button class="btn btn--compact{% if issue %} btn--{{ issue.severity }}{% endif %}" type="button" data-action="{{ (issue.action if issue else '') or '' }}" data-room-id="{{ room.id }}"{% if not issue or not issue.action %} hidden{% endif %}>{{ room.text.action_label }}</button>
   </footer>
 </article>
 {%- endmacro %}
@@ -139,7 +140,7 @@
   </section>
 
   <div class="scrim" data-scrim></div>
-  <aside class="drawer" data-drawer aria-label="{{ at('room_detail') }}"></aside>
+  <aside class="drawer" id="admin-drawer" data-drawer role="dialog" aria-modal="true" aria-label="{{ at('room_detail') }}" tabindex="-1"></aside>
 
   <div class="toast" data-toast role="status" hidden>
     <p class="toast__text" data-toast-text></p>
@@ -164,7 +165,7 @@
       <button class="btn" type="button" data-d-start aria-expanded="false">{{ at("start_talk") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
       <button class="btn" type="button" data-d-end>{{ at("end_talk") }}</button>
       <button class="btn" type="button" data-d-reconnect>{{ at("reconnect") }}</button>
-      {#- Hooks for Task 14 (not wired here): the room's station and a test clip. #}
+      {#- Task 14a: an emitter room's station, reloaded remotely. Task 14b fills the test clip's slot. #}
       <button class="btn" type="button" data-slot="station-reload" hidden>{{ at("reload_station") }}</button>
       <button class="btn" type="button" data-slot="test-audio" hidden>{{ at("test_audio") }}</button>
     </div>
@@ -180,6 +181,19 @@
     </form>
     <p class="drawer__hint" data-d-hint></p>
     <p class="notice" data-d-error role="alert" hidden></p>
+  </section>
+  <section class="drawer__sec" data-d-station-sec hidden>
+    <h3 class="drawer__h">{{ at("station") }}</h3>
+    <p class="drawer__state"><i class="led led--idle" data-d-station-led></i><span data-d-station-state></span></p>
+    <div class="field station-link">
+      <label class="field__label" for="station-url">{{ at("station_link") }}</label>
+      <span class="station-link__row">
+        <input id="station-url" class="tc" type="text" readonly data-d-station-url aria-describedby="station-url-hint">
+        <button class="btn btn--compact" type="button" data-d-station-copy>{{ at("copy") }}</button>
+      </span>
+      <span class="field__hint" id="station-url-hint">{{ at("station_link_hint") }}</span>
+      <details class="station-link__qr"><summary>{{ at("show_qr") }}</summary><img data-d-station-qr alt="{{ at('station_qr_alt') }}" width="148" height="148"></details>
+    </div>
   </section>
   <section class="drawer__sec" aria-label="{{ at('metrics') }}">
     <dl class="metrics">

@@ -14,8 +14,9 @@
 
    Management by exception (docs/design/NOTES.md): a healthy room shows its
    name, light, time and captions; a problem adds one footer line with the
-   suggested action; everything else lives in the side drawer (click a
-   monitor or press 1–9; Esc closes), which also edits the agenda (click a
+   suggested action; everything else lives in the side drawer, a modal
+   dialog (click a monitor or press 1–9; Esc closes; the rest of the page is
+   inert while it is open), which also edits the agenda (click a
    talk) and imports it. No native dialogs: confirmations are inline.
 
    Elements are found by data-* hooks; the visual classes are glosa.css's.
@@ -366,7 +367,6 @@
       suggest($("button", footer), room, "btn btn--compact");
     }
     node.setAttribute("aria-label", room.name + (room.text.state_word ? `, ${room.text.state_word}` : ""));
-    node.setAttribute("aria-expanded", String(drawer?.kind === "room" && drawer.id === room.id));
   }
 
   // The suggested action's key: coloured like the state that asks for it.
@@ -497,7 +497,26 @@
     });
   }
 
-  function logItem(event, { compact = false } = {}) {
+  // A flapping source logs a restart every few seconds: each run of them in a
+  // room is one row with a count. `events` newest first.
+  function coalesce(events) {
+    const rows = [];
+    const newest = new Map();          // room -> its newest row so far
+    for (const event of events) {
+      const room = event.room_id ?? "";
+      const row = newest.get(room);
+      if (event.type === "source_restart" && row?.event.type === "source_restart") {
+        row.count += 1;
+        continue;
+      }
+      const created = { event, count: 1 };
+      rows.push(created);
+      newest.set(room, created);
+    }
+    return rows;
+  }
+
+  function logItem({ event, count }, { compact = false } = {}) {
     const led = event.level === "error" ? "down" : event.level === "warning" ? "degraded" : "info";
     const attrs = { class: event.alert ? "log__item" : "log__item log__item--info" };
     if (!compact && event.room_id && monitors.has(event.room_id)) {
@@ -507,18 +526,21 @@
     return el("li", attrs,
       el("i", { class: `led led--${led}` }),
       el("time", { class: "log__time tc", datetime: event.ts, text: hms(Date.parse(event.ts)) }),
-      el("p", { class: "log__text" }, !compact && event.room ? el("b", { text: event.room }) : null, event.text));
+      el("p", { class: "log__text" }, !compact && event.room ? el("b", { text: event.room }) : null, event.text,
+        count > 1 ? el("em", { text: ` ${say("repeated", { n: count })}` }) : null));
   }
 
   function renderLog() {
     const alerts = logs.filter((event) => event.alert);
-    const shown = (logFilter === "all" ? logs : alerts).slice(-150).reverse();
+    const alertRows = coalesce(alerts.slice().reverse());
+    const allRows = coalesce(logs.slice().reverse());
+    const shown = (logFilter === "all" ? allRows : alertRows).slice(0, 150);
     const list = $("[data-log]");
     list.classList.toggle("log--all", logFilter === "all");
-    list.replaceChildren(...shown.map((event) => logItem(event)));
+    list.replaceChildren(...shown.map((row) => logItem(row)));
     for (const button of $$("[data-log-filter]")) {
       const all = button.dataset.logFilter === "all";
-      button.textContent = say(all ? "all_n" : "alerts_n", { n: all ? logs.length : alerts.length });
+      button.textContent = say(all ? "all_n" : "alerts_n", { n: all ? allRows.length : alertRows.length });
       button.setAttribute("aria-pressed", String(button.dataset.logFilter === logFilter));
     }
     const info = logs.length - alerts.length;
@@ -567,6 +589,8 @@
     }
     $("[data-axis]", timeline).replaceChildren(...axis);
     const today = isoDay(state.now);
+    // Redrawing replaces the talk keys: the one that had the focus gets it back.
+    const focused = document.activeElement?.closest?.("[data-talk-id]")?.dataset.talkId;
     let shown = 0;
     for (const track of $$("[data-track]", timeline)) {
       const room = rooms.get(track.dataset.track);
@@ -575,6 +599,7 @@
       track.replaceChildren(...talks.map((talk) => talkBlock(talk, room, minute, today)).filter(Boolean));
     }
     $("[data-agenda-empty]").hidden = shown > 0;
+    if (focused) timeline.querySelector(`[data-talk-id="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
     placeNow(minute);
   }
 
@@ -648,16 +673,70 @@
 
   // ---- the drawer ----------------------------------------------------------------------------
 
+  // The drawer is a modal dialog: while it is open the rest of the page is
+  // inert (no focus, no clicks, hidden from assistive tech), so Tab stays in it.
+  const BACKGROUND = [".masthead", "[data-attn]", "[data-wall]", "[data-schedule]"];
+
+  function setInert(on) {
+    for (const selector of BACKGROUND) {
+      const node = $(selector, admin);
+      if (node) node.inert = on;
+    }
+  }
+
+  function markOpen(roomId) {
+    for (const [id, node] of monitors) {
+      $(".monitor__open", node)?.setAttribute("aria-expanded", String(id === roomId));
+    }
+  }
+
+  // Where the focus goes back to, even if that element is replaced meanwhile
+  // (the log and the agenda redraw themselves; a deleted talk is gone).
+  function openerOf(node) {
+    if (!(node instanceof Element)) return { node: null };
+    return {
+      node,
+      talkId: node.closest("[data-talk-id]")?.dataset.talkId,
+      roomId: node.closest("[data-monitor]")?.dataset.monitor ?? node.dataset.logRoom ?? node.dataset.roomId,
+    };
+  }
+
+  function focusBack(opener) {
+    let target = opener.node && opener.node.isConnected ? opener.node : null;
+    if (!target && opener.talkId) target = document.querySelector(`[data-talk-id="${CSS.escape(opener.talkId)}"]`);
+    if (!target && opener.roomId) target = $(".monitor__open", monitors.get(opener.roomId) || admin);
+    target = target || $("[data-open-import]");
+    target?.focus({ preventScroll: true });
+  }
+
+  // Tab and Shift+Tab wrap around inside the open drawer (the rest is inert,
+  // but without this the focus would leave the page for the browser's UI).
+  function trapTab(event) {
+    const keys = $$("a[href], button, input, select, textarea, summary, [tabindex]", drawerEl)
+      .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length > 0);
+    if (!keys.length) return;
+    const first = keys[0];
+    const last = keys[keys.length - 1];
+    const inside = drawerEl.contains(document.activeElement);
+    if (event.shiftKey && (!inside || document.activeElement === first)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   function openDrawer(kind, id, opener, fill) {
     const template = document.querySelector(`template[data-tpl="${kind}"]`);
     drawerEl.replaceChildren(template.content.cloneNode(true));
-    drawer = { kind, id, opener: opener || document.activeElement };
+    const previous = drawer?.opener;
+    drawer = { kind, id, opener: previous || openerOf(opener || document.activeElement) };
     drawerEl.classList.add("drawer--open");
     scrim.classList.add("scrim--open");
+    setInert(true);
     fill();
-    for (const [roomId, node] of monitors) {
-      node.setAttribute("aria-expanded", String(kind === "room" && roomId === id));
-    }
+    markOpen(kind === "room" ? id : null);
     $("[data-close]", drawerEl)?.focus({ preventScroll: true });
   }
 
@@ -667,9 +746,10 @@
     drawer = null;
     drawerEl.classList.remove("drawer--open");
     scrim.classList.remove("scrim--open");
-    for (const node of monitors.values()) node.setAttribute("aria-expanded", "false");
+    setInert(false);
+    markOpen(null);
     setTimeout(() => { if (!drawer) drawerEl.replaceChildren(); }, 250);
-    if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+    focusBack(opener);
   }
 
   // ---- the drawer: a room ------------------------------------------------------------------
@@ -716,6 +796,32 @@
       });
     }
     $("[data-d-start]", drawerEl).addEventListener("click", () => togglePick());
+    $('[data-slot="station-reload"]', drawerEl).addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const error = $("[data-d-error]", drawerEl);
+      error.hidden = true;
+      busy(button, true, T.working);
+      try {
+        const reply = await api("POST", `/rooms/${encodeURIComponent(drawer.id)}/station/reload`);
+        if (reply && reply.sent) toast(T.station_reloading);
+        else showNotice(error, T.station_not_connected);
+      } catch (err) {
+        if (err.status !== 401) roomError(err.message);
+      } finally {
+        busy(button, false);
+      }
+    });
+    $("[data-d-station-copy]", drawerEl).addEventListener("click", async () => {
+      const input = $("[data-d-station-url]", drawerEl);
+      try {
+        await navigator.clipboard.writeText(input.value);   // needs HTTPS or localhost
+      } catch {
+        input.focus();
+        input.select();
+        document.execCommand("copy");
+      }
+      toast(T.copied);
+    });
     $("[data-d-pick-cancel]", drawerEl).addEventListener("click", () => togglePick(false));
     $("[data-d-pick]", drawerEl).addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -804,6 +910,7 @@
       reconnect.disabled = !room.talk;
     }
     $("[data-d-start]", d).disabled = !room.has_source;
+    renderStation(room);
     $("[data-d-hint]", d).textContent = room.text.hint || T.manual_hint;
 
     const status = room.status;
@@ -836,6 +943,30 @@
     $("[data-d-cc]", d).classList.toggle("drawer__cc--frozen", room.state === "down");
   }
 
+  function renderStation(room) {
+    const d = drawerEl;
+    const station = room.station;
+    $("[data-d-station-sec]", d).hidden = !station;
+    $('[data-slot="station-reload"]', d).hidden = !station;
+    if (!station) return;
+    $("[data-d-station-led]", d).className = `led led--${station.connected ? "live" : "idle"}`;
+    let text = T.station_offline;
+    if (station.connected) {
+      text = say("station_connected", { device: station.device || T.station_unknown_device });
+      text += ` ${station.last_audio_age_s == null ? T.station_no_audio : say("station_audio", {
+        db: station.level_db == null ? "—" : decibels(station.level_db),
+        age: N1.format(station.last_audio_age_s),
+      })}`;
+    }
+    $("[data-d-station-state]", d).textContent = text;
+    const link = cfg.stations?.[room.id];
+    const url = $("[data-d-station-url]", d);
+    if (link && !url.value) {
+      url.value = window.location.origin + link.url;
+      $("[data-d-station-qr]", d).src = link.qr;
+    }
+  }
+
   function renderDrawerCc() {
     if (drawer?.kind !== "room") return;
     const tail = tails.get(drawer.id);
@@ -846,8 +977,8 @@
 
   function renderRoomHistory() {
     if (drawer?.kind !== "room") return;
-    const events = logs.filter((event) => event.room_id === drawer.id).slice(-40).reverse();
-    $("[data-d-log]", drawerEl).replaceChildren(...events.map((event) => logItem(event, { compact: true })));
+    const events = coalesce(logs.filter((event) => event.room_id === drawer.id).reverse()).slice(0, 40);
+    $("[data-d-log]", drawerEl).replaceChildren(...events.map((row) => logItem(row, { compact: true })));
     $("[data-d-log-empty]", drawerEl).hidden = events.length > 0;
   }
 
@@ -971,6 +1102,7 @@
       busy(button, true, T.working);
       try {
         await api("DELETE", `/talks/${encodeURIComponent(current.talk.id)}`);
+        drawer.opener = { node: null };             // that talk is gone: the focus goes to "Importar agenda"
         closeDrawer();
         toast(T.deleted);
         reloadAgenda();
@@ -1065,7 +1197,7 @@
     const logged = target.closest("[data-log-room]");
     if (logged) return openRoom(logged.dataset.logRoom, logged);
     const monitor = target.closest("[data-monitor]");
-    if (monitor) openRoom(monitor.dataset.monitor, monitor);
+    if (monitor) openRoom(monitor.dataset.monitor, $(".monitor__open", monitor));
   });
 
   $("[data-toast-close]", toastEl)?.addEventListener("click", () => { toastEl.hidden = true; });
@@ -1073,6 +1205,10 @@
   document.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target instanceof Element ? event.target : null;
+    if (event.key === "Tab" && drawer) {
+      trapTab(event);
+      return;
+    }
     if (event.key === "Escape") {
       if (drawer) {
         event.preventDefault();
@@ -1085,16 +1221,13 @@
       const room = Array.from(rooms.values()).find((r) => String(r.key) === event.key);
       if (room) {
         event.preventDefault();
-        openRoom(room.id, monitors.get(room.id));    // Esc gives the focus back to its monitor
+        openRoom(room.id, $(".monitor__open", monitors.get(room.id)));   // Esc gives the focus back to it
       }
       return;
     }
-    if (event.key === "Enter" && target) {
-      const opener = target.closest("[data-monitor], [data-log-room]");
-      if (opener && opener === target) {
-        event.preventDefault();
-        openRoom(opener.dataset.monitor || opener.dataset.logRoom, opener);
-      }
+    if ((event.key === "Enter" || event.key === " ") && target?.matches("[data-log-room]")) {
+      event.preventDefault();                       // a log row opens its room, like a key
+      openRoom(target.dataset.logRoom, target);
     }
   });
 

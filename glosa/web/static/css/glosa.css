@@ -1459,6 +1459,21 @@
   .admin--stale :is(.attn, .wall, .schedule) { opacity: 0.45; transition: opacity var(--dur-settle); }
   .admin--stale .clock--big { color: var(--ink-3); }
 
+  /* El nombre del monitor es la tecla que abre la sala en el cajón. */
+  .monitor__open {
+    max-inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .monitor:has(.monitor__open[aria-expanded="true"]) { outline: 2px solid var(--ink); outline-offset: 3px; }
+
   /* Nada se sale del monitor: el pie con la acción sugerida siempre se ve, y si
      falta alto cede el roll-up (anclado abajo: se pierden los renglones viejos). */
   .monitor { overflow: hidden; }
@@ -1510,6 +1525,14 @@
   .pick input { margin: 0; accent-color: var(--ink); align-self: center; }
   .pick .tc { font-size: 11.5px; color: var(--ink-2); }
   .pick em { font-style: normal; color: var(--ink-3); }
+
+  /* La estación de una sala "emitter" (Tarea 14a): su enlace (con la clave) y su QR. */
+  .drawer__state + .station-link { margin-block-start: 14px; }
+  .station-link__row { display: flex; gap: 6px; }
+  .station-link__row input { flex: 1; min-inline-size: 0; }
+  .station-link__qr { font-size: 12.5px; color: var(--ink-2); }
+  .station-link__qr summary { cursor: pointer; }
+  .station-link__qr img { margin-block-start: 8px; inline-size: 148px; block-size: 148px; image-rendering: pixelated; }
 
   .form { display: grid; gap: 14px; }
   .field { display: grid; gap: 6px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }

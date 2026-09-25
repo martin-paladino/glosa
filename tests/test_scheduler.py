@@ -743,3 +743,135 @@ async def test_the_autopilot_drives_a_real_room_worker(db) -> None:  # 9.1, inte
     assert (a.status, a.actual_start, a.actual_end) == ("done", at("13:59"), at("14:59"))
     assert (b.status, b.actual_start, b.actual_end) == ("done", at("14:59"), at("16:00"))
     assert ended == ["A", "B"]
+
+
+# ------------------------------------ "Probar con audio" vs the autopilot (C1, Ruling 60)
+
+
+class ClipIngest(SilentIngest):
+    """SilentIngest for the room's own source; ``clip_s`` s of audio, then a
+    clean end, for a test clip (any other source_url)."""
+
+    clip_s = 3.0
+
+    def __init__(self, source_type, source_url, realtime, clock) -> None:
+        super().__init__(source_type, source_url, realtime, clock)
+        self.args = (source_type, source_url)
+        self._finite = not source_url.startswith("fake://")
+
+    async def chunks(self):
+        if not self._finite:
+            async for chunk in super().chunks():
+                yield chunk
+            return
+        for n in range(round(self.clip_s / 0.1)):
+            await self._clock.sleep(0.1)
+            yield AudioChunk(pcm=bytes(3200), t=round(n * 0.1, 1))
+
+
+async def _real_room(db, talks: list[Talk], when: datetime):
+    from glosa.room import RoomWorker
+
+    clock = DrivenClock()
+    settings = Settings(
+        gemini_api_key="unused", admin_password="test-password", timezone=TZ,
+        rooms=[RoomCfg(id="r1", name="Sala r1", source_type="file", source_url="fake://r1", default_targets=["es"])],
+    )
+    room = _room("r1")
+    await db.upsert_room(room)
+    await db.insert_talks(talks)
+    worker = RoomWorker(
+        room, settings, CaptionBus(clock=clock), db, clock, QuietEngine, ingest_factory=ClipIngest, realtime=False,
+        tail_s=0.5,
+    )
+    pilot = Autopilot(db, {"r1": worker}, clock, lead_s=60, tz=TZ)
+    move_to(clock, when)
+    return clock, worker, pilot
+
+
+async def _run_for(clock: DrivenClock, seconds: float) -> None:
+    for _ in range(round(seconds / 0.1)):
+        clock.advance(0.1)
+        await _settle()
+
+
+def _clip_file(tmp_path: Path) -> str:
+    path = tmp_path / "clip.opus"
+    path.write_bytes(b"")
+    return str(path)
+
+
+async def test_test_audio_is_refused_while_an_agenda_talk_is_live(db, tmp_path: Path) -> None:
+    from glosa.room import SoundCheckRefused
+
+    clock, worker, pilot = await _real_room(db, [_talk("A", "14:00", "15:00")], at("14:10"))
+    await pilot.tick()
+    await _settle()
+    assert worker.talk is not None and worker.talk.id == "A"
+
+    with pytest.raises(SoundCheckRefused, match="Talk A"):
+        await pilot.play_test_audio("r1", _clip_file(tmp_path))
+
+    await _settle()
+    assert worker.talk.id == "A" and worker.testing is False  # untouched: same talk, same source
+    assert worker.test_file()[0] == "fake://r1"
+    assert (await db.get_talk("A")).status == "live"
+    await worker.stop()
+
+
+async def test_test_audio_is_refused_when_a_talk_is_due_within_the_lead(db, tmp_path: Path) -> None:
+    from glosa.room import SoundCheckRefused
+
+    clock, worker, pilot = await _real_room(db, [_talk("A", "14:00", "15:00")], at("13:58:30"))
+    await pilot.tick()  # not due yet (13:59), but it will be within the lead
+    assert worker.talk is None
+
+    with pytest.raises(SoundCheckRefused, match="Talk A"):
+        await pilot.play_test_audio("r1", _clip_file(tmp_path))
+    assert worker.talk is None
+
+
+async def test_test_audio_in_an_idle_auto_room_is_left_alone_until_the_clip_ends(db, tmp_path: Path) -> None:
+    clock, worker, pilot = await _real_room(
+        db, [_talk("A", "14:00", "15:00"), _talk("B", "17:00", "18:00")], at("15:30")
+    )
+    await pilot.tick()
+    assert worker.talk is None and await pilot.in_charge("r1")  # owned, idle between talks
+
+    await pilot.play_test_audio("r1", _clip_file(tmp_path))
+    await _settle()
+    test_talk = worker.talk
+    assert test_talk is not None and test_talk.id.startswith("free-") and worker.testing
+
+    for _ in range(2):  # the next ticks leave the test session alone
+        await _run_for(clock, 1.0)
+        await pilot.tick()
+        await _settle()
+        assert worker.talk is test_talk
+
+    await _run_for(clock, 2.5)  # the clip (3 s) and its tail (0.5 s) end
+    assert worker.talk is None and not worker.testing
+    assert (await db.get_talk(test_talk.id)).status == "done"
+    assert await db.get_segments("A", "es", "live") == []  # nothing went into an agenda talk
+    await pilot.tick()
+    assert worker.talk is None
+
+
+async def test_an_agenda_talk_that_comes_due_replaces_a_test_session(db, tmp_path: Path) -> None:
+    ClipIngest.clip_s = 600.0
+    try:
+        clock, worker, pilot = await _real_room(db, [_talk("B", "17:00", "18:00")], at("16:57"))
+        await pilot.play_test_audio("r1", _clip_file(tmp_path))
+        await _settle()
+        assert worker.testing
+
+        move_to(clock, at("16:59"))
+        await _settle()
+        await pilot.tick()
+        await _settle()
+
+        assert worker.talk is not None and worker.talk.id == "B" and not worker.testing
+        assert worker.test_file()[0] == "fake://r1"  # the room's own source, not the clip
+        await worker.stop()
+    finally:
+        ClipIngest.clip_s = 3.0

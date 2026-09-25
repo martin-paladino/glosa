@@ -163,7 +163,9 @@ Silence gate (task-19, glosa/audio/gate.py)
 
 Sources
     ``start(talk)`` plays the room's configured source; ``play_file(path)``
-    replaces the source of the running talk (or starts the free session).
+    ("Probar con audio", C1/Ruling 60) replaces the source of a running
+    free session until the clip ends (then switches back), or starts a free
+    session of its own; it refuses an agenda talk (``SoundCheckRefused``).
     When a source ends by itself, the pipeline stops:
       - a clean end (a file that finished) first feeds ``tail_s`` s of
         silence so the engine can finish the last phrase, then ends the
@@ -276,7 +278,19 @@ def is_free_talk(talk_id: str) -> bool:
     return talk_id.startswith(FREE_SESSION_PREFIX)
 
 
-__all__ = ["RoomWorker", "is_free_talk", "target_lang"]
+class SoundCheckRefused(RuntimeError):
+    """"Probar con audio" refused (C1, Ruling 60): test audio must never end,
+    replace or pollute an agenda talk. The message is for the operator."""
+
+    @classmethod
+    def open_talk(cls, talk: Talk) -> SoundCheckRefused:
+        return cls(
+            f"an agenda talk is open in this room ({talk.title}): test audio would end it. "
+            "Try it between talks or in another room."
+        )
+
+
+__all__ = ["RoomWorker", "SoundCheckRefused", "is_free_talk", "target_lang"]
 
 
 @dataclass
@@ -334,6 +348,12 @@ class _Run:
     # subtracts it from now() for the play position to seek the admin's
     # <audio> to; unused (and meaningless) for every other source_type.
     file_started_at: float = 0.0
+    # C1 (Ruling 60): a "Probar con audio" clip is playing (play_file). The
+    # autopilot leaves such a session alone until the clip ends; ``resume``
+    # is the free session's own source to switch back to then (None: the
+    # clip started the session, which ends with it).
+    test: bool = False
+    resume: tuple[str, str, bool] | None = None
     # The engine side, set by RoomWorker._apply_engine (again on a hot swap):
     engine: str = "fast"  # "fast" | "glossary"
     relay: SessionRelay = None  # type: ignore[assignment]
@@ -456,23 +476,40 @@ class RoomWorker:
         if self._quality is not None:
             await self._quality.aclose()
 
+    @property
+    def testing(self) -> bool:
+        """Whether a "Probar con audio" clip is playing (C1): the autopilot
+        leaves the room alone until it ends."""
+        return self._run is not None and self._run.test
+
     async def play_file(self, path: str) -> None:
         """"Probar con audio": play ``path`` at real-time speed as the room's
-        audio. A running talk keeps its engine session and just changes
-        source; otherwise the current talk (or the free session) starts.
-        Raises FileNotFoundError at once for a missing file."""
+        audio, as a test session (C1, Ruling 60). Never on an agenda talk
+        (SoundCheckRefused: it would end it and its captions would pollute
+        it), whether live or with its source down. A running free session
+        keeps its engine session and just changes source, and switches back
+        to its own source when the clip ends; in an idle room the clip starts
+        a free session of its own, which ends with it. Raises
+        FileNotFoundError at once for a missing file."""
         if not Path(path).is_file():
             raise FileNotFoundError(path)
         async with self._lock:
+            talk = self.talk
+            if talk is not None and not is_free_talk(talk.id):
+                raise SoundCheckRefused.open_talk(talk)
             run = self._run
             if run is None:
-                await self._start_locked(self.talk, "file", path, True)
+                await self._start_locked(talk, "file", path, True)
+                assert self._run is not None
+                self._run.test = True
                 return
+            resume = run.resume if run.test else run.source
             if run.audio is not None:
                 run.audio.cancel()
                 self._report(await asyncio.gather(run.audio, return_exceptions=True), "audio")
             self._source_down = None
             run.source = ("file", path, True)
+            run.test, run.resume = True, resume
             run.file_started_at = self._clock.now()  # Task 14b: this file's own clock starts over
             run.audio = self._spawn(self._audio_loop(run, "file", path, True), "audio")
             await self._log("info", "source_change", f"playing file {path}")
@@ -954,6 +991,15 @@ class RoomWorker:
         async with self._lock:
             if self._run is not run or run.audio is not audio:
                 return  # stopped, restarted or given another source meanwhile
+            if run.test and run.resume is not None:  # C1: the free session goes back to its own source
+                if error:
+                    log.warning("room %s: test clip failed: %s", self.room.id, error)
+                source, run.test, run.resume = run.resume, False, None
+                run.source = source
+                run.file_started_at = self._clock.now()
+                run.audio = self._spawn(self._audio_loop(run, *source), "audio")
+                await self._log("info", "source_change", f"test clip over: back to {source[1]}")
+                return
             await self._teardown(run)
             if error:
                 self._source_down = error

@@ -939,6 +939,80 @@ async def test_play_file_rejects_a_missing_file(tmp_path: Path, db) -> None:
     assert worker.talk is None
 
 
+class _ClipIngests(IngestFactory):
+    """The room's own source (fake://...) runs forever; a test clip lasts
+    ``clip_s`` s and ends cleanly."""
+
+    def __init__(self, clip_s: float) -> None:
+        super().__init__()
+        self.clip_s = clip_s
+
+    def __call__(self, source_type, source_url, realtime, clock) -> FakeIngest:
+        seconds = None if source_url.startswith("fake://") else self.clip_s
+        ingest = FakeIngest(source_type, source_url, realtime, clock, seconds=seconds)
+        self.made.append(ingest)
+        return ingest
+
+
+async def test_play_file_refuses_an_open_agenda_talk(tmp_path: Path, db) -> None:  # C1, Ruling 60
+    """Test audio must never end, replace or pollute an agenda talk: not a
+    live one, nor one whose source is down."""
+    from glosa.room import SoundCheckRefused
+
+    clock = DrivenClock()
+    ingests = IngestFactory(seconds=1.0, error="ffmpeg: connection refused")
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+    await worker.start(_agenda_talk("a"))
+    await run_for(clock, 0.5)
+
+    with pytest.raises(SoundCheckRefused, match="Talk a"):
+        await worker.play_file(_clip(tmp_path))
+    assert worker.talk.id == "a" and len(ingests.made) == 1 and not worker.testing
+
+    await run_for(clock, 2.0)
+    assert worker.status().state == "red" and worker.talk.id == "a"  # source down, talk on
+    with pytest.raises(SoundCheckRefused):
+        await worker.play_file(_clip(tmp_path))
+    assert worker.talk.id == "a" and len(ingests.made) == 1
+    await worker.stop()
+
+
+async def test_a_test_clip_over_a_free_session_switches_back_to_the_rooms_source(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    ingests = _ClipIngests(clip_s=2.0)
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+    await worker.start(None)
+    await run_for(clock, 1.0)
+    free = worker.talk
+
+    await worker.play_file(_clip(tmp_path))
+    await run_for(clock, 1.0)
+    assert worker.testing and worker.talk is free
+
+    await run_for(clock, 3.0)  # the clip and its tail end
+
+    assert worker.talk is free and not worker.testing  # the free session goes on...
+    assert [i.args[1] for i in ingests.made] == ["fake://r1", _clip(tmp_path), "fake://r1"]  # ...on its own source
+    assert ingests.made[2].yielded > 0
+    await worker.stop()
+
+
+async def test_a_test_clip_in_an_idle_room_ends_its_own_session(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    ingests = _ClipIngests(clip_s=2.0)
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+
+    await worker.play_file(_clip(tmp_path))
+    await run_for(clock, 1.0)
+    assert worker.testing and worker.talk.id == FREE_R1
+
+    await run_for(clock, 3.0)
+
+    assert worker.talk is None and not worker.testing and worker.status().state == "idle"
+    assert len(ingests.made) == 1
+    await worker.stop()
+
+
 async def test_the_free_session_id_is_unique_per_run_in_the_event_timezone(db) -> None:  # Ruling 27
     clock = DrivenClock()
     bus = CaptionBus(clock=clock)
@@ -1424,7 +1498,7 @@ async def test_restarting_the_running_talk_takes_its_edited_fields_from_the_db(t
     began = worker.talk.actual_start
 
     await db.update_talk("a", targets=["en", "es"], title="Edited while live")
-    await worker.play_file(_clip(tmp_path))  # same talk, new pipeline
+    await worker.start(worker.talk)  # same talk, new pipeline (play_file refuses an agenda talk: C1)
     await run_for(clock, 0.5)
 
     stored = await db.get_talk("a")

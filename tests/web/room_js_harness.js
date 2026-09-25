@@ -320,9 +320,13 @@ if (input.pip) {
   };
 }
 vm.createContext(context);
-// room.html loads the shared theme.js first (both deferred, in order).
-vm.runInContext(fs.readFileSync(THEME_JS, "utf8"), context, { filename: "theme.js" });
-vm.runInContext(fs.readFileSync(ROOM_JS, "utf8"), context, { filename: "room.js" });
+// input.scripts: the page's own <script src> list, in order (test_room_js.py
+// reads it from room.html or station.html), so a script room.js needs that a
+// template forgets to load fails here too. Only theme.js and room.js run.
+const SCRIPTS = { "theme.js": THEME_JS, "room.js": ROOM_JS };
+for (const name of input.scripts || ["theme.js", "room.js"]) {
+  if (SCRIPTS[name]) vm.runInContext(fs.readFileSync(SCRIPTS[name], "utf8"), context, { filename: name });
+}
 
 const [source] = sources;
 if (source.onopen) source.onopen();

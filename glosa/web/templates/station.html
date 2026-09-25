@@ -7,7 +7,9 @@
   <script src="/static/js/clock.js" defer></script>
   {#- room.js unmodified: it only ever finds elements through data-* hooks,
       so the same script renders the stage captions here as on /s/{slug}
-      (docs/design/README.md §5) -- no rendering logic is duplicated. #}
+      (docs/design/README.md §5) -- no rendering logic is duplicated. It
+      needs theme.js loaded first, as room.html does (window.GlosaTheme). #}
+  <script src="/static/js/theme.js" defer></script>
   <script src="/static/js/room.js" defer></script>
   <script src="/static/js/station.js" defer></script>
 {%- endblock %}

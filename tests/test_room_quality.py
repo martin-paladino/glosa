@@ -274,6 +274,29 @@ async def test_reset_clears_the_source_window_and_the_meter(fake_typesafe_sdk) -
     assert len(meter.calls) == 1  # unchanged: no source in the new (reset) window to pair with
 
 
+async def test_reset_during_an_in_flight_score_does_not_leak_into_the_new_talk(fake_typesafe_sdk) -> None:
+    """A score started for the outgoing talk must never land in the new
+    talk's freshly-reset window, even if it's still awaiting the meter when
+    reset() runs (review fix round 1, finding 1: a talk-boundary race)."""
+    meter = FakeMeter()
+    meter.gate = asyncio.Event()
+    clock = FakeClock()
+    tasks: list[asyncio.Task] = []
+    feed = _feed(meter, clock, tasks)
+
+    feed.on_source("An old talk's English source sentence.", 0.0, 2.0)
+    feed.on_target("en", "es", "La vieja traduccion de esta charla.", 0.1, 2.1)
+    await asyncio.sleep(0)  # let the background score() start and reach the gate
+
+    feed.reset()  # the new talk starts while the old talk's score is still in flight
+
+    meter.gate.set()  # only now does the stale score resolve
+    await asyncio.gather(*tasks)
+
+    assert meter.added == []  # never added: the score belonged to a talk that's gone
+    assert feed.avg() is None
+
+
 async def test_avg_and_aclose_proxy_the_meter() -> None:
     meter = FakeMeter()
     clock = FakeClock()
@@ -296,6 +319,25 @@ async def test_aclose_is_idempotent() -> None:
 
 
 # --------------------------------------------------------- build_quality_meter
+
+
+async def test_on_target_guards_its_lazy_import_and_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """on_target()'s lazy `from glosa.quality import find_matching_source`
+    (review fix round 1, minor finding) must never raise into the room, even
+    in the (unreachable in production) case where glosa.quality is present
+    in sys.modules but doesn't have the name -- e.g. a broken/partial module
+    from a custom quality_factory."""
+    monkeypatch.setitem(sys.modules, "glosa.quality", types.ModuleType("glosa.quality"))
+    meter = FakeMeter()
+    clock = FakeClock()
+    tasks: list[asyncio.Task] = []
+    feed = _feed(meter, clock, tasks)
+
+    feed.on_source("A source sentence with enough words in it.", 0.0, 2.0)
+    feed.on_target("en", "es", "A target sentence with enough words too.", 0.1, 2.1)  # must not raise
+    await asyncio.gather(*tasks)
+
+    assert meter.calls == []
 
 
 def test_build_quality_meter_warns_once_and_returns_none_when_the_extra_is_missing(

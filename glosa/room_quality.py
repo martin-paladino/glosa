@@ -97,11 +97,20 @@ class QualityFeed:
         self._in_flight = False
         self._last_started: float | None = None
         self._closed = False
+        # Bumped by reset(): a _score() task started before a reset() call
+        # carries the generation it started in, and checks it again after
+        # awaiting the meter -- a mismatch means a talk boundary happened
+        # while the call was in flight, so its result belongs to a talk
+        # that's gone and must not be added to the new (already-reset)
+        # window (review fix round 1, finding 1).
+        self._generation = 0
 
     def reset(self) -> None:
         """A new talk: forget the last run's source window and score
-        average (window 10 starts empty per talk)."""
+        average (window 10 starts empty per talk), and invalidate any
+        still-in-flight score from the outgoing talk (see _generation)."""
         self._sources.clear()
+        self._generation += 1
         self._meter.reset()
 
     def on_source(self, text: str, t_start: float, t_end: float) -> None:
@@ -120,7 +129,10 @@ class QualityFeed:
             return  # not en<->es: the Jev question is fixed to those two
         if not self._sources:
             return
-        from glosa.quality import find_matching_source  # see module docstring: already imported
+        try:
+            from glosa.quality import find_matching_source  # see module docstring: already imported
+        except ImportError:
+            return  # defensive: on_target must never raise into the room (review fix round 1, minor)
 
         target_seg = _Seg(text, t_start, t_end)
         source_seg = find_matching_source(target_seg, tuple(self._sources))
@@ -132,7 +144,7 @@ class QualityFeed:
             return  # one in flight, or started one too recently: drop, don't queue
         english, spanish = (source_seg.text, text) if direction == "direct" else (text, source_seg.text)
         self._in_flight = True
-        self._spawn(self._score(english, spanish), "quality")
+        self._spawn(self._score(english, spanish, self._generation), "quality")
 
     def _may_start(self) -> bool:
         if self._in_flight:
@@ -143,7 +155,7 @@ class QualityFeed:
         self._last_started = now
         return True
 
-    async def _score(self, english: str, spanish: str) -> None:
+    async def _score(self, english: str, spanish: str, generation: int) -> None:
         p: float | None = None
         try:
             p = await self._meter.score(english, spanish)
@@ -153,6 +165,8 @@ class QualityFeed:
             logger.exception("quality: score() failed unexpectedly")
         finally:
             self._in_flight = False
+        if generation != self._generation:
+            return  # reset() ran while this was in flight: it's the old talk's score, drop it
         self._meter.add(p)
 
     def avg(self) -> float | None:

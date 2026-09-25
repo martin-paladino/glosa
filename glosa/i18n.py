@@ -103,6 +103,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "what_did_i_miss": "¿Qué me perdí?",
         "summary_close": "Cerrar",
         "summary_ago": "hace {n} min",
+        # Task ui2: the panel's drag handle (mouse/touch/arrow keys)
+        "move_panel": "Mover",
     },
     "en": {
         # Navigation and brand
@@ -192,6 +194,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "what_did_i_miss": "What did I miss?",
         "summary_close": "Close",
         "summary_ago": "{n} min ago",
+        # Task ui2: the panel's drag handle (mouse/touch/arrow keys)
+        "move_panel": "Move",
     },
 }
 

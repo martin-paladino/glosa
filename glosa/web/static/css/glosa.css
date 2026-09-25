@@ -1010,8 +1010,30 @@
     visibility: visible;
     transition: transform 200ms var(--ease-out), visibility 0s;
   }
-  .summary-panel__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .summary-panel__title { font: 750 var(--step-2)/1.1 var(--font-label); font-stretch: var(--narrow-2); }
+  .summary-panel__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: grab;
+    touch-action: none;   /* Task ui2: a touch drag here scrolls nothing else */
+  }
+  .summary-panel--dragging .summary-panel__head { cursor: grabbing; }
+  .summary-panel__title { flex: 1; font: 750 var(--step-2)/1.1 var(--font-label); font-stretch: var(--narrow-2); }
+  .summary-panel__grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    inline-size: 28px;
+    block-size: 28px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--ink-3);
+    cursor: grab;
+  }
+  .summary-panel__grip:hover { background: var(--key-hover); }
+  .summary-panel__grip svg { inline-size: 16px; block-size: 16px; fill: currentColor; }
   .summary-panel__close {
     display: flex;
     align-items: center;

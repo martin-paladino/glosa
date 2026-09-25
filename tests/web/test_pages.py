@@ -400,6 +400,19 @@ def test_room_page_has_an_accessible_summary_button_and_panel(client: TestClient
     assert f'aria-label="{t("summary_close", "es")}"' in html
 
 
+def test_the_summary_panel_drag_handle_has_an_accessible_name_in_both_languages(
+    client: TestClient,
+) -> None:  # user feedback: the panel can be dragged off the captions
+    spanish = client.get("/s/r1", headers=SPANISH).text
+    english = client.get("/s/r1", headers=ENGLISH).text
+
+    assert 'data-summary-drag-handle' in spanish
+    assert f'aria-label="{t("move_panel", "es")}"' in spanish
+    assert t("move_panel", "es") == "Mover"
+    assert f'aria-label="{t("move_panel", "en")}"' in english
+    assert t("move_panel", "en") == "Move"
+
+
 def test_audience_pages_link_only_assets_that_exist(client: TestClient) -> None:
     # The v2 design system is one stylesheet (glosa.css, room.css was folded
     # into it). Every local stylesheet and script a page links must be served.

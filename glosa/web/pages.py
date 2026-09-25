@@ -36,9 +36,11 @@ embedded JSON config point room.js/overlay.js at the token, not the slug.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -81,7 +83,11 @@ def index(request: Request):
         if _audience_mode(request) == "qr_only"
         else [_room_summary(room, ui, forced) for room in _rooms(request)]
     )
-    context = _base_context(request, ui, forced) | {"rooms": rooms}
+    settings = getattr(request.app.state, "settings", None)
+    context = _base_context(request, ui, forced) | {
+        "rooms": rooms,
+        "zone": _zone_text(getattr(settings, "timezone", None) if settings is not None else None),
+    }
     return templates.TemplateResponse(request, "index.html", context, headers=_VARY)
 
 
@@ -300,28 +306,122 @@ def _base_context(request: Request, ui: Lang, forced: Lang | None) -> dict:
     }
 
 
+def _now() -> datetime:
+    """The wall clock (tests patch this)."""
+    return datetime.now(timezone.utc)
+
+
+def _zone_text(tz_name: str | None) -> str | None:
+    """"UTC−3 (Buenos Aires)" for the index's "times are in..." line, or None."""
+    if not tz_name or not isinstance(tz_name, str):
+        return None
+    try:
+        zone = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+    offset = _now().astimezone(zone).utcoffset() or timedelta(0)
+    minutes = int(offset.total_seconds() // 60)
+    if minutes == 0 and tz_name.upper() in ("UTC", "ETC/UTC", "GMT", "Z"):
+        return "UTC"
+    sign = "+" if minutes >= 0 else "\u2212"
+    hours, rest = divmod(abs(minutes), 60)
+    text = f"UTC{sign}{hours}" + (f":{rest:02d}" if rest else "")
+    place = tz_name.rsplit("/", 1)[-1].replace("_", " ")
+    return f"{text} ({place})" if "/" in tz_name else text
+
+
 def _room_summary(room: dict, ui: Lang, forced: Lang | None) -> dict:
-    """A room as the templates show it: status, now and next, ready-made texts."""
+    """A room as the templates show it: state, now and next, ready-made texts.
+
+    ``state``: "live" (an agenda talk is on), "free" (a free session: live,
+    no agenda talk), "between" (nothing on, a next talk is scheduled) or
+    "closed" (nothing on, nothing next). ``feature`` is the talk the card
+    shows in full (with its abstract): the agenda talk on now, else the next
+    one (between talks, or during a free session)."""
     langs = list(room.get("langs") or [])
     now, nxt = room.get("now"), room.get("next")
+    clock = _now()
+    now_view = _talk(now, langs, ui, clock) if now else None
+    next_view = _talk(nxt, langs, ui, clock, upcoming=True) if nxt else None
+    if now_view is not None:
+        state = "free" if now_view["free"] else "live"
+    else:
+        state = "between" if next_view is not None else "closed"
     return {
         "slug": room["slug"],
         "name": room["name"],
         "href": f"/s/{quote(room['slug'], safe='')}" + (f"?lang={forced}" if forced else ""),
         "live": now is not None,
-        "now": _talk(now, langs, ui) if now else None,
-        "next": _talk(nxt, langs, ui) if nxt else None,
+        "state": state,
+        "now": now_view,
+        "next": next_view,
+        "feature": now_view if state == "live" else next_view,
     }
 
 
-def _talk(talk: dict, langs: list[str], ui: Lang) -> dict:
+def _talk(
+    talk: dict, langs: list[str], ui: Lang, clock: datetime | None = None, *, upcoming: bool = False
+) -> dict:
     speakers = join_names(list(talk.get("speakers") or []), ui)
-    langs_text = _describe_langs(talk.get("language", ""), langs, ui)
-    return talk | {
+    source = talk.get("language", "")
+    langs_text = _describe_langs(source, langs, ui)
+    free = bool(talk.get("free"))
+    start, end = _parse_time(talk.get("starts_at")), _parse_time(talk.get("ends_at"))
+    clock = clock or _now()
+    targets = [code for code in langs if code != source]
+    codes = [source, *targets] if source else targets
+    view = talk | {
+        "title": t("free_session", ui) if free else talk.get("title", ""),
+        "free": free,
+        "abstract": (talk.get("abstract") or "").strip(),
         "speakers_text": speakers,
         "langs_text": langs_text,
         "meta": f"{speakers}. {langs_text}" if speakers else langs_text,
+        "direction": {
+            "codes": codes,
+            "names": [lang_name(code, ui) for code in codes],
+            "label": langs_text,
+        },
+        "day": "",
+        "progress": None,
+        "segments": None,
+        "left_text": "",
+        "soon_text": "",
     }
+    if start is not None and end is not None and not free:
+        local_now = clock.astimezone(start.tzinfo)
+        days = (start.date() - local_now.date()).days
+        if days == 1:
+            view["day"] = t("tomorrow", ui)
+        elif days > 1:
+            view["day"] = f"{start.day}/{start.month}"
+        span = (end - start).total_seconds()
+        minutes = max(1, round(span / 60))
+        view["segments"] = minutes if minutes <= 60 else -(-minutes // 5)  # one per minute; per 5 if long
+        if start <= clock < end and span > 0:
+            view["progress"] = round((clock - start).total_seconds() / span, 3)
+            view["left_text"] = t("time_left", ui).format(n=max(1, _ceil_minutes(end - clock)))
+        elif upcoming and clock < start:
+            minutes = _ceil_minutes(start - clock)
+            if minutes <= 120:
+                view["soon_text"] = t("starts_in", ui).format(n=minutes)
+        elif upcoming:
+            view["soon_text"] = t("starting_soon", ui)
+    return view
+
+
+def _parse_time(value) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _ceil_minutes(delta: timedelta) -> int:
+    return max(0, -int(-delta.total_seconds() // 60))
 
 
 def _describe_langs(talk_lang: str, langs: list[str], ui: Lang) -> str:

@@ -170,9 +170,179 @@ def test_index_marks_live_and_idle_rooms(client: TestClient) -> None:
     html = client.get("/", headers=SPANISH).text
 
     assert html.count("status--live") == 1
-    assert t("no_talk_now", "es") in html
-    assert t("no_more_talks", "es") in html
+    assert html.count("room-card--live") == 1
+    assert html.count("room-card--between") == 1   # r2: nothing on, a next talk
+    assert html.count("room-card--closed") == 1    # r3: nothing on, nothing next
     assert t("between_talks", "es") in html
+    assert t("next_talk", "es") in html
+    assert t("no_more_talks", "es") in html
+    assert t("no_talks", "es") in html
+
+
+# ---- / : room cards with the agenda (UI 1) ------------------------------------
+# The full view() shape (RoomWorker._agenda_view): times in the event timezone
+# plus ISO starts_at/ends_at, the abstract and "free". The clock is pinned to
+# 14:30 in Buenos Aires (pages._now), so progress and "N min" are exact.
+
+BA = "-03:00"
+CLOCK = "2026-09-25T14:30:00" + BA
+
+
+def _agenda_talk(tid: str, title: str, start: str, end: str, *, speakers=(), language="es",
+                 abstract="", free=False, day="2026-09-25") -> dict:
+    return {
+        "talk_id": tid, "title": title, "speakers": list(speakers), "language": language,
+        "start": start, "end": end,
+        "starts_at": f"{day}T{start}:00{BA}", "ends_at": f"{day}T{end}:00{BA}",
+        "abstract": abstract, "free": free,
+    }
+
+
+LONG_ABSTRACT = "Cómo migramos 300 servicios a OpenTelemetry sin frenar a ningún equipo. " * 4
+
+AGENDA_ROOMS = [
+    {   # an agenda talk on now, a next one
+        "slug": "gran", "name": "Gran sala", "langs": ["en", "es"],
+        "now": _agenda_talk("t1", "LLMs on Autopilot", "14:00", "14:40", speakers=["Annie Talvasto"],
+                            language="en", abstract=LONG_ABSTRACT),
+        "next": _agenda_talk("t2", "Platform engineering sin humo", "14:50", "15:30", speakers=["Diego Ferreyra"]),
+    },
+    {   # a free session with a talk coming up
+        "slug": "abasto", "name": "Sala Abasto", "langs": ["es", "en"],
+        "now": _agenda_talk("free-abasto-20260925T090000", "Sesión libre", "09:00", "21:00", free=True),
+        "next": _agenda_talk("t3", "Del monolito a eventos", "15:05", "15:45", speakers=["Carolina Paz"],
+                             abstract="Dos años con Kafka."),
+    },
+    {   # between talks
+        "slug": "comunidad", "name": "Sala Comunidad", "langs": ["es", "en"], "now": None,
+        "next": _agenda_talk("t4", "Cómo se organiza una Nerdearla", "14:42", "15:20",
+                             speakers=["Ana Sosa", "Pablo Díaz"], abstract="300 voluntarios."),
+    },
+    {   # between talks, the next one tomorrow
+        "slug": "talleres", "name": "Sala Talleres", "langs": ["es"], "now": None,
+        "next": _agenda_talk("t5", "Taller de Rust", "10:00", "12:00", day="2026-09-26"),
+    },
+    {   # nothing on, nothing next
+        "slug": "patio", "name": "Patio", "langs": ["es"], "now": None, "next": None,
+    },
+]
+
+
+@pytest.fixture
+def agenda(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    from datetime import datetime
+
+    monkeypatch.setattr(pages, "_now", lambda: datetime.fromisoformat(CLOCK))
+    app = _make_app(rooms=AGENDA_ROOMS)
+    app.state.settings = MagicMock(audience_mode="all", timezone="America/Argentina/Buenos_Aires")
+    return TestClient(app)
+
+
+def _card(html: str, name: str) -> str:
+    """The <li> of the room card whose name is `name`."""
+    for match in re.finditer(r'<li class="room-card room-card--\w+">.*?</li>', html, re.S):
+        if f">{name}</h2>" in match.group(0):
+            return match.group(0)
+    raise AssertionError(f"no card for {name!r}")
+
+
+def test_live_card_shows_time_range_speakers_languages_track_and_abstract(agenda: TestClient) -> None:
+    card = _card(agenda.get("/", headers=SPANISH).text, "Gran sala")
+
+    assert "room-card--live" in card and "status--live" in card
+    assert t("now", "es") in card
+    assert '<time datetime="2026-09-25T14:00:00-03:00">14:00</time>–<time datetime="2026-09-25T14:40:00-03:00">14:40</time>' in card
+    assert "Annie Talvasto" in card
+    assert "<abbr" in card and ">EN</abbr>" in card and ">ES</abbr>" in card   # EN → ES
+    assert 'aria-label="En inglés, con subtítulos en español."' in card
+    # 30 of 40 minutes gone: the minute track and what's left
+    assert "--progress: 0.75; --segs: 40" in card
+    assert t("time_left", "es").format(n=10) in card
+    # The abstract, with an accessible "Ver más" (index.js shows it if it's clamped)
+    assert LONG_ABSTRACT.strip()[:40] in card
+    assert re.search(r'<button class="room-card__more" type="button" aria-expanded="false" aria-controls="(about-\d+)"', card)
+    assert re.search(r'<p class="room-card__abstract" id="about-\d+">', card)
+    assert t("show_more", "es") in card
+    # The next talk, small, and the key that opens the room
+    assert t("next", "es") in card and "14:50" in card and "Platform engineering sin humo" in card
+    assert 'href="/s/gran"' in card and t("read_captions", "es") in card
+
+
+def test_free_session_card_is_live_and_features_the_next_talk(agenda: TestClient) -> None:
+    spanish = _card(agenda.get("/", headers=SPANISH).text, "Sala Abasto")
+    english = _card(agenda.get("/", headers=ENGLISH).text, "Sala Abasto")
+
+    assert "room-card--free" in spanish and "status--live" in spanish
+    assert t("free_session", "es") in spanish and t("free_session_note", "es") in spanish
+    assert t("free_session", "en") in english and "Sesión libre" not in english
+    # No time range or track for a free session; the next talk gets the big time
+    assert "data-track" not in spanish and "09:00" not in spanish
+    assert t("next_talk", "es") in spanish
+    assert '<time datetime="2026-09-25T15:05:00-03:00">15:05</time>' in spanish
+    assert t("starts_in", "es").format(n=35) in spanish
+    assert "Carolina Paz" in spanish and "Dos años con Kafka." in spanish
+    assert t("read_captions", "es") in spanish
+
+
+def test_between_talks_card_puts_the_next_start_time_first(agenda: TestClient) -> None:
+    card = _card(agenda.get("/", headers=SPANISH).text, "Sala Comunidad")
+
+    assert "room-card--between" in card and "status--idle" in card
+    assert t("between_talks", "es") in card and t("next_talk", "es") in card
+    assert re.search(r'class="room-card__at">\s*<time datetime="2026-09-25T14:42:00-03:00">14:42</time>', card)
+    assert t("starts_in", "es").format(n=12) in card
+    assert "Ana Sosa y Pablo Díaz" in card and "300 voluntarios." in card
+    assert t("open_room", "es") in card and t("read_captions", "es") not in card
+
+
+def test_a_next_talk_on_another_day_says_so(agenda: TestClient) -> None:
+    spanish = _card(agenda.get("/", headers=SPANISH).text, "Sala Talleres")
+    english = _card(agenda.get("/", headers=ENGLISH).text, "Sala Talleres")
+
+    assert f'<span class="room-card__day">{t("tomorrow", "es")}</span>' in spanish
+    assert f'<span class="room-card__day">{t("tomorrow", "en")}</span>' in english
+    assert "room-card__soon" not in spanish   # no "starts in" a day ahead
+
+
+def test_room_with_nothing_on_and_nothing_next(agenda: TestClient) -> None:
+    card = _card(agenda.get("/", headers=SPANISH).text, "Patio")
+
+    assert "room-card--closed" in card and "status--idle" in card
+    assert t("no_talks", "es") in card and t("no_more_talks", "es") in card
+    assert 'href="/s/patio"' in card and t("open_room", "es") in card
+
+
+def test_index_says_which_timezone_the_times_are_in(agenda: TestClient) -> None:
+    assert t("times_in_zone", "es").format(zone="UTC\u22123 (Buenos Aires)") in agenda.get("/", headers=SPANISH).text
+    assert pages._zone_text("UTC") == "UTC"
+    assert pages._zone_text("Europe/Madrid") in ("UTC+1 (Madrid)", "UTC+2 (Madrid)")
+    assert pages._zone_text("Not/AZone") is None and pages._zone_text(None) is None
+
+
+def test_index_has_the_shared_theme_toggle(client: TestClient) -> None:
+    html = client.get("/", headers=SPANISH).text
+
+    assert '<script src="/static/js/theme.js" defer></script>' in html
+    assert '<script src="/static/js/index.js" defer></script>' in html
+    assert 'data-action="theme"' in html
+    assert f'aria-label="{t("theme", "es").format(name=t("theme_system", "es"))}"' in html
+    assert f'data-theme-label="{t("theme", "es")}"' in html
+    # The room view loads the same theme.js (shared code, not a copy)
+    assert '<script src="/static/js/theme.js" defer></script>' in client.get("/s/r1").text
+
+
+def test_index_copy_in_both_languages(client: TestClient) -> None:
+    spanish = client.get("/", headers=SPANISH).text
+    english = client.get("/", headers=ENGLISH).text
+
+    assert t("index_lede", "es") == "Subtítulos en vivo de cada sala. Elegí la tuya."
+    assert t("index_lede", "en") == "Live captions for every room. Pick yours."
+    assert t("index_lede", "es") in spanish and t("index_lede", "en") in english
+    assert t("colophon_def", "es") in spanish and t("colophon_def", "en") in english
+    for key in ("times_in_zone", "read_captions", "open_room", "time_left", "starts_in", "starting_soon",
+                "tomorrow", "show_more", "show_less", "free_session_note", "next_talk", "no_talks",
+                "free_session"):
+        assert t(key, "es") and t(key, "en") and t(key, "es") != t(key, "en"), key
 
 
 def test_index_describes_talk_and_caption_languages(client: TestClient) -> None:
@@ -609,6 +779,7 @@ def test_qr_only_mode_lists_no_rooms_on_the_index() -> None:
 
     assert t("rooms_empty", "es") in html
     assert "Gran sala" not in html
+    assert "room-card" not in html and 'href="/s/' not in html
 
 
 def test_qr_only_mode_404s_the_slug_but_the_token_works() -> None:

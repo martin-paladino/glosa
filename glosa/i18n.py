@@ -21,7 +21,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "change_room": "Cambiar de sala",
         "rooms": "Salas",
         "index_title": "{event}, subtítulos en vivo",
-        "index_lede": "Subtítulos en vivo en cada sala, traducidos a tu idioma. Elegí una sala y leé desde tu celular.",
+        "index_lede": "Subtítulos en vivo de cada sala. Elegí la tuya.",
         "rooms_empty": "No hay salas para mostrar. Si estás en una sala, escaneá el código QR que está en la pantalla.",
         "room_title": "{room}, en vivo",
         "room_not_found": "No encontramos esa sala.",
@@ -103,6 +103,20 @@ STRINGS: dict[str, dict[str, str]] = {
         "what_did_i_miss": "¿Qué me perdí?",
         "summary_close": "Cerrar",
         "summary_ago": "hace {n} min",
+        # Room list (/): the room cards
+        "times_in_zone": "Horarios en {zone}.",
+        "read_captions": "Leer subtítulos",
+        "open_room": "Abrir la sala",
+        "time_left": "Quedan {n} min",
+        "starts_in": "Empieza en {n} min",
+        "starting_soon": "Está por empezar",
+        "tomorrow": "mañana",
+        "show_more": "Ver más",
+        "show_less": "Ver menos",
+        "free_session_note": "Sin charla en la agenda: se subtitula lo que se dice en la sala.",
+        "next_talk": "Próxima charla",
+        "no_talks": "Sin charlas",
+        "free_session": "Sesión libre",
     },
     "en": {
         # Navigation and brand
@@ -110,7 +124,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "change_room": "Change room",
         "rooms": "Rooms",
         "index_title": "{event}, live captions",
-        "index_lede": "Live captions in every room, translated into your language. Pick a room and read along on your phone.",
+        "index_lede": "Live captions for every room. Pick yours.",
         "rooms_empty": "There are no rooms to show. If you are in a room, scan the QR code on the screen.",
         "room_title": "{room}, live",
         "room_not_found": "We couldn't find that room.",
@@ -159,7 +173,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "pip": "Pop-out captions",
         # Footer
         "colophon_word": "glosa",
-        "colophon_def": "(Spanish, f.): a note that explains or translates a text.",
+        "colophon_def": "is Spanish for a note that explains or translates a text.",
         "free_software": "Glosa is free software.",
         "view_source": "View the source",
         # Station (Task 14a: the mini PC's page, glosa/web/templates/station.html)
@@ -192,6 +206,20 @@ STRINGS: dict[str, dict[str, str]] = {
         "what_did_i_miss": "What did I miss?",
         "summary_close": "Close",
         "summary_ago": "{n} min ago",
+        # Room list (/): the room cards
+        "times_in_zone": "Times in {zone}.",
+        "read_captions": "Read captions",
+        "open_room": "Open the room",
+        "time_left": "{n} min left",
+        "starts_in": "Starts in {n} min",
+        "starting_soon": "About to start",
+        "tomorrow": "tomorrow",
+        "show_more": "More",
+        "show_less": "Less",
+        "free_session_note": "Nothing on the schedule: captions follow whatever is said in the room.",
+        "next_talk": "Next talk",
+        "no_talks": "No talks",
+        "free_session": "Free session",
     },
 }
 

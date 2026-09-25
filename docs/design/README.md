@@ -108,7 +108,7 @@ El texto sobre una tecla ámbar o roja es `--on-warn` / `--on-fault` (casi negro
 ### Temas
 
 - Sin atributo, sigue al sistema (`prefers-color-scheme`); **el diseño base es el oscuro**, que es lo que se usa si el sistema no pide claro. Con `prefers-contrast: more`, alto contraste.
-- `data-theme="light" | "dark" | "contrast"` en `<html>` fuerza uno; `room.js` lo guarda en `localStorage` (`glosa.theme`). También funciona en cualquier elemento, para mostrar un tema dentro de otro.
+- `data-theme="light" | "dark" | "contrast"` en `<html>` fuerza uno; `static/js/theme.js` (compartido por la sala y la lista de salas) lo guarda en `localStorage` (`glosa.theme`). También funciona en cualquier elemento, para mostrar un tema dentro de otro.
 - **El panel es siempre oscuro:** `.admin` fija `color-scheme: dark`.
 - **Alto contraste:** negro, blanco y los tres estados más vivos, sin transparencias, filetes de 2 px, barra del vivo de 5 px, subtítulos en B612 Bold. La frase en curso no se apaga: queda en gris claro (13,4:1).
 - `forced-colors` (alto contraste de Windows) también está cubierto.
@@ -191,7 +191,7 @@ Los estados usan siempre las mismas cuatro palabras en los modificadores: `--liv
 | Escenario vacío | `.stage-note`, `.stage-agenda` |
 | "Ahora" y "Próxima" | `.agenda`, `.slot` (+ `--now`), `__when` (con `<time>`), `__what`, `__empty` |
 | Salas al costado | `.room-nav`, `__title`, `__list`, `__item` (`aria-current="page"` = `--sel`), `__row`, `__name`, `__talk`, `__foot` |
-| Lista pública | `.room-list`, `.room-card`, `__head`, `__name`, `__link` (toda la fila es el link) |
+| Lista pública | `.index` (+ `__head`, `__tools`/`__tool`: tema e idioma, `__intro`, `__zone`), `.room-list` (filas pegadas en el celular, pared desde 40rem), `.room-card` + `--live`/`--free`/`--between`/`--closed` (hundida), `__head`, `__name`, `__body`, `__when`, `__label`, `__time`, `__title`, `__who`, `__track` y `__bar` (un segmento por minuto, lleno hasta ahora: `--progress`, `--segs`), `__left`, `__at` (la hora grande de la próxima), `__day`, `__soon`, `__about` + `__abstract` + `__more` (tres renglones, dos en el celular, y "Ver más" con `aria-expanded`), `__note`, `__then`, `__next`, `__open` (la tecla; toda la tarjeta es el link salvo el resumen) |
 | Pie | `.colophon` |
 
 ### Panel de producción (Tarea 12)

@@ -11,7 +11,7 @@ agenda del evento una sola vez y un piloto automático abre y cierra las
 charlas de cada sala según el horario, cambiando idioma, motor y glosario
 con ella, así nadie tiene que apretar iniciar/detener charla por charla.
 Corre sobre dos motores de Gemini intercambiables — uno rápido y fluido, y
-otro fiel al glosario para charlas técnicas — a **hasta ~30 veces menos**
+otro fiel al glosario para charlas técnicas — a **hasta ≈33 veces menos**
 que el precio de lista público de un SaaS comercial de subtitulado
 en vivo (ver [Costos](#costos) y [`docs/costs.md`](docs/costs.md)).
 
@@ -209,7 +209,10 @@ flowchart LR
   por completo la lista de salas en `/` y solo acepta el link QR de una
   sala (`/s/{token}`), para un evento que no quiere su lista de salas
   adivinable o pública — en este modo nada público revela la
-  correspondencia sala→token ni sus subtítulos sin el token.
+  correspondencia sala→token ni sus subtítulos sin el token. En la
+  computadora, la lista de salas del costado se pliega (un botón con
+  ícono, recordado por navegador) para darle todo el ancho a los
+  subtítulos.
 - **"¿Qué me perdí?"** (página de la sala, mientras hay una charla en
   vivo): un resumen rotativo de 3 a 5 puntos de los últimos minutos de
   subtítulos por idioma, actualizado cada 3 min (`GET
@@ -226,14 +229,18 @@ flowchart LR
 - **Admin** (`/admin`, "Sala de control"): cada sala es un monitor con sus
   subtítulos en vivo, una luz de estado y su tiempo al aire. La barra de
   **Atención** lista solo lo que necesita acción ahora (una sala caída o
-  degradada y por qué, el presupuesto al 80 %, una alarma de silencio); la
+  degradada y por qué, el presupuesto al 80 %, una sala en rojo porque se
+  alcanzó el tope de gasto mensual o el crédito de Gemini — reintenta cada
+  30 s y se recupera sola cuando se sube el límite —, una alarma de
+  silencio); la
   fila de una sala trae un botón de un clic para reconectar/reabrir la
   fuente. Además: el medidor de gasto, el log de eventos, la agenda de hoy
   con el próximo cambio automático, el mismo selector de tema claro/oscuro/
   alto contraste (**Tema**) y el botón **Atajos** de las páginas del
   público, tooltips en los botones de motor/modo/cajón, y un cajón por
   sala (hacé clic o apretá 1–9; Esc cierra) con auto/manual, iniciar/
-  terminar charla, reconectar, **"Probar con audio"** (reproducir una
+  terminar charla (de la agenda o una sesión libre), reconectar, un link
+  **"QR para el público"** a la página `/qr/{sala}`, **"Probar con audio"** (reproducir una
   muestra o un archivo subido a través de la sala para juzgar la calidad
   sin una charla en vivo — rechazado mientras hay una charla agendada
   abierta o por empezar), **"Escuchar el audio"** (un admin puede escuchar
@@ -348,8 +355,8 @@ APIs reales de Gemini, a velocidad real, clips de ~93 s de charlas reales de Ner
 
 
 La propia latencia del motor `glossary`, medida en vivo durante esta
-build (6 corridas de 60 s de audio en español,
-`.superpowers/sdd/2026-09-24-glosa/progress.md`): fuente (transcripción)
+build (6 corridas de 60 s de audio en español, registradas en las notas de
+trabajo de la build, no en este repo): fuente (transcripción)
 **p50 ≈ 0,9 s** desde el fin del habla, traducción **p50 ≈ 0,7 s** desde el
 corte. Tabla completa de latencia/costo para ambos motores, con fuentes:
 [`docs/alternatives.md`](docs/alternatives.md) (en inglés).
@@ -427,8 +434,8 @@ por llamada bajo carga, no el throughput. CPU/RSS son de este proceso
 los modelos — no es la misma cifra que el RSS del proceso (la memoria
 Metal/unificada no se refleja del todo en el RSS en Apple Silicon). Diez
 segmentos traducidos por clip, y la salida completa de la corrida, están
-en el reporte de esta tarea
-(`.superpowers/sdd/2026-09-24-glosa/task-16-report.md`).
+en las notas de trabajo de la build (no en este repo); `make demo-local`
+reproduce la corrida.
 
 **Límites, con honestidad:**
 - **1–2 salas por máquina** — ver los números arriba; una tercera sala

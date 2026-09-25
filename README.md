@@ -10,7 +10,7 @@ the event's agenda once and an autopilot opens and closes each room's talks
 on schedule, switching language, engine and glossary with it, so nobody has
 to press start/stop per talk. It runs on two interchangeable Gemini engines
 — a fast, fluent one and a glossary-accurate one for technical talks — at
-up to **~30× less than the public list price** of a commercial
+up to **≈33× less than the public list price** of a commercial
 live-captioning SaaS (see [Costs](#costs) and
 [`docs/costs.md`](docs/costs.md)).
 
@@ -200,6 +200,8 @@ flowchart LR
   only accepts a room's QR link (`/s/{token}`), for an event that doesn't
   want its room list guessable or public — in this mode nothing public
   reveals a room's slug↔token mapping or its captions without the token.
+  On desktop, the room view's side room list folds to a rail (an icon
+  toggle, remembered per browser) so captions get the freed width.
 - **"¿Qué me perdí?" ("What did I miss?")** (room page, while a talk is
   live): a rolling 3-5 bullet recap of the last few minutes of captions
   per language, refreshed every 3 min (`GET /api/summary/{slug}/{lang}`,
@@ -215,13 +217,17 @@ flowchart LR
 - **Admin** (`/admin`, "Sala de control"): every room is a monitor with its
   live captions, a status light and its time on air. The **Atención** bar
   lists only what needs action now (a room down or degraded and why, the
-  budget at 80%, a silence alarm); a room's row carries a one-click
+  budget at 80%, a room turned red because Gemini's monthly spending cap
+  or prepaid credit ran out — it retries every 30 s and recovers on its
+  own once the limit is raised —, a silence alarm); a room's row carries a one-click
   reconnect/reopen-source button. Also: the spend meter, the event log,
   today's agenda with the next automatic
   change, the same light/dark/high-contrast theme toggle (**Tema**) and a
   **Shortcuts** button as the audience pages, tooltips on the engine/mode/
   drawer buttons, and a side drawer per room (click it or press 1–9; Esc
-  closes) with auto/manual, start/end talk, reconnect, **"Probar con
+  closes) with auto/manual, start/end talk (an agenda talk or a free session),
+  reconnect, a **"QR para el público"** link to the room's `/qr/{room}`
+  page, **"Probar con
   audio"** (play a sample or an uploaded clip through the room to judge
   quality without a live talk — refused while an agenda talk is open or
   due), **"Escuchar el audio"** (an admin can listen to that test clip
@@ -332,7 +338,7 @@ Real Gemini APIs, real-time pace, ~93 s clips of real Nerdearla talks, one run e
 
 
 The glossary engine's own latency, measured live during this build (6 runs
-of 60 s of Spanish audio, `.superpowers/sdd/2026-09-24-glosa/progress.md`):
+of 60 s of Spanish audio, logged in the build's working notes, not in this repo):
 source (transcription) **p50 ≈ 0.9 s** after end of speech, translation
 **p50 ≈ 0.7 s** after the cut. Full latency/cost table for both engines,
 with sources: [`docs/alternatives.md`](docs/alternatives.md).
@@ -402,8 +408,8 @@ CPU/RSS are this process's own (`ps`, sampled every 0.5 s); "MLX peak
 memory" is `mlx.core.get_peak_memory()`, the models' own unified-memory
 high-water mark, not the same figure as process RSS (Metal/unified memory
 isn't fully reflected in RSS on Apple silicon). Ten translated segments per
-clip, and the full run output, are in this build's task report
-(`.superpowers/sdd/2026-09-24-glosa/task-16-report.md`).
+clip, and the full run output, were recorded in the build's working notes
+(not in this repo); `make demo-local` reproduces the run.
 
 **Limits, honestly:**
 - **1–2 rooms per machine** — see the numbers above; a third concurrent

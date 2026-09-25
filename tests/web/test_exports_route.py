@@ -203,4 +203,20 @@ async def test_shift_s_falls_back_to_the_configured_default_when_the_room_is_idl
         response = await client.get("/exports/t1/en.srt")
 
         # Arrival times 7.0/8.0 moved EARLIER by the 5.0 s delay (final-review-A I3).
-        assert "00:00:02,000 --> 00:00:03,000" in response.text
+        assert "00:00:02,000 --> 00:00:03,200" in response.text
+
+
+async def test_a_glossary_engine_talk_is_shifted_only_by_the_transcription_lag(tmp_path: Path) -> None:
+    """The glossary engine stores captions at their source cut's time, so its
+    exports move by exports.GLOSSARY_SHIFT_S (0.8 s), not the fast engine's
+    arrival-time default."""
+    from dataclasses import replace
+
+    settings = _settings(tmp_path, default_export_shift_s=5.0)
+    async with _open(settings) as (app, client):
+        await app.state.db.insert_talks([replace(_talk(), engine="glossary")])
+        await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 7.0, 9.0)
+
+        response = await client.get("/exports/t1/en.srt")
+
+        assert "00:00:06,200 --> 00:00:08,200" in response.text

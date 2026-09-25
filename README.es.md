@@ -537,6 +537,33 @@ existen específicamente para sacarse eso de encima: ver
 [`docs/field-notes.md`](docs/field-notes.md) (en inglés) para la historia
 completa, en palabras de los propios organizadores.
 
+## Subtitular un archivo (cómo se hicieron los subtítulos del video demo)
+
+`scripts/subtitle_file.py` convierte cualquier archivo de video o audio
+legible por ffmpeg en subtítulos, usando el pipeline real de Glosa (un
+`RoomWorker` real, los motores reales de Gemini) en lugar de una
+herramienta de transcripción aparte — así consiguió sus subtítulos en
+inglés el propio video demo de este proyecto, a partir de una grabación de
+pantalla narrada en español:
+
+```bash
+make subtitles FILE=grabacion.mp4 LANG=es TARGETS=en
+# o directamente:
+uv run python scripts/subtitle_file.py grabacion.mp4 --lang es --targets en
+```
+
+Escribe `grabacion.es.vtt`/`.srt` (el idioma de origen) y
+`grabacion.en.vtt`/`.srt` (cada idioma de `--targets`) junto al archivo de
+entrada (`--out-dir DIR` para escribir en otro lugar), usando el mismo
+renderizador y el mismo corrimiento de retraso de subtítulos que `GET
+/exports`. `--engine glossary|fast` elige el motor (por defecto
+`glossary`: transcripción precisa de términos técnicos; `fast` es Live
+Translate, útil cuando el archivo no está en español ni en inglés).
+`--glossary "termino=traduccion,termino2,..."` agrega términos de
+glosario (un término sin traducción se deja en inglés). Lee
+`GEMINI_API_KEY` desde `.env` como todo lo demás, corre a velocidad real y
+al terminar imprime el costo real.
+
 ## Desarrollo
 
 ```bash

@@ -1,4 +1,4 @@
-.PHONY: test run demo demo-fake demo-local bench load samples
+.PHONY: test run demo demo-fake demo-local bench load samples subtitles
 
 # Fast, free test suite (no live API calls). See pytest.ini: `live` tests are
 # excluded by default.
@@ -54,6 +54,18 @@ bench:
 # other scales run for Task 15a (see bench/load-results.md).
 load:
 	uv run python bench/load_test.py --rooms 50 --clients 500 --seconds 60
+
+# Subtitle any ffmpeg-readable video/audio file with Glosa's real pipeline
+# (task-21a, scripts/subtitle_file.py -- how the demo video's own subtitles
+# were made): FILE at real-time pace, real Gemini APIs, writing
+# <stem>.<lang>.vtt/.srt for LANG (source) and every TARGETS language into
+# the current directory (pass OUT_DIR= to write elsewhere). Needs
+# GEMINI_API_KEY in .env; costs roughly what bench/bench.py's glossary rows
+# do, per minute of FILE. Example:
+#   make subtitles FILE=samples/es_clip.opus LANG=es TARGETS=en
+subtitles:
+	uv run python scripts/subtitle_file.py "$(FILE)" --lang "$(LANG)" --targets "$(TARGETS)" \
+		$(if $(ENGINE),--engine "$(ENGINE)") $(if $(OUT_DIR),--out-dir "$(OUT_DIR)") $(if $(GLOSSARY),--glossary "$(GLOSSARY)")
 
 # Download the longer sample clips (the full source talks the short demo
 # clips are cut from) to samples/long/ (gitignored), used by

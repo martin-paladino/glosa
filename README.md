@@ -500,6 +500,30 @@ and autopilot exist specifically to remove that: see
 [`docs/field-notes.md`](docs/field-notes.md) for the full story, in the
 organizers' own words.
 
+## Subtitle a file (how the demo video's subtitles were made)
+
+`scripts/subtitle_file.py` turns any ffmpeg-readable video or audio file
+into subtitles, using Glosa's own real pipeline (a real `RoomWorker`, the
+real Gemini engines) instead of a separate transcription tool — this is how
+this project's own hackathon demo video got its English subtitles from a
+Spanish-narrated screen recording:
+
+```bash
+make subtitles FILE=recording.mp4 LANG=es TARGETS=en
+# or directly:
+uv run python scripts/subtitle_file.py recording.mp4 --lang es --targets en
+```
+
+Writes `recording.es.vtt`/`.srt` (the source language) and
+`recording.en.vtt`/`.srt` (each `--targets` language) next to the input
+file (`--out-dir DIR` to write elsewhere), using the same renderer and
+caption-delay shift `GET /exports` uses. `--engine glossary|fast` picks the
+engine (default `glossary`: accurate technical-term transcription; `fast`
+is Live Translate, useful when the file isn't in Spanish or English).
+`--glossary "term=translation,term2,..."` adds glossary terms (a bare term
+keeps it in English). Reads `GEMINI_API_KEY` from `.env` like everything
+else, runs at real-time pace, and prints the real cost when it's done.
+
 ## Development
 
 ```bash

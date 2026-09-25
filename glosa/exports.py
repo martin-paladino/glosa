@@ -34,6 +34,10 @@ import unicodedata
 from dataclasses import dataclass
 
 _MAX_LINE_CHARS = 42
+# The glossary engine stores every caption (source and translations) at the
+# time of its source cut, so only its transcription lag needs shifting
+# (p50 ~0.7-0.9 s, bench/results.md); the fast engine stores arrival times.
+GLOSSARY_SHIFT_S = 0.8
 _MAX_LINES_PER_CUE = 2
 
 
@@ -107,11 +111,39 @@ def _format_time(t: float, decimal_sep: str) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}{decimal_sep}{millis:03d}"
 
 
+# Readability: a cue stays on screen at least _MIN_CUE_S (unless the next cue
+# starts sooner), and a cue that would still flash for less than
+# _MIN_VISIBLE_S (e.g. two captions that arrived together, clipped to 0 by
+# the shift) is merged into the next one instead of being lost.
+_MIN_CUE_S = 1.2
+_MIN_VISIBLE_S = 0.3
+
+
+def _readable(cues: list[_Cue]) -> list[_Cue]:
+    out: list[_Cue] = []
+    carry: list[str] = []
+    carry_start: float | None = None
+    for i, cue in enumerate(cues):
+        lines = carry + cue.lines
+        start = cue.t_start if carry_start is None else min(carry_start, cue.t_start)
+        nxt = cues[i + 1].t_start if i + 1 < len(cues) else None
+        end = max(cue.t_end, start + _MIN_CUE_S)
+        if nxt is not None:
+            end = min(end, nxt)
+        if nxt is not None and end - start < _MIN_VISIBLE_S:
+            carry, carry_start = lines, start  # too short to read: show it with the next cue
+            continue
+        carry, carry_start = [], None
+        out.append(_Cue(lines=_wrap_lines(" ".join(lines)) if len(lines) > _MAX_LINES_PER_CUE else lines,
+                        t_start=start, t_end=max(end, start)))
+    return out
+
+
 def _all_cues(segs: list[ExportSegment], shift_s: float) -> list[_Cue]:
     cues: list[_Cue] = []
     for seg in segs:
         cues.extend(_segment_to_cues(seg, shift_s))
-    return cues
+    return _readable(cues)
 
 
 def to_srt(segs: list[ExportSegment], shift_s: float) -> str:

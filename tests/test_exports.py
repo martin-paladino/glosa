@@ -33,7 +33,7 @@ def test_to_srt_numbers_multiple_segments_sequentially() -> None:
 
     assert out == (
         "1\n00:00:00,000 --> 00:00:01,000\nFirst\n\n"
-        "2\n00:00:01,000 --> 00:00:02,000\nSecond\n"
+        "2\n00:00:01,000 --> 00:00:02,200\nSecond\n"  # the last cue gets the 1.2 s minimum
     )
 
 
@@ -133,7 +133,7 @@ def test_to_srt_clips_negative_times_to_zero() -> None:
 
     out = to_srt(segs, shift_s=0.0)
 
-    assert "00:00:00,000 --> 00:00:01,000" in out
+    assert "00:00:00,000 --> 00:00:01,200" in out  # clipped to 0, then the 1.2 s minimum
 
 
 def test_to_srt_clips_negative_times_after_shift() -> None:
@@ -141,8 +141,8 @@ def test_to_srt_clips_negative_times_after_shift() -> None:
 
     out = to_srt(segs, shift_s=2.5)
 
-    # 1.0 - 2.5 = -1.5 -> clipped to 0; 3.0 - 2.5 = 0.5.
-    assert "00:00:00,000 --> 00:00:00,500" in out
+    # 1.0 - 2.5 = -1.5 -> clipped to 0; 3.0 - 2.5 = 0.5, then the 1.2 s minimum.
+    assert "00:00:00,000 --> 00:00:01,200" in out
 
 
 def test_to_vtt_has_webvtt_header_and_decimal_point_times() -> None:
@@ -161,7 +161,7 @@ def test_to_vtt_applies_shift_and_clips_negative_to_zero() -> None:
 
     out = to_vtt(segs, shift_s=0.0)
 
-    assert "00:00:00.000 --> 00:00:01.000" in out
+    assert "00:00:00.000 --> 00:00:01.200" in out  # clipped to 0, then the 1.2 s minimum
 
 
 def test_to_txt_joins_segment_text_one_per_line() -> None:
@@ -217,3 +217,30 @@ def test_slugify_never_returns_empty() -> None:
 def test_export_filename_matches_the_slug_titulo_lang_version_pattern() -> None:
     name = export_filename("gran-sala", "¿Qué es Kubernetes?", "es", "corrected", "srt")
     assert name == "gran-sala-que-es-kubernetes-es-corrected.srt"
+
+
+def test_a_cue_stays_on_screen_long_enough_to_read() -> None:
+    from glosa.exports import to_vtt
+
+    out = to_vtt([ExportSegment("so much.", 6.0, 6.0), ExportSegment("on nodes you have", 10.0, 12.0)], shift_s=0.0)
+
+    assert "00:00:06.000 --> 00:00:07.200" in out  # a zero-length ASR revision still gets 1.2 s
+    assert "so much." in out
+
+
+def test_a_cue_that_would_flash_is_merged_into_the_next_instead_of_lost() -> None:
+    from glosa.exports import to_vtt
+
+    # two captions that arrived together and were clipped to 0 by the shift
+    out = to_vtt([ExportSegment("by the way.", 0.5, 1.0), ExportSegment("you receive the bill,", 1.0, 3.0)], shift_s=2.4)
+
+    assert "by the way. you receive the bill," in out.replace("\n", " ")
+    assert "00:00:00.000 --> 00:00:00.000" not in out
+
+
+def test_extending_a_short_cue_never_overlaps_the_next() -> None:
+    from glosa.exports import to_vtt
+
+    out = to_vtt([ExportSegment("a", 1.0, 1.2), ExportSegment("b", 1.8, 3.0)], shift_s=0.0)
+
+    assert "00:00:01.000 --> 00:00:01.800" in out

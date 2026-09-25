@@ -363,6 +363,18 @@ def test_room_labels_the_language_selector_and_controls(client: TestClient) -> N
     assert f'<span class="control__word">{t("theme_button", "en")}</span>' in html
 
 
+def test_room_has_a_pip_button_with_i18n_in_both_languages(client: TestClient) -> None:
+    """Task 20: Picture-in-Picture captions ("Ventana flotante" / "Pop-out
+    captions"). Server-rendered visible in the markup in both languages --
+    there is no way to feature-detect the Document PiP API server-side --
+    room.js hides it right away unless 'documentPictureInPicture' in window."""
+    for lang, headers in (("es", SPANISH), ("en", ENGLISH)):
+        html = client.get("/s/r1", headers=headers).text
+        assert 'data-action="pip"' in html
+        assert 'aria-pressed="false"' in html
+        assert t("pip", lang) in html
+
+
 def test_unknown_room_is_a_404_page(client: TestClient) -> None:
     response = client.get("/s/nope", headers=SPANISH)
 

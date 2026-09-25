@@ -785,6 +785,10 @@
   }
   .control--select option { background: var(--panel); color: var(--ink); }
   .control--fullscreen { display: none; }
+  /* .control alone sets display:inline-flex (an author rule, which beats the
+     UA stylesheet's [hidden]{display:none} regardless of specificity): pair
+     the attribute with the component class so JS's .hidden actually hides it. */
+  .control--pip[hidden] { display: none; }
 
   /* Muy angosto: la tecla de tema queda solo con el ícono. */
   @container glosa (max-width: 23.5rem) {
@@ -1038,6 +1042,31 @@
       transform: translateY(12px);
     }
   }
+
+  /* ---- Picture-in-Picture captions (Task 20) ------------------------------
+     Rendered in the pop-out window's own document (room.js clones the page's
+     stylesheets into it), so these rules travel with them. --caption-scale
+     and data-theme are mirrored onto that document's root by room.js too. */
+  .pip-body {
+    margin: 0;
+    display: flex;
+    align-items: flex-end;
+    min-block-size: 100vh;
+    box-sizing: border-box;
+    padding: var(--space-3) var(--space-4);
+    background: var(--well);
+  }
+  .pip-captions {
+    display: grid;
+    gap: 0.3em;
+    inline-size: 100%;
+  }
+  .pip-line {
+    margin: 0;
+    font: var(--caption-weight) calc(1.15rem * var(--caption-scale))/var(--caption-leading) var(--font-caption);
+    color: var(--cap-live);
+  }
+  .pip-line:last-child { color: var(--cap); }
 }
 
 

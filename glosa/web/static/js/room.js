@@ -42,6 +42,7 @@
   const BACKLOG_MAX_MS = 2000;
   const RETRY_MS = 5000;           // when the server refuses the stream outright
   const SUMMARY_POLL_MS = 60000;   // "¿Qué me perdí?": how often the summary is refreshed in the background
+  const PIP_LINES = 3;             // "¿the last 2-3 caption lines" shown in the pop-out window
 
   // Visual class names, all in one place. room.js only ever writes them (for the
   // CSS); it finds elements through data-* hooks and keeps its own state, so a
@@ -71,6 +72,7 @@
   const toLive = $('[data-action="live"]');
   const themeButton = $('[data-action="theme"]');
   const fullscreenButton = $('[data-action="fullscreen"]');
+  const pipButton = $('[data-action="pip"]');
   const summaryToggle = $("[data-summary-toggle]");
   const summaryPanel = $("[data-summary-panel]");
   const summaryScrim = $("[data-summary-scrim]");
@@ -385,6 +387,7 @@
           return;
       }
       scheduleScroll();
+      renderPip();
     }
 
     onTalk(data) {
@@ -423,6 +426,7 @@
     renderDirection();
     setFollowing(true);
     renderStatus();
+    renderPip();
   }
 
   function renderStatus() {
@@ -674,6 +678,7 @@
     root.style.setProperty("--caption-scale", String(SCALES[i]));
     store.set("glosa.scale", SCALES[i] === 1 ? null : SCALES[i]);
     scheduleScroll();
+    syncPipRoot();
   }
 
   function currentTheme() {
@@ -692,6 +697,7 @@
     else root.dataset.theme = next;
     store.set("glosa.theme", next === "system" ? null : next);
     labelTheme();
+    syncPipRoot();
   }
 
   const canFullscreen = Boolean(document.fullscreenEnabled);
@@ -707,6 +713,89 @@
     fullscreenButton.setAttribute("aria-pressed", String(Boolean(document.fullscreenElement)));
   });
 
+  // ---- Picture-in-Picture captions (Task 20) -------------------------------------------
+  // Chrome/Edge only (window.documentPictureInPicture.requestWindow): a small
+  // floating window that shows the last few caption lines on top of other
+  // windows. It gets its own document, so the page's stylesheets are cloned
+  // into it (and the theme/text-size the reader picked, mirrored onto its
+  // root) rather than moving anything out of the main page -- closing it
+  // needs no restore, since the main page was never touched.
+  let pipWindow = null;
+  let pipMirror = null;
+
+  function pipSupported() {
+    return typeof window !== "undefined" && window !== null && "documentPictureInPicture" in window;
+  }
+
+  if (pipButton) pipButton.hidden = !pipSupported();
+
+  function pipSourcePage() {
+    const feed = feeds.find((f) => f.page.lang === state.lang);
+    return (feed || feeds[0] || null)?.page || null;
+  }
+
+  function captionLines(page, n) {
+    if (!page) return [];
+    const paras = Array.from(page.history.children)
+      .map((li) => li.textContent.trim())
+      .filter(Boolean);
+    const live = page.liveText.textContent.trim();
+    const lines = live ? [...paras, live] : paras;
+    return lines.slice(-n);
+  }
+
+  function renderPip() {
+    if (!pipWindow || !pipMirror) return;
+    const lines = captionLines(pipSourcePage(), PIP_LINES);
+    pipMirror.replaceChildren(...lines.map((text) => el("p", { class: "pip-line" }, text)));
+  }
+
+  function copyStylesInto(doc) {
+    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+      doc.head.append(node.cloneNode(true));
+    });
+  }
+
+  function syncPipRoot() {
+    if (!pipWindow) return;
+    const pipRoot = pipWindow.document.documentElement;
+    if (root.dataset.theme) pipRoot.dataset.theme = root.dataset.theme;
+    else delete pipRoot.dataset.theme;
+    pipRoot.style.setProperty("--caption-scale", root.style.getPropertyValue("--caption-scale") || "1");
+  }
+
+  function closePip() {
+    pipWindow = null;
+    pipMirror = null;
+    if (pipButton) pipButton.setAttribute("aria-pressed", "false");
+  }
+
+  async function openPip() {
+    if (!pipSupported() || pipWindow) return;
+    let win;
+    try {
+      win = await window.documentPictureInPicture.requestWindow({ width: 420, height: 220 });
+    } catch {
+      return;   // the browser or the reader refused the pop-out
+    }
+    pipWindow = win;
+    copyStylesInto(win.document);
+    win.document.body.className = "pip-body";
+    pipMirror = win.document.createElement("div");
+    pipMirror.className = "pip-captions";
+    win.document.body.append(pipMirror);
+    syncPipRoot();
+    renderPip();
+    if (pipButton) pipButton.setAttribute("aria-pressed", "true");
+    win.addEventListener("pagehide", closePip, { once: true });
+  }
+
+  function togglePip() {
+    if (!pipSupported()) return;
+    if (pipWindow) pipWindow.close();   // triggers "pagehide" -> closePip()
+    else openPip();
+  }
+
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-action]");
     if (!button) return;
@@ -714,6 +803,7 @@
     if (action === "size") stepScale(Number(button.dataset.step));
     else if (action === "theme") cycleTheme();
     else if (action === "fullscreen") toggleFullscreen();
+    else if (action === "pip") togglePip();
     else if (action === "summary") toggleSummaryPanel();
     else if (action === "summary-close") closeSummaryPanel();
   });

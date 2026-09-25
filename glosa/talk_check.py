@@ -335,7 +335,10 @@ class TalkCheckScheduler:
                     room_id,
                     TalkMismatchSuggestion(
                         talk_id=talk.id,
-                        guess=result.label,
+                        # "next" with no next talk on the agenda (e.g. the day's
+                        # last talk) can only mean the scheduled talk is over:
+                        # say "break" rather than an empty «» title.
+                        guess=result.label if result.label != "next" or next_talk is not None else "break",
                         next_title=next_talk.title if next_talk is not None else None,
                     ),
                 )

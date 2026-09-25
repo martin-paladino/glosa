@@ -280,6 +280,26 @@ async def test_two_mismatches_in_a_row_raise_one_suggestion() -> None:
     assert len(checker.calls) == 2
 
 
+async def test_next_with_no_next_talk_on_the_agenda_is_suggested_as_a_break() -> None:
+    db = FakeDb()
+    db.segments[("t1", "en")] = [_seg(_words(MIN_WORDS), 0.0, 10.0)]
+    worker = FakeWorker()
+    worker.talk = _talk("t1")
+    autopilot = FakeAutopilot(next_talk=None)  # the day's last talk
+    checker = RecordingChecker(script=[_mismatch("next"), _mismatch("next")])
+    store = TalkMismatchStore()
+    scheduler = TalkCheckScheduler(worker, autopilot, store, checker, db, FakeClock())
+
+    await scheduler.tick()
+    db.segments[("t1", "en")] = [_seg(_words(MIN_WORDS * 2), 10.0, 30.0)]
+    await scheduler.tick()
+
+    suggestion = store.get("r1")
+    assert suggestion is not None
+    assert suggestion.guess == "break"  # never an empty «» next-talk title
+    assert suggestion.next_title is None
+
+
 async def test_a_single_mismatch_raises_no_suggestion() -> None:
     db = FakeDb()
     db.segments[("t1", "en")] = [_seg(_words(MIN_WORDS), 0.0, 10.0)]

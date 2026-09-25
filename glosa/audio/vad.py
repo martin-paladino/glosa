@@ -44,7 +44,7 @@ _MIN_LEVEL_DB = -96.0  # ~ dynamic range floor of 16-bit PCM
 # hybrid VAD), the silence gate never closing.
 _STEADY_AFTER_S = 3.0
 _STEADY_WINDOW = 10  # chunks (1 s of 100-ms chunks)
-_STEADY_MAX_STDEV_DB = 2.0
+_STEADY_MAX_STDEV_DB = 0.5
 _IN_SPEECH_ALPHA = 0.05
 
 VOICE_MARGIN_DB = 10.0  # "hay voz si el nivel supera el piso en 10 dB"

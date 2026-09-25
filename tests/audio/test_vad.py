@@ -138,6 +138,19 @@ def test_steady_noise_after_digital_silence_stops_reading_as_speech() -> None:  
     assert vad.in_speech is False  # the trailing noise is not speech
 
 
+def test_compressed_speech_is_not_mistaken_for_steady_noise() -> None:  # final-review-A re-review R1
+    """A console vocal chain (compressor/limiter) keeps speech within ~1-2 dB
+    for seconds at a time. That must NOT count as "steady" noise, or the
+    floor rises into the voice and invents pauses mid-phrase."""
+    vad = EnergyVad(pause_ms=400, min_speech_s=1.5)
+    speech = b"".join(_tone_pcm(440, amp, 0.1) for amp in [16000, 13000] * 60)  # 12 s, ~1.8 dB swings
+
+    events = _run(vad, _to_chunks(speech))
+
+    assert [e for e in events if e.kind == "pause"] == []  # one continuous phrase: no invented pauses
+    assert vad.in_speech is True
+
+
 def test_real_speech_level_changes_never_move_the_floor_mid_speech() -> None:
     """Speech is not steady (syllables): a long voice run whose level keeps
     changing leaves the floor alone, so the next pause is still detected."""

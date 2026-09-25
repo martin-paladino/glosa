@@ -48,9 +48,11 @@ Fallback to the glossary engine (case 10.5)
     fails 3 times within 2 min (errors, failed connects, stalls, sessions
     that died; not the admin's "Reconectar" nor a 402:
     ``room_text.FlapDetector``) or halts on a non-retryable error (Ruling
-    49), both checked on each tick. Not on a halt for 401/403: the key was
-    refused, the glossary engine would be too; the room goes red with an
-    ``engine_auth`` error event instead. A 402 only blocks (payment).
+    49), both checked on each tick. Not on a halt for a refused key (401,
+    403, or an error that says "API key", "API_KEY_INVALID" or "permission
+    denied": Gemini reports a bad key as a 400): the glossary engine would
+    be refused too; the room goes red with an ``engine_auth`` error event
+    instead. A 402 only blocks (payment).
 
     The switch is hot (Ruling 48, ``_swap_engine``): the audio loop, the
     VAD and the talk go on untouched (no ingest restart, no new "talk"
@@ -191,6 +193,7 @@ AGENDA_FIELDS = ("title", "speakers", "language", "targets", "engine", "start", 
 COST_ENGINE = {"fast": "live_translate", "glossary": "transcribe"}  # costs.component, units: minutes
 COST_TRANSLATE = "translate"  # units: translated segments
 AUTH_CODES = (401, 403)  # a refused API key: no fallback (the glossary engine uses the same key)
+AUTH_HINTS = ("api key", "api_key_invalid", "permission denied")  # Gemini says a bad key with a 400
 
 
 class Ingest(Protocol):
@@ -455,7 +458,7 @@ class RoomWorker:
             if self._source_down is not None and state == "red":
                 detail = f"source is down: {self._source_down}"
             elif run is not None and run.relay.halted and state != "red":
-                if run.halt_code in AUTH_CODES:
+                if run.halt_auth:
                     state, detail = "red", f"engine halted: the API key was refused ({run.halt_code})"
                 else:
                     state, detail = "red", "engine halted: non-retryable error, waiting for a reconnect"
@@ -876,6 +879,8 @@ class RoomWorker:
             fatal = payment or not ev.meta.get("retryable", True)
             if fatal and not payment:
                 run.halt_code = code  # the relay halts on it (payment only blocks)
+                reason = ev.text.lower()
+                run.halt_auth = code in AUTH_CODES or any(hint in reason for hint in AUTH_HINTS)
             await self._log(
                 "error" if fatal else "warning", "engine_error", f"session {session}: error {code}: {ev.text}"
             )
@@ -1071,10 +1076,10 @@ class RoomWorker:
         # the key was refused (glossary would be too); the halt's code comes
         # with its error event, so a halt waits for that event to be handled.
         if not run.relay.halted:  # a reconnect lifted it (or the error came from a draining session)
-            run.halt_code, run.auth_reported = None, False
+            run.halt_code, run.halt_auth, run.auth_reported = None, False, False
         halted = run.relay.halted and run.halt_code is not None
         if run.engine == "fast" and not run.falling_back:
-            if halted and run.halt_code in AUTH_CODES:
+            if halted and run.halt_auth:
                 if not run.auth_reported:
                     run.auth_reported = True
                     message = f"Live Translate refused the API key ({run.halt_code}): check GEMINI_API_KEY"

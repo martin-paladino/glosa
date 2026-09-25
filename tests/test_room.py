@@ -1797,6 +1797,34 @@ async def test_a_rejected_api_key_halts_without_a_fallback(tmp_path: Path, db) -
     await worker.stop()
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ClientError: 400 INVALID_ARGUMENT. API key not valid. Please pass a valid API key.",
+        "ClientError: 400 INVALID_ARGUMENT. {'reason': 'API_KEY_INVALID'}",
+        "APIError: 1008 Permission denied on resource project",
+    ],
+    ids=["api-key", "API_KEY_INVALID", "permission-denied"],
+)
+async def test_an_error_that_names_the_api_key_counts_as_a_refused_key(tmp_path: Path, db, text: str) -> None:
+    """Gemini reports a bad key as a 400 (API_KEY_INVALID), not a 401."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    error = {"t": 0.0, "kind": "error", "text": text, "meta": {"code": 400, "retryable": False}}
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [error]))
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 2.0)
+
+    assert [c.kind for c in factory.configs] == ["fast"]
+    assert "API key" in worker.status().detail
+    assert [(lvl, typ) for lvl, typ, _ in await _events(db) if typ in ("engine_auth", "fallback")] == [
+        ("error", "engine_auth"),
+    ]
+    await worker.stop()
+
+
 async def test_no_credit_never_falls_back(tmp_path: Path, db) -> None:
     clock = DrivenClock()
     bus = CaptionBus(clock=clock)

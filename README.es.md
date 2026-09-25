@@ -12,8 +12,8 @@ charlas de cada sala según el horario, cambiando idioma, motor y glosario
 con ella, así nadie tiene que apretar iniciar/detener charla por charla.
 Corre sobre dos motores de Gemini intercambiables — uno rápido y fluido, y
 otro fiel al glosario para charlas técnicas — a **hasta ~30 veces menos**
-que el precio de lista público del SaaS comercial que usa Nerdearla hoy
-para esto (ver [Costos](#costos) y [`docs/costs.md`](docs/costs.md)).
+que el precio de lista público de un SaaS comercial de subtitulado
+en vivo (ver [Costos](#costos) y [`docs/costs.md`](docs/costs.md)).
 
 ## Capturas
 
@@ -265,7 +265,7 @@ muestra los subtítulos de esa sala en pantalla completa para las pantallas
 del escenario (`docs/field-notes.md` tiene la historia detrás de esto —
 ver [Operación](#operación)). La URL es estable a través de un reinicio
 del servidor, y se revoca cambiando `ADMIN_PASSWORD`. Un reinicio remoto
-("F5 remoto", sin RustDesk) es un clic en el admin (`POST
+("F5 remoto", sin escritorio remoto) es un clic en el admin (`POST
 /api/admin/rooms/<id>/station/reload`).
 
 **La clave nunca se filtra.** Toda página envía `Referrer-Policy:
@@ -369,7 +369,7 @@ traducción con Flash-Lite sobre el mismo texto ya transcripto — al costo
 aproximado de traducción del motor `glossary`, sin una sesión de
 transcripción nueva.
 
-**vs. Maestra** (el SaaS que usa Nerdearla hoy), precio de lista público
+**vs. un SaaS comercial de subtitulado en vivo**, precio de lista público
 relevado el 2026-09-23: **≈ US$24/h por idioma traducido**. A la misma
 escala, eso es aproximadamente **11×** el costo del motor `fast` de arriba
 y **≈33×** el del motor `glossary` — una comparación de precio de lista
@@ -534,7 +534,7 @@ Checklist y referencia completa: [`docs/operator-guide.md`](docs/operator-guide.
 estaciones de sala, leer el estado de las salas, piloto automático,
 exportaciones, backups). Por qué el modelo de operación de Glosa es como
 es: el propio staff de Nerdearla describió su configuración actual como
-una pestaña de un SaaS dejada corriendo con **RustDesk** abierto "por si
+una pestaña de un SaaS dejada corriendo con un **escritorio remoto** abierto "por si
 hay que darle F5 porque se colgó" — sin operador dedicado por sala,
 acceso remoto a cada mini PC como única forma de recuperarse. Las
 estaciones de sala, el reinicio remoto y el piloto automático de Glosa

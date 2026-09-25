@@ -29,7 +29,7 @@
     <h3 class="monitor__name"><button class="monitor__open" type="button" aria-expanded="false" aria-controls="admin-drawer" data-open-room="{{ room.id }}">{{ room.name }}</button></h3>
     <em class="monitor__state" data-m-state{% if room.state == 'live' or not room.text.state_word %} hidden{% endif %}>{{ room.text.state_word }}</em>
     <span class="monitor__tc tc" data-m-tc data-start="{{ room.talk.actual_start if room.talk and room.state != 'idle' else '' }}"></span>
-    {%- if room.key %}<kbd>{{ room.key }}</kbd>{% endif %}
+    {%- if room.key %}<kbd title="{{ at('key_opens').format(key=room.key, room=room.name) }}">{{ room.key }}</kbd>{% endif %}
   </header>
   <div class="monitor__cc{% if room.state == 'down' %} monitor__cc--frozen{% endif %}" data-m-cc lang="{{ room.lang }}"{% if room.state == 'idle' %} hidden{% endif %}>
     <p><span data-m-closed></span> <span class="phrase phrase--open" data-m-open></span></p>
@@ -86,6 +86,13 @@
         <a href="?lang={{ lang.code }}" hreflang="{{ lang.code }}" lang="{{ lang.code }}"{% if lang.current %} aria-current="true"{% endif %}>{{ lang.code | upper }}</a>
         {%- endfor %}
       </nav>
+      <span class="masthead__keys">
+        <button class="btn btn--link" type="button" aria-describedby="hint-shortcuts">
+          <svg viewBox="0 0 20 14" width="16" height="12" aria-hidden="true"><rect x="1" y="1" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 5h2M8 5h2M12 5h2M5 9h10" stroke="currentColor" stroke-width="1.6"/></svg>
+          {{ at("shortcuts") }}
+        </button>
+        <span class="hint__tip hint__tip--end" role="tooltip" id="hint-shortcuts">{{ at("shortcuts_help") }}</span>
+      </span>
       <button class="btn btn--link masthead__theme" type="button" data-action="theme"
         data-theme-label="{{ tr('theme') }}"
         data-theme-names='{{ {"system": tr("theme_system"), "light": tr("theme_light"), "dark": tr("theme_dark"), "contrast": tr("theme_contrast")} | tojson }}'
@@ -139,7 +146,7 @@
       <div class="timeline__axis tc" data-axis aria-hidden="true"></div>
       {%- for room in view.rooms %}
       <div class="timeline__row" data-track-row="{{ room.id }}">
-        <div class="timeline__room">{% if room.key %}<kbd>{{ room.key }}</kbd>{% endif %}<i class="led led--{{ room.state }}" data-t-led></i><span>{{ room.name }}</span></div>
+        <div class="timeline__room">{% if room.key %}<kbd title="{{ at('key_opens').format(key=room.key, room=room.name) }}">{{ room.key }}</kbd>{% endif %}<i class="led led--{{ room.state }}" data-t-led></i><span>{{ room.name }}</span></div>
         <div class="timeline__track" data-track="{{ room.id }}"></div>
       </div>
       {%- endfor %}

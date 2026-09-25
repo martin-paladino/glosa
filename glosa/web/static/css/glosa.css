@@ -1721,6 +1721,10 @@
     visibility: hidden; opacity: 0; transition: opacity 120ms;
   }
   .hint:hover + .hint__tip, .hint:focus-visible + .hint__tip { visibility: visible; opacity: 1; }
+  .masthead__keys { position: relative; display: inline-flex; }
+  .masthead__keys > .btn { display: inline-flex; align-items: center; gap: 5px; }
+  .masthead__keys > .btn:hover + .hint__tip, .masthead__keys > .btn:focus-visible + .hint__tip { visibility: visible; opacity: 1; }
+  .hint__tip--end { inset-inline-start: auto; inset-inline-end: 0; }
 
   /* Medidor de audio: gris, porque es un nivel y no un estado. --level de 0 a 1. */
   .vu {

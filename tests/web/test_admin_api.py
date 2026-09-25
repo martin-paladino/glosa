@@ -625,3 +625,12 @@ def test_the_admin_has_the_shared_theme_button() -> None:
     assert 'data-action="theme"' in html and "/static/js/theme.js" in html
     assert "Tema" in html
     assert "GlosaTheme.cycle" in client.get("/static/js/admin.js").text
+
+
+def test_the_room_keys_are_discoverable() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    html = client.get("/admin?lang=es").text
+
+    assert 'aria-describedby="hint-shortcuts"' in html and 'id="hint-shortcuts"' in html
+    assert "1 a 9: abre el panel de esa sala." in html

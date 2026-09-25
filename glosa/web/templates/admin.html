@@ -208,6 +208,11 @@
     <div class="drawer__cc" data-d-cc aria-label="{{ at('captions') }}"><p><span data-d-closed></span> <span class="phrase phrase--open" data-d-open></span></p></div>
   </section>
   <section class="drawer__sec">
+    <h3 class="drawer__h">{{ at("exports") }}</h3>
+    <ol class="exports" data-d-exports></ol>
+    <p class="drawer__hint" data-d-exports-empty hidden>{{ at("exports_empty") }}</p>
+  </section>
+  <section class="drawer__sec">
     <h3 class="drawer__h">{{ at("room_history") }}</h3>
     <ol class="log log--all log--compact" data-d-log></ol>
     <p class="drawer__hint" data-d-log-empty hidden>{{ at("room_history_empty") }}</p>
@@ -239,6 +244,7 @@
     <label class="field"><span class="field__label">{{ at("abstract") }}</span><textarea name="abstract" rows="4"></textarea></label>
     <label class="field"><span class="field__label">{{ at("tags") }}</span><input name="tags" autocomplete="off" aria-describedby="t-tags-hint"><span class="field__hint" id="t-tags-hint">{{ at("tags_hint") }}</span></label>
     <label class="field"><span class="field__label">{{ at("glossary") }}</span><textarea name="glossary" rows="5" spellcheck="false" aria-describedby="t-glossary-hint"></textarea><span class="field__hint" id="t-glossary-hint">{{ at("glossary_hint") }}</span></label>
+    <button class="btn btn--compact" type="button" data-t-suggest-glossary>{{ at("suggest_glossary") }}</button>
     <p class="notice" data-t-error role="alert" hidden></p>
     <div class="form__actions">
       <button class="btn btn--primary" type="submit" data-t-save>{{ at("save_talk") }}</button>

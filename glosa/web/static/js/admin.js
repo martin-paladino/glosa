@@ -763,6 +763,7 @@
       updateRoomDrawer();
       renderDrawerCc();
       renderRoomHistory();
+      renderExports();
     });
   }
 
@@ -989,6 +990,48 @@
     $("[data-d-log-empty]", drawerEl).hidden = events.length > 0;
   }
 
+  // task-11r-brief.md: a room's finished talks, with their live/corrected
+  // export links and the corrected version's build status.
+  async function renderExports() {
+    if (drawer?.kind !== "room") return;
+    const id = drawer.id;
+    let list;
+    try {
+      list = await api("GET", "/exports");
+    } catch {
+      return; // best-effort: the rest of the drawer still works without it
+    }
+    if (drawer?.kind !== "room" || drawer.id !== id) return; // the drawer moved on while this was in flight
+    const items = list.filter((entry) => entry.room_id === id);
+    $("[data-d-exports]", drawerEl).replaceChildren(...items.map(exportItem));
+    $("[data-d-exports-empty]", drawerEl).hidden = items.length > 0;
+  }
+
+  function exportItem(entry) {
+    return el("li", { class: "exports__item" },
+      el("b", { class: "exports__title" }, entry.title),
+      ...entry.exports.map(exportLangRow));
+  }
+
+  function exportLangRow(row) {
+    const parts = [el("b", { text: row.lang.toUpperCase() }), el("span", { text: `${T.export_live}:` }), ...exportLinks(row.live)];
+    if (row.corrected) {
+      const status = row.corrected.status;
+      parts.push(el("span", { text: `${T.export_corrected}:` }));
+      parts.push(el("span", { class: `exports__status exports__status--${status}`, text: T[`export_status_${status}`] || status }));
+      if (row.corrected.links) parts.push(...exportLinks(row.corrected.links));
+    }
+    return el("div", { class: "exports__lang" }, ...parts);
+  }
+
+  function exportLinks(links) {
+    return [
+      el("a", { href: links.srt, text: "SRT" }),
+      el("a", { href: links.vtt, text: "VTT" }),
+      el("a", { href: links.txt, text: "TXT" }),
+    ];
+  }
+
   // ---- the drawer: a talk of the agenda ------------------------------------------------------
 
   const LIVE_FIELDS = new Set(["title", "targets", "glossary"]);
@@ -1090,6 +1133,20 @@
         if (err.status !== 401) showNotice(error, err.message);
       } finally {
         busy(save, false);
+      }
+    });
+    $("[data-t-suggest-glossary]", d).addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      error.hidden = true;
+      busy(button, true, T.working);
+      try {
+        const terms = await api("POST", `/talks/${encodeURIComponent(current.talk.id)}/suggest-glossary`);
+        field("glossary").value = terms.map((g) => (g.translation ? `${g.term}=${g.translation}` : g.term)).join("\n");
+        toast(terms.length ? T.glossary_suggested : T.glossary_suggest_empty);
+      } catch (err) {
+        if (err.status !== 401) showNotice(error, err.message);
+      } finally {
+        busy(button, false);
       }
     });
     const confirm = $("[data-t-confirm]", d);
@@ -1261,7 +1318,12 @@
     on("state", onState);
     on("log", onLog);
     on("cc", onCc);
-    on("notice", (notice) => { if (notice.kind !== "room_reconnect") reloadAgenda(); });
+    on("notice", (notice) => {
+      if (notice.kind !== "room_reconnect") reloadAgenda();
+      if (notice.kind === "talk_ended" || notice.kind === "export_ready" || notice.kind === "export_failed") {
+        renderExports();
+      }
+    });
     on("bye", () => sessionExpired());
     source.addEventListener("error", () => {
       setStale(true);

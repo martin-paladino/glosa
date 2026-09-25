@@ -2386,10 +2386,9 @@ async def test_status_marker_and_gated_s_while_gated(tmp_path: Path, db) -> None
 
 async def test_no_watchdog_or_fallback_incident_while_gated(tmp_path: Path, db) -> None:
     """(a)/(b): a long gated silence must not trip the relay's stall
-    watchdog or FlapDetector's fallback -- both read from
-    ``relay.stats``, only ever touched by SessionRelay.feed()/_poll(),
-    which the gate stops calling while closed (see glosa/room.py's
-    "Silence gate" docstring)."""
+    watchdog (only checked in SessionRelay._poll(), reached from feed(),
+    which the gate stops calling) or FlapDetector's fallback. The session
+    here never dies; see the tests below for one that does while gated."""
     clock = DrivenClock()
     bus = CaptionBus(clock=clock)
     factory = Factory(clock, _steady_fixture(tmp_path))
@@ -2448,4 +2447,119 @@ async def test_glossary_end_utterance_fires_before_the_gate_closes(tmp_path: Pat
     await run_for(clock, 10.0)  # deep into the now-gated silence
     assert factory.engines[0].end_utterances == 1  # not called again, not skipped
 
+    await worker.stop()
+
+
+# ------------------------------------------- silence gate: relay events while gated (task-19 fix 1)
+
+
+def _records(path: Path, records: list[dict]) -> Path:
+    """A FakeEngine recording from raw records (for meta, e.g. go_away's time_left_s)."""
+    with path.open("w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec) + "\n")
+    return path
+
+
+def _dies_at(tmp_path: Path, t: float) -> Path:
+    """Answers once, then the session closes on its own at ``t`` s after connect."""
+    return _script(tmp_path / f"dies_{t:g}.jsonl", [(0.3, "source_final", "hello"), (t, "closed", "")])
+
+
+def _failed_connect(tmp_path: Path) -> Path:
+    return _records(tmp_path / "fail.jsonl", [{"t": 0.0, "kind": "error", "text": "boom", "meta": {"code": 503}}])
+
+
+def _preroll_first(sent: list[float], voice_at: float) -> None:
+    """The replacement session got the 1 s pre-roll first, then the live
+    voice, in order with no gap -- nothing pruned while it was connecting."""
+    expected = [round(voice_at - 1.0 + 0.1 * k, 2) for k in range(15)]
+    assert sent[:15] == expected
+
+
+async def test_session_death_while_gated_is_not_an_incident(tmp_path: Path, db) -> None:
+    """Ruling 58: a session that dies during a gated silence is reconnected
+    by the relay's event-driven path (not frozen by the gate) -- housekeeping,
+    not an incident: no "recent reconnect" yellow once voice returns, nothing
+    for FlapDetector, no fallback, and the pre-roll reaches the new session."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, _dies_at(tmp_path, 12.0), _steady_fixture(tmp_path))
+    worker = _worker(
+        _room(), _settings(silence_gate_s=5.0), bus, db, clock, factory,
+        SilenceIngestFactory(lead_s=2.0, silence_s=20.0),
+    )
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 15.0)
+    run = worker._run
+    assert run.gate.gated and run.relay.stats["reconnects"] == 1  # died while gated
+    await run_for(clock, 22.0 + 3.0 - 15.0)  # voice is back at 22 s
+
+    assert not run.gate.gated
+    assert run.last_reconnect_at is None
+    assert "recent reconnect" not in worker.status().detail
+    assert len(run.flaps._at) == 0
+    assert worker.talk.engine == "fast" and not run.falling_back
+    _preroll_first(factory.engines[1].sent, 22.0)
+    await worker.stop()
+
+
+async def test_go_away_and_failed_reconnect_while_gated_are_not_incidents(tmp_path: Path, db) -> None:
+    """A go_away while gated starts a standby connect (event-driven) that
+    fails, then the old session is killed: one error and one reconnect, both
+    while gated -- neither may count toward the fast->glossary fallback."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    first = _records(
+        tmp_path / "go_away.jsonl",
+        [
+            {"t": 0.3, "kind": "source_final", "text": "hello"},
+            {"t": 10.0, "kind": "go_away", "meta": {"time_left_s": 5.0}},
+            {"t": 16.0, "kind": "closed"},
+        ],
+    )
+    factory = Factory(clock, first, _failed_connect(tmp_path), _steady_fixture(tmp_path))
+    worker = _worker(
+        _room(), _settings(silence_gate_s=5.0), bus, db, clock, factory,
+        SilenceIngestFactory(lead_s=2.0, silence_s=20.0),
+    )
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 20.0)
+    run = worker._run
+    stats = run.relay.stats
+    assert run.gate.gated
+    assert sum(stats["errors"].values()) == 1 and stats["reconnects"] == 1
+    assert len(run.flaps._at) == 0
+    await run_for(clock, 22.0 + 3.0 - 20.0)
+
+    assert run.last_reconnect_at is None
+    assert "recent reconnect" not in worker.status().detail
+    assert len(run.flaps._at) == 0
+    assert worker.talk.engine == "fast" and not run.falling_back
+    _preroll_first(factory.engines[2].sent, 22.0)
+    await worker.stop()
+
+
+async def test_preroll_survives_a_slow_reconnect_after_the_gate_opens(tmp_path: Path, db) -> None:
+    """The session died while gated; when voice returns the first connect
+    attempt fails and the retry waits out a backoff (> buffer_s): the pre-roll
+    and first live chunks are held for it, not pruned to the last 2 s."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, _dies_at(tmp_path, 12.0), _failed_connect(tmp_path), _steady_fixture(tmp_path))
+    worker = _worker(
+        _room(), _settings(silence_gate_s=5.0), bus, db, clock, factory,
+        SilenceIngestFactory(lead_s=2.0, silence_s=20.0),
+    )
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 22.0 + 6.0)
+
+    assert len(factory.engines) == 3
+    assert factory.engines[1].sent == []  # the failed attempt took nothing
+    _preroll_first(factory.engines[2].sent, 22.0)
+    ts = factory.engines[2].sent
+    assert ts == [round(ts[0] + 0.1 * k, 2) for k in range(len(ts))]  # contiguous, no duplicate
     await worker.stop()

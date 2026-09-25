@@ -902,3 +902,24 @@ async def test_stop_closes_a_session_that_is_still_connecting(steady: Path) -> N
     assert connecting.connected_at is None
     assert connecting.close_calls and active.close_calls
     assert h.factory.in_flight == 0
+
+
+# ------------------------------------------------------------ hold_from() (task-19)
+
+
+@pytest.mark.parametrize(("connect_s", "first_sent"), [(5.0, 0.0), (9.5, 1.5)])
+async def test_hold_from_keeps_resumed_audio_past_buffer_s_up_to_hold_max(
+    steady: Path, connect_s: float, first_sent: float
+) -> None:
+    """A slow connect normally leaves only the last buffer_s (2 s) held;
+    hold_from(t) keeps audio from t on for it, but never more than
+    HOLD_MAX_S (8 s) of it."""
+    h = Harness([Plan(steady, connect_s=connect_s)])
+    await h.start()
+    h.relay.hold_from(0.0)
+    await h.run_until(12, vad=talking(0))
+    await h.stop()
+
+    (only,) = h.engines
+    assert only.sent[0] == pytest.approx(first_sent)
+    assert only.sent == [t for t in h.fed if t >= first_sent - 1e-9]  # then everything, in order

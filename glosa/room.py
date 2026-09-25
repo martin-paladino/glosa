@@ -111,9 +111,9 @@ Costs
 Silence gate (task-19, glosa/audio/gate.py)
     ``_feed`` still runs the VAD, ``relay.on_vad``, the lane's ``tick`` and
     level tracking on every chunk; only ``relay.feed()`` (the audio actually
-    billed) is gated, via ``run.gate.update(chunk, voiced)``. So (b), (c),
-    (d), (e) of the design are free consequences of what already existed,
-    not new machinery:
+    billed) is gated, via ``run.gate.update(chunk, voiced)``. (c), (d), (e)
+    of the design follow from what already existed; (b) needs the two
+    hooks described under "Relay" below:
 
     - Watchdog: ``SessionRelay._poll()`` -- the only place that checks
       ``StallWatchdog.stalled()`` -- runs solely inside ``feed()``. No
@@ -121,20 +121,25 @@ Silence gate (task-19, glosa/audio/gate.py)
       can never trip "audio present but no engine output" (also why
       ``status()`` hardcodes ``stall_active=False``: the relay always
       reconnects a stall itself, at once).
-    - Rotation / keep-alive: per SessionRelay's own docstring ("Timers"),
-      every deadline (standby/force rotation, backoff, connect timeout) is
-      only checked from ``feed()``/``_poll()`` too -- "if audio stops
-      flowing, the deadlines wait for the next feed() call". Gating simply
-      stops calling ``feed()``, so those timers freeze along with it: no
-      rotation fires while gated. The underlying session is left to age
-      past its real lifetime; the relay's ordinary reconnect (a session that
-      "closed unexpectedly") picks it up, quietly, whenever that happens --
-      this was already how the relay behaves for any pause in audio, gate
-      or not, so nothing new was added for it. In practice sessions live
-      minutes and ``FlapDetector``'s window is 120 s, so a single such
-      reconnect during a long silence never reaches the 3-incidents
-      fallback threshold; feeding again (the moment speech returns) is what
-      lets a session close to its deadline rotate normally.
+    - Relay: what gating freezes is only the relay's ``_poll()`` path, reached
+      solely from ``feed()``: the watchdog above, the standby/force rotation
+      deadlines, the connect timeout and the backoff retry. What keeps
+      running is event-driven: each session's ``_pump()`` task reads its
+      engine's events regardless of ``feed()``, so a ``go_away``, a session
+      that dies (e.g. aged past its lifetime, since no proactive rotation
+      fires while gated) and a failed connect of the standby a ``go_away``
+      starts are all handled while gated -- bumping ``relay.stats`` -- and
+      ``_tick_loop`` runs on its own clock too. Ruling 58: those are
+      housekeeping, not incidents. ``_relay_incidents(gated=True)`` (the
+      tick while gated, and ``_feed`` once more the instant voice returns,
+      so nothing in the last half tick slips through) logs them at info and
+      only moves the baselines: no ``last_reconnect_at`` ("recent
+      reconnect" yellow), nothing for FlapDetector (no fallback). A
+      non-retryable error still halts the relay and falls back as usual.
+      When voice returns with no session up yet (the old one died, the
+      retry waits for ``feed()``), ``relay.hold_from(pre-roll start)``
+      keeps the pre-roll and first words past ``buffer_s`` (up to
+      ``HOLD_MAX_S``) until the new session takes them.
     - The glossary engine's ``end_utterance()`` (transcribe-live's
       ``audio_stream_end``) is called from a VAD ``pause`` event, which
       fires ~``pause_ms`` (400 ms) after speech ends -- long before
@@ -971,7 +976,15 @@ class RoomWorker:
     async def _feed(self, run: _Run, chunk: AudioChunk) -> None:
         events = run.vad.process(chunk)
         voiced = run.vad.in_speech
-        for to_send in run.gate.update(chunk, voiced):  # [] while gated; pre-roll + chunk on return
+        was_gated = run.gate.gated
+        out = run.gate.update(chunk, voiced)  # [] while gated; pre-roll + chunk on return
+        if was_gated and not run.gate.gated:
+            # Voice is back: whatever the relay did since the last tick was
+            # still gated housekeeping (Ruling 58), and the pre-roll must
+            # survive a replacement session that is not up yet.
+            await self._relay_incidents(run, self._clock.now(), gated=True)
+            run.relay.hold_from(out[0].t)
+        for to_send in out:
             await run.relay.feed(to_send, voiced=voiced)
         now = self._clock.now()
         for ev in events:
@@ -1206,6 +1219,23 @@ class RoomWorker:
             run.tick = asyncio.ensure_future(self._safe_tick(run))
             await asyncio.shield(run.tick)
 
+    async def _relay_incidents(self, run: _Run, now: float, *, gated: bool) -> bool:
+        """Take the relay's new reconnects/errors (``relay.stats``) into
+        ``run.last_reconnect_at`` and FlapDetector; returns whether it is
+        flapping. ``gated`` (Ruling 58): they happened while the silence gate
+        was closed -- the event-driven path replacing a session nobody is
+        feeding -- so they are logged as housekeeping and only move the
+        baselines: no "recent reconnect" yellow, no fallback incident."""
+        stats = run.relay.stats
+        if stats["reconnects"] > run.reconnects:
+            run.reconnects = stats["reconnects"]
+            if gated:
+                await self._log("info", "reconnect", f"engine reconnect #{run.reconnects} while silence-gated")
+            else:
+                run.last_reconnect_at = now
+                await self._log("warning", "reconnect", f"engine reconnect #{run.reconnects}")
+        return run.flaps.update(stats, run.manual_reconnects, now, count=not gated)
+
     async def _safe_tick(self, run: _Run) -> None:
         try:
             await self._tick(run, self._clock.now())
@@ -1231,11 +1261,7 @@ class RoomWorker:
         if stats["rotations"] > run.rotations:
             run.rotations = stats["rotations"]
             await self._log("info", "rotation", f"session handover #{run.rotations}")
-        if stats["reconnects"] > run.reconnects:
-            run.reconnects = stats["reconnects"]
-            run.last_reconnect_at = now
-            await self._log("warning", "reconnect", f"engine reconnect #{run.reconnects}")
-        flapping = run.flaps.update(stats, run.manual_reconnects, now)
+        flapping = await self._relay_incidents(run, now, gated=run.gate.gated)
         # Ruling 49: halted (a non-retryable error) falls back at once, unless
         # the key was refused (glossary would be too); the halt's code comes
         # with its error event, so a halt waits for that event to be handled.

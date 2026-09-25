@@ -15,8 +15,9 @@ loop (the VAD itself, ``relay.on_vad``, the translation lane's ``tick``,
 level tracking for ``RoomWorker.status()``) keeps running on every chunk
 regardless of gating: the gate only decides what gets SENT. See
 glosa/room.py's module docstring ("Silence gate") for how RoomWorker wires
-this in and why that is enough to leave the relay's rotation/watchdog/
-fallback machinery, and the glossary engine's own end-of-utterance, alone.
+this in: which relay machinery gating freezes (the ``_poll()`` path) and
+which keeps running (the event-driven reconnect), and how the latter is
+kept from counting as an incident.
 
 ``gated_s`` counts only audio that is gone for good: chunks aged out of the
 fixed-size pre-roll ring buffer. The pre-roll itself is sent, just delayed,

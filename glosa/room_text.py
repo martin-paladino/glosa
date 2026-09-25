@@ -140,7 +140,10 @@ class FlapDetector:
         self._manual = 0
         self._at: deque[float] = deque()
 
-    def update(self, stats: dict[str, Any], manual: int, now: float) -> bool:
+    def update(self, stats: dict[str, Any], manual: int, now: float, count: bool = True) -> bool:
+        """``count=False`` moves the baselines past whatever is new without
+        recording it (task-19: relay housekeeping while the silence gate is
+        closed is not an incident)."""
         errors: dict[int, int] = stats["errors"]
         payment = errors.get(PAYMENT_CODE, 0)
         other = sum(errors.values()) - payment
@@ -148,7 +151,7 @@ class FlapDetector:
         new_errors = other - self._errors
         new_reconnects = (reconnects - self._reconnects) - (manual - self._manual) - (payment - self._payment)
         self._reconnects, self._errors, self._payment, self._manual = reconnects, other, payment, manual
-        for _ in range(max(new_errors, new_reconnects, 0)):
+        for _ in range(max(new_errors, new_reconnects, 0) if count else 0):
             self._at.append(now)
         while self._at and now - self._at[0] >= self.window_s:
             self._at.popleft()

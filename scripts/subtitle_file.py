@@ -211,15 +211,19 @@ async def run_subtitle_file(
     if not quiet:
         print(f"subtitling {input_path.name}: {source_lang} -> {', '.join(targets)} (engine={engine})")
     shift_s = settings.default_export_shift_s
+    measured_shift: float | None = None
     try:
         await worker.start(talk)
         last_reported = -5.0
         while worker.talk is not None:
             await asyncio.sleep(0.5)
+            live_p50 = worker.latency_p50()  # sampled while the run is live: gone once the talk ends
+            if live_p50 is not None:
+                measured_shift = live_p50
             if not quiet and worker.audio_s - last_reported >= 5.0:
                 print(f"  ...{worker.audio_s:.1f}s processed")
                 last_reported = worker.audio_s
-        shift_s = _shift_s(worker, settings)
+        shift_s = measured_shift if measured_shift is not None else _shift_s(worker, settings)
     finally:
         await worker.stop()
 

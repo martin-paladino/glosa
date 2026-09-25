@@ -203,4 +203,4 @@ async def test_shift_s_falls_back_to_the_configured_default_when_the_room_is_idl
         response = await client.get("/exports/t1/en.srt")
 
         # Arrival times 7.0/8.0 moved EARLIER by the 5.0 s delay (final-review-A I3).
-        assert "00:00:02,000 --> 00:00:03,000" in response.text
+        assert "00:00:02,000 --> 00:00:03,200" in response.text

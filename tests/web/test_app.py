@@ -1,7 +1,18 @@
 """Tests for glosa.web.app's own machinery that isn't create_app() itself:
-the access-log redaction filter and main()'s wiring (Task 14a fix round 1,
+the log redaction filter and main()'s wiring (Task 14a fix rounds 1-2,
 review #2 and #4). create_app()'s room/lifespan/router wiring is covered by
 tests/web/test_public_api.py, test_admin_api.py and test_station.py.
+
+Fix round 2: a filter attached only to "uvicorn.access" never saw the
+WebSocket accept/reject/response lines -- those are logged on
+"uvicorn.error" by WebSocketsSansIOProtocol (the WS protocol uvicorn picks
+when `websockets` is installed, which it is here -- see
+.venv/.../uvicorn/protocols/websockets/websockets_sansio_impl.py and
+protocols/websockets/auto.py), so every station WS (re)connect -- including
+our own 4401 key check, which uvicorn logs as its generic "403" line
+regardless of the ASGI-level close code -- still wrote the raw `?key=...`
+to stdout. `_ws_record` below is shaped exactly like those three call
+sites (lines ~440, ~464, ~479 of that file).
 """
 
 from __future__ import annotations
@@ -27,6 +38,20 @@ def _access_record(path: str, status: int = 200) -> logging.LogRecord:
         msg='%s - "%s %s HTTP/%s" %d',
         args=("127.0.0.1:54321", "GET", path, "1.1", status),
         exc_info=None,
+    )
+
+
+def _ws_record(msg: str, path: str, status: int | None = None) -> logging.LogRecord:
+    """Shaped exactly like uvicorn's WebSocketsSansIOProtocol log calls, on
+    "uvicorn.error" (not "uvicorn.access"): the query string sits at
+    args[1] here, not args[2] as in the HTTP access record above --
+    accept and reject (our 4401 case) are 2-arg calls, the
+    websocket.http.response.start line is a 3-arg call with the status
+    appended."""
+    args = ("127.0.0.1:54321", path) if status is None else ("127.0.0.1:54321", path, status)
+    return logging.LogRecord(
+        name="uvicorn.error", level=logging.INFO, pathname=__file__, lineno=1,
+        msg=msg, args=args, exc_info=None,
     )
 
 
@@ -74,6 +99,65 @@ def test_redact_filter_tolerates_a_record_with_no_args() -> None:
     assert RedactStationKeyFilter().filter(record) is True  # must not raise
 
 
+def test_redact_filter_covers_a_pre_formatted_msg_defensively() -> None:
+    """No current uvicorn call site pre-formats (all three WS lines and the
+    access line format lazily from args -- confirmed by reading the
+    source), but the filter covers `record.msg` too in case a future
+    version does; harmless either way, since the pattern only matches
+    `key=...`."""
+    record = logging.LogRecord(
+        name="uvicorn.error", level=logging.INFO, pathname=__file__, lineno=1,
+        msg="already formatted: /station/main-stage?key=abc123 done", args=(), exc_info=None,
+    )
+
+    RedactStationKeyFilter().filter(record)
+
+    assert record.msg == "already formatted: /station/main-stage?key=REDACTED done"
+
+
+# ---- fix round 2: the WebSocket lines, on "uvicorn.error" ----------------------
+
+
+def test_redact_filter_covers_the_ws_accept_line() -> None:
+    """websockets_sansio_impl.py ~line 440: logger.info('%s - "WebSocket %s"
+    [accepted]', client_addr, full_path)."""
+    record = _ws_record('%s - "WebSocket %s" [accepted]', "/ws/station/main-stage?key=abc123def456")
+
+    RedactStationKeyFilter().filter(record)
+
+    assert record.args[1] == "/ws/station/main-stage?key=REDACTED"
+    assert record.getMessage() == '127.0.0.1:54321 - "WebSocket /ws/station/main-stage?key=REDACTED" [accepted]'
+
+
+def test_redact_filter_covers_the_ws_reject_line() -> None:
+    """~line 464: logger.info('%s - "WebSocket %s" 403', client_addr,
+    full_path) -- uvicorn logs this generic "403" line for every
+    websocket.close sent before accept(), which is exactly how our own
+    4401 key check rejects a station (Starlette's WebSocket.close()
+    before accept() sends a "websocket.close" ASGI message, not a
+    "websocket.http.response.start" one -- the ASGI-level 4401 code
+    doesn't change what uvicorn logs here)."""
+    record = _ws_record('%s - "WebSocket %s" 403', "/ws/station/main-stage?key=abc123def456")
+
+    RedactStationKeyFilter().filter(record)
+
+    assert record.args[1] == "/ws/station/main-stage?key=REDACTED"
+    assert record.getMessage() == '127.0.0.1:54321 - "WebSocket /ws/station/main-stage?key=REDACTED" 403'
+
+
+def test_redact_filter_covers_the_ws_http_response_line() -> None:
+    """~line 479: logger.info('%s - "WebSocket %s" %d', client_addr,
+    full_path, status) -- a websocket.http.response.start (the Denial
+    Response extension path; not one Glosa uses today, but the same
+    logger call shape)."""
+    record = _ws_record('%s - "WebSocket %s" %d', "/ws/station/main-stage?key=abc123def456", status=403)
+
+    RedactStationKeyFilter().filter(record)
+
+    assert record.args[1] == "/ws/station/main-stage?key=REDACTED"
+    assert record.getMessage() == '127.0.0.1:54321 - "WebSocket /ws/station/main-stage?key=REDACTED" 403'
+
+
 # ---- main(): installs the filter, bounds the WS frame size --------------------
 
 
@@ -86,12 +170,31 @@ def test_main_installs_the_redact_filter_and_bounds_ws_frame_size(monkeypatch: p
 
     monkeypatch.setattr("uvicorn.run", fake_run)
     access_logger = logging.getLogger("uvicorn.access")
-    before = list(access_logger.filters)
+    error_logger = logging.getLogger("uvicorn.error")
+    before_access = list(access_logger.filters)
+    before_error = list(error_logger.filters)
     try:
         app_module.main()
 
         assert calls["app_path"] == "glosa.web.app:app_from_env"
         assert calls["kwargs"]["ws_max_size"] == 65536
+        # Fix round 2: both loggers, not just uvicorn.access -- the WS
+        # accept/reject/response lines are logged on uvicorn.error.
         assert any(isinstance(f, RedactStationKeyFilter) for f in access_logger.filters)
+        assert any(isinstance(f, RedactStationKeyFilter) for f in error_logger.filters)
     finally:
-        access_logger.filters = before  # uvicorn.access is a global singleton: don't leak into other tests
+        # Both are global singletons: don't leak filters into other tests.
+        access_logger.filters = before_access
+        error_logger.filters = before_error
+
+
+# No TestClient-based integration test for the WS 4401 case: Starlette's
+# WebSocketTestSession (starlette/testclient.py) calls the ASGI app
+# callable directly through an in-process portal -- it never opens a real
+# socket, so uvicorn's own protocol classes (including
+# WebSocketsSansIOProtocol, where this logging actually happens) are never
+# instantiated at all. There is nothing for a "uvicorn.error" log-capture
+# assertion to observe in that path; the three tests above (exercising the
+# filter against records shaped exactly like uvicorn's real calls) and the
+# manual, real-server verification already done for this task are the
+# coverage available here.

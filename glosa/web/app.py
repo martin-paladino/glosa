@@ -55,9 +55,13 @@ glosa.web.app:app_from_env`` works too, but then pass
 own, and without that timeout uvicorn waits for every open one on SIGTERM,
 so the lifespan never stops the rooms (talks not closed, cost not flushed).
 It also skips two things ``main()`` sets up directly on ``uvicorn.run()``
-(Task 14a fix round 1): ``RedactStationKeyFilter`` on the access logger
-(Ruling 50 -- a station's ``?key=...`` must never land in the access log)
-and ``--ws-max-size 65536``; pass both by hand if you run this way.
+(Task 14a fix rounds 1-2): ``RedactStationKeyFilter`` on both the
+``uvicorn.access`` *and* ``uvicorn.error`` loggers (Ruling 50 -- a
+station's ``?key=...`` must never land in a log; the WebSocket protocol
+uvicorn picks when ``websockets`` is installed,
+``WebSocketsSansIOProtocol``, logs accept/reject/response lines with the
+full path through ``uvicorn.error``, not ``uvicorn.access``) and
+``--ws-max-size 65536``; pass both by hand if you run this way.
 """
 
 from __future__ import annotations
@@ -175,19 +179,38 @@ _STATION_KEY_IN_QUERY = re.compile(r"key=[^&\s]+")
 
 
 class RedactStationKeyFilter(logging.Filter):
-    """Rewrites ``key=<...>`` to ``key=REDACTED`` in uvicorn's access log
-    records (Task 14a fix round 1, review #2; Ruling 50: keep access logs,
-    but a station's stable secret must never land in them -- every station
-    page load and WS (re)connect otherwise writes ``?key=<secret>`` to
-    stdout as-is). ``main()`` installs one instance on the
-    ``uvicorn.access`` logger.
+    """Rewrites ``key=<...>`` to ``key=REDACTED`` in uvicorn's log records
+    (Task 14a fix rounds 1-2; Ruling 50: keep the logs, but a station's
+    stable secret must never land in them -- every station page load and
+    WS (re)connect otherwise writes ``?key=<secret>`` to stdout as-is).
+    ``main()`` installs one instance on *both* loggers this actually
+    requires:
 
-    uvicorn's access logger formats its message from ``record.args`` (a
-    tuple -- ``client_addr, method, full_path, http_version, status_code``,
-    see ``uvicorn.protocols.http.*_impl.py``), not a pre-rendered string:
-    %-formatting happens lazily, only once a handler actually emits the
-    record, so this rewrites ``args`` (every string element, defensively --
-    not just the one index) rather than ``msg``.
+    - ``uvicorn.access`` -- the HTTP access log, e.g. the station page's
+      own ``GET /station/<room>?key=...`` (``uvicorn.protocols.http.
+      *_impl.py``: ``logger.info('%s - "%s %s HTTP/%s" %d', client_addr,
+      method, full_path, http_version, status)``);
+    - ``uvicorn.error`` -- fix round 2: the WebSocket protocol uvicorn
+      picks when ``websockets`` is installed (the "auto" default, this
+      project's case), ``WebSocketsSansIOProtocol``, logs the WS
+      accept/reject/response lines here, *not* on ``uvicorn.access``
+      (``uvicorn/protocols/websockets/websockets_sansio_impl.py``, e.g.
+      ``logger.info('%s - "WebSocket %s" [accepted]', client_addr,
+      full_path)`` and ``logger.info('%s - "WebSocket %s" 403', ...)`` for
+      a rejected handshake -- our own 4401 key check included, since
+      Starlette's ``WebSocket.close()`` before ``accept()`` sends
+      ``websocket.close``, which uvicorn logs as this same "403" line
+      regardless of the ASGI-level close code). A filter attached only to
+      ``uvicorn.access`` never sees these records at all.
+
+    Every one of those calls formats lazily from ``record.args`` (a
+    tuple), not a pre-rendered string, so this rewrites every string
+    element of ``args`` (defensively -- not just one fixed index, since
+    the query string sits at a different position in the HTTP-access vs.
+    WebSocket shapes above). ``record.msg`` is rewritten too, in case some
+    future call site (or a different uvicorn version) pre-formats instead
+    -- harmless either way, since the pattern only ever matches
+    ``key=...``.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -196,6 +219,8 @@ class RedactStationKeyFilter(logging.Filter):
             record.args = tuple(
                 _STATION_KEY_IN_QUERY.sub("key=REDACTED", a) if isinstance(a, str) else a for a in args
             )
+        if isinstance(record.msg, str):
+            record.msg = _STATION_KEY_IN_QUERY.sub("key=REDACTED", record.msg)
         return True
 
 
@@ -397,10 +422,14 @@ def main() -> None:
     """``python -m glosa.web.app``: serve Glosa on $HOST:$PORT."""
     import uvicorn
 
-    # Ruling 50 / Task 14a fix round 1: redact station keys before they
-    # ever reach the access log (installed on the logger, not passed to
+    # Ruling 50 / Task 14a fix rounds 1-2: redact station keys before they
+    # ever reach a log (installed on the loggers, not passed to
     # uvicorn.run(), since uvicorn's own log config doesn't take filters).
-    logging.getLogger("uvicorn.access").addFilter(RedactStationKeyFilter())
+    # Both loggers are needed: uvicorn.access for the HTTP access log, and
+    # uvicorn.error for WebSocketsSansIOProtocol's accept/reject/response
+    # lines (round 2 -- a filter on uvicorn.access alone never saw those).
+    for logger_name in ("uvicorn.access", "uvicorn.error"):
+        logging.getLogger(logger_name).addFilter(RedactStationKeyFilter())
 
     uvicorn.run(
         "glosa.web.app:app_from_env",

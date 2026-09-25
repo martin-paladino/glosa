@@ -34,6 +34,7 @@ def _draw(
     drag_stored: dict | None = None,
     viewport: dict | None = None,
     resize: dict | None = None,
+    station: bool = False,
 ) -> dict:
     numbered = [{"id": i, **m} for i, m in enumerate([TALK, *msgs], start=1)]
     payload = {"lang": lang, "i18n": STRINGS["es"], "msgs": numbered}
@@ -51,6 +52,8 @@ def _draw(
         payload["viewport"] = viewport
     if resize is not None:
         payload["resize"] = resize
+    if station:
+        payload["station"] = True
     done = subprocess.run(
         [NODE, str(HARNESS)], input=json.dumps(payload),
         capture_output=True, text=True, check=True, timeout=30,
@@ -128,6 +131,25 @@ def test_an_empty_set_for_a_new_phrase_draws_nothing() -> None:
 
 
 # ---- "¿Qué me perdí?" (Task 17): the summary button and panel -----------------------
+
+
+def test_the_station_page_draws_captions_without_the_audience_only_controls() -> None:
+    """station.html reuses room.js but has no summary panel and no PiP
+    button: room.js must still open the stream and draw the captions."""
+    out = _draw([
+        {"type": "append", "seg": 0, "text": "Hola a todos."},
+        {"type": "close", "seg": 0},
+    ], station=True)
+    assert out["url"] == "/api/stream/r1/es"
+    assert out["phrases"] == [{"seg": 0, "text": "Hola a todos.", "open": False}]
+
+
+def test_the_station_page_ignores_a_summary_position_stored_by_the_audience_view() -> None:
+    """Same origin: a panel dragged on /s/{slug} leaves glosa.summaryPos in
+    localStorage, and the station has no panel to place."""
+    out = _draw([{"type": "append", "seg": 0, "text": "Hola."}],
+                station=True, drag_stored={"x": 40, "y": 60}, resize={"width": 800, "height": 600})
+    assert out["phrases"] == [{"seg": 0, "text": "Hola.", "open": True}]
 
 
 def test_summary_button_stays_hidden_with_no_summary_yet() -> None:

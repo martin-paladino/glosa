@@ -94,6 +94,9 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
   const summaryAgo = $("[data-summary-ago]");
   const summaryHead = $("[data-summary-head]");
   const summaryDragHandle = $("[data-summary-drag-handle]");
+  // station.html reuses this script without the summary button/panel (a
+  // stage screen, not the audience): the summary code below stays off there.
+  const hasSummary = Boolean(summaryToggle && summaryPanel && summaryHead);
 
   // ---- small helpers ---------------------------------------------------------
 
@@ -559,7 +562,7 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
   const summary = { data: null, open: false };
 
   function summaryOpenFor(lang) {
-    return cfg.summaryBase ? cfg.summaryBase + encodeURIComponent(lang) : null;
+    return hasSummary && cfg.summaryBase ? cfg.summaryBase + encodeURIComponent(lang) : null;
   }
 
   async function pollSummary() {
@@ -612,9 +615,11 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
     else openSummaryPanel();
   }
 
-  summaryToggle.setAttribute("aria-disabled", "true");
-  pollSummary();
-  setInterval(pollSummary, SUMMARY_POLL_MS);
+  if (hasSummary) {
+    summaryToggle.setAttribute("aria-disabled", "true");
+    pollSummary();
+    setInterval(pollSummary, SUMMARY_POLL_MS);
+  }
 
   // ---- dragging the summary panel (Task ui2, user feedback) ---------------------------
   // Draggable by its header (pointer events: mouse + touch, touch-action: none on the
@@ -676,7 +681,7 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
   }
 
   (function restoreDragPosition() {
-    const raw = store.get(DRAG_KEY);
+    const raw = hasSummary ? store.get(DRAG_KEY) : null;
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw);
@@ -707,10 +712,12 @@ function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, marg
     summaryPanel.classList.remove("summary-panel--dragging");
   }
 
-  summaryHead.addEventListener("pointerdown", startDrag);
-  summaryHead.addEventListener("pointermove", duringDrag);
-  summaryHead.addEventListener("pointerup", endDrag);
-  summaryHead.addEventListener("pointercancel", endDrag);
+  if (hasSummary) {
+    summaryHead.addEventListener("pointerdown", startDrag);
+    summaryHead.addEventListener("pointermove", duringDrag);
+    summaryHead.addEventListener("pointerup", endDrag);
+    summaryHead.addEventListener("pointercancel", endDrag);
+  }
 
   window.addEventListener("resize", () => {
     if (dragPos) moveTo(dragPos.x, dragPos.y);   // re-clamp: the panel or viewport may have changed

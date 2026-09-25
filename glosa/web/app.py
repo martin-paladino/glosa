@@ -112,6 +112,7 @@ from glosa.db import init_db
 from glosa.engines.base import EngineFactory
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
+from glosa.engines.local import LocalParakeetEngine
 from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
@@ -188,6 +189,17 @@ def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
             return FakeEngine(replace(cfg, kind="fake", fixture_path=fixtures[kind]), clock)
 
         return fake
+
+    if settings.engine_mode == "local":
+        # Task 16: no local Live Translate -- glosa/room.py coerces every
+        # talk to the glossary-engine path, so this factory only ever sees
+        # cfg.kind == "glossary" here. LocalParakeetEngine itself raises
+        # ConfigError at construction (not lazily) if the "local" extra
+        # (parakeet-mlx, mlx-lm) is not installed.
+        def local(cfg: EngineConfig) -> LocalParakeetEngine:
+            return LocalParakeetEngine(cfg, clock)
+
+        return local
 
     def live(cfg: EngineConfig) -> LiveTranslateEngine | TranscribeLiveEngine:
         prices = settings.prices

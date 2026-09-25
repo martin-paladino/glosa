@@ -186,6 +186,36 @@ def translators(monkeypatch: pytest.MonkeyPatch) -> list[RecordingTranslator]:
     return made
 
 
+class RecordingLocalTranslator:
+    """Stands in for glosa.room.LocalTranslator (Task 16, monkeypatched):
+    records every instance a room makes (and the source_lang it was built
+    with) and whether it was closed. glosa/engines/local.py has its own
+    unit tests for LocalParakeetEngine itself; this is only about
+    RoomWorker's wiring (kind selection + which translator the lane gets)."""
+
+    made: list["RecordingLocalTranslator"] = []
+
+    def __init__(self, *, source_lang: str, **kwargs) -> None:
+        self.source_lang = source_lang
+        self.closed = 0
+        type(self).made.append(self)
+
+    async def translate(self, segment, target, glossary, context) -> Translation:
+        await asyncio.sleep(0)
+        return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+@pytest.fixture
+def local_translators(monkeypatch: pytest.MonkeyPatch) -> list[RecordingLocalTranslator]:
+    made: list[RecordingLocalTranslator] = []
+    monkeypatch.setattr(RecordingLocalTranslator, "made", made)
+    monkeypatch.setattr("glosa.room.LocalTranslator", RecordingLocalTranslator)
+    return made
+
+
 class FakeTranslate:
     """Translator.translate stand-in: "[<target>] <segment>" at once, or ""
     for the segments in `empty`."""
@@ -1712,6 +1742,33 @@ async def test_a_fast_talk_translates_its_extra_targets_from_the_source(db) -> N
     assert [s.text for s in await db.get_segments("f1", "pt", "live")] == pt_texts
     assert pt[-1].type == "talk" and pt[-1].data["talk_id"] is None
     assert not _live_tasks()
+
+
+async def test_local_engine_mode_coerces_a_fast_talk_to_the_glossary_path(db, local_translators) -> None:
+    """Task 16: engine_mode "local" has no local Live Translate -- every
+    talk, whatever its own Talk.engine, runs the glossary-engine path
+    (LocalParakeetEngine + a per-run LocalTranslator lane translating every
+    target). glosa/engines/local.py has its own unit tests for the engine
+    itself; this only covers glosa/room.py's wiring (the one-line kind
+    coercion in _start_locked and the LocalTranslator branch in
+    _build_engine)."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, TR_ES)  # any transcribe-style recording: the fixture's engine is a FakeEngine
+    worker = RoomWorker(
+        _room(targets=["en"]), _settings(("r1", "es"), engine_mode="local"), bus, db, clock, factory,
+        ingest_factory=IngestFactory(), realtime=False,  # no translate override: the real (local) kind
+    )
+
+    await worker.start(_talk("t1", language="es", targets=("en",), engine="fast"))  # "fast" on the talk itself
+    await run_for(clock, 5.0)
+    await worker.stop()
+
+    cfg = factory.configs[0]
+    assert cfg.kind == "glossary"  # coerced: local mode ignores the talk's own "fast"
+    assert len(local_translators) == 1
+    assert local_translators[0].source_lang == "es"  # the talk's spoken language, not the target
+    assert local_translators[0].closed == 1  # aclose() called on teardown, like Translator's
 
 
 async def test_a_vad_pause_closes_the_extra_languages_utterance(tmp_path: Path, db) -> None:

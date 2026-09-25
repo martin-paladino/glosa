@@ -21,6 +21,13 @@ dependencies = [
 jev = [
     "typesafe-sdk>=0.7.1",
 ]
+# Task 16: engine_mode "local" (Apple-silicon-only, no cloud APIs) -- Parakeet
+# STT + TranslateGemma translation via MLX. Platform markers keep Linux/Docker
+# installs unaffected (mlx does not build there).
+local = [
+    "mlx-lm>=0.31.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "parakeet-mlx>=0.5.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 
 [dependency-groups]
 dev = [

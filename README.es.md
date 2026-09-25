@@ -348,6 +348,85 @@ completo (estimaciones a escala de evento, el gasto propio de esta build,
 el costo del servidor, el tope de presupuesto): ver
 [`docs/costs.md`](docs/costs.md) (en inglés).
 
+## Modo local (sin nube)
+
+`engine_mode: local` corre captions + traducción enteramente en el
+dispositivo, en una Mac Apple Silicon — sin Gemini, sin internet, sin
+gastar API key. Es un **modo demo/de respaldo** ("no hay internet en la
+sede"), honesto sobre sus límites: **1–2 salas por máquina**, y ni la
+transcripción ni la traducción aplican el glosario de la charla (ver los
+límites abajo). Usa
+[Parakeet](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3)
+(`parakeet-mlx`) para speech-to-text y
+[TranslateGemma](https://huggingface.co/mlx-community/translategemma-4b-it-4bit)
+(`mlx-lm`) para traducción, ambos vía [MLX](https://github.com/ml-explore/mlx).
+
+```bash
+uv sync --extra local   # solo Apple Silicon; instala mlx, mlx-lm, parakeet-mlx
+make demo-local          # PORT=8014; descarga ~4.5 GB de pesos la primera vez
+```
+
+`glosa/engines/local.py` (`LocalParakeetEngine`) y
+`glosa/text/local_translator.py` (`LocalTranslator`) implementan los mismos
+contratos `Engine`/`Translator` que los motores en la nube, así que el
+resto del pipeline (glosario, segmentador, captions, exports) no cambia;
+el modo local fuerza a toda charla al *camino* del motor glossary (no hay
+Live Translate local), sea cual sea el `engine` propio de la charla.
+
+**Medido** (2026-09-25, la máquina de build — Apple M4, 16 GB — corridas en
+tiempo real de `samples/en_clip.opus`/`es_clip.opus`, ~93 s cada uno,
+`bench/bench_local.py`, reusando la métrica progress-lag de
+`bench/json3.py`):
+
+| Salas | Clip | Latencia origen p50/p90 | Atraso traducción p50/p90 | CPU% prom/máx | RSS MB prom/máx | Memoria pico MLX |
+|---|---|---|---|---|---|---|
+| 1 | en→es | 1,6 s / 2,6 s | 3,7 s / 5,5 s | — | — | 6,0 GB |
+| 2 | en→es | 3,8 s / 6,2 s | 6,6 s / 10,3 s | 44% / 101% | 571 / 1333 | 5,8 GB |
+| 2 | es→en | 5,3 s / 7,6 s | 7,2 s / 9,1 s | (mismo proceso) | (mismo proceso) | (mismo proceso) |
+
+Ambos modelos quedan cargados una sola vez por proceso (una instancia
+compartida, un lock, detrás de un thread dedicado — los streams de cómputo
+de MLX son thread-local, un problema conocido en todo el ecosistema MLX
+desde mlx 0.31+); una segunda sala aproximadamente duplica la latencia
+porque ahora espera su turno en ese mismo lock. Tanto la corrida de 1 como
+la de 2 salas se mantuvieron al ritmo del tiempo real (el tiempo total de
+pared ≈ la duración del propio clip): el cuello de botella es la latencia
+por llamada bajo carga, no el throughput. CPU/RSS son de este proceso
+(`ps`, muestreado cada 0,5 s); "memoria pico MLX" es
+`mlx.core.get_peak_memory()`, el máximo histórico de memoria unificada de
+los modelos — no es la misma cifra que el RSS del proceso (la memoria
+Metal/unificada no se refleja del todo en el RSS en Apple Silicon). Diez
+segmentos traducidos por clip, y la salida completa de la corrida, están
+en el reporte de esta tarea
+(`.superpowers/sdd/2026-09-24-glosa/task-16-report.md`).
+
+**Límites, con honestidad:**
+- **1–2 salas por máquina** — ver los números arriba; una tercera sala
+  concurrente haría cola detrás del mismo lock y empujaría la latencia
+  bastante más allá de lo que una audiencia en vivo puede leer cómodamente.
+- **El glosario no se aplica**, ni a la transcripción ni a la traducción.
+  Parakeet no tiene un gancho de vocabulario propio (a diferencia del
+  `customVocabulary` de transcribe-live); el formato de prompt de
+  TranslateGemma (verificado contra su propio `chat_template.jinja`) no
+  tiene lugar para instrucciones extra más allá del segmento y sus códigos
+  de idioma origen/destino.
+- **Sin contexto entre segmentos** para la traducción (Translator
+  normalmente pasa los últimos segmentos para dar continuidad; el modo
+  local traduce cada segmento de forma independiente).
+- **Transcripción por ventana móvil, no streaming real.**
+  `parakeet-mlx` sí ofrece un decodificador streaming de verdad, pero no se
+  consideró que valiera la complejidad de ciclo de vida agregada (un
+  contexto con caché KV/modo de atención con estado por sala, compartido
+  con cuidado contra un modelo de proceso compartido) para un respaldo de
+  hackathon de prioridad mínima; en cambio, retranscribe el audio
+  acumulado del enunciado abierto con el decodificador batch normal, que
+  los números de arriba muestran que alcanza a esta escala.
+- **Empaquetado:** el extra `local` (`pyproject.toml`) está condicionado a
+  `sys_platform == 'darwin' and platform_machine == 'arm64'`, así que una
+  instalación Linux/Docker no se ve afectada; los tests unitarios inyectan
+  funciones falsas de transcripción/generación y nunca necesitan mlx
+  instalado.
+
 ## Alternativas evaluadas
 
 Los dos motores de Glosa se eligieron después de compararlos entre sí y

@@ -164,6 +164,31 @@ async def test_a_talk_that_ends_before_it_starts_is_skipped(admin) -> None:
     assert body["skipped"][0]["title"] == "Backwards" and "end" in body["skipped"][0]["reason"]
 
 
+async def test_a_row_skipped_for_an_invalid_schedule_is_not_reported_or_deleted_as_removed(admin) -> None:
+    # task-11r-brief.md Ruling 6B: a re-import where one row got a typo'd,
+    # backwards schedule (same room/start/title as the stored talk, so the
+    # same id) must not make that stored talk look "no longer listed" just
+    # because this round's bad row never reached upsert_agenda -- especially
+    # since some OTHER valid row of the same room (below) is what puts that
+    # room's stale talks at risk of a range-based cleanup at all (Ruling 6D).
+    _, client = admin
+    first = CSV_HEADER + (
+        "main,2030-09-24 14:00,2030-09-24 15:00,Charla uno,Ana,es,en,,,,\n"
+        "main,2030-09-24 16:00,2030-09-24 17:00,Segunda charla,Beto,es,en,,,,\n"
+    )
+    await _import_csv(client, first)
+    reimport = CSV_HEADER + (
+        "main,2030-09-24 14:00,2030-09-24 13:00,Charla uno,Ana,es,en,,,,\n"  # typo'd: end before start
+        "main,2030-09-24 16:00,2030-09-24 17:00,Segunda charla,Beto,es,en,,,,\n"
+    )
+
+    body = (await _import_csv(client, reimport)).json()
+
+    assert body["removed"] == []
+    titles = {t["title"] for t in await _talks(client, "main")}
+    assert "Charla uno" in titles  # still scheduled, not deleted
+
+
 # ---- import: Nerdearla ---------------------------------------------------------------
 
 

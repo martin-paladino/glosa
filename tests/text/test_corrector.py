@@ -170,8 +170,11 @@ async def test_prompt_includes_glossary_and_abstract() -> None:
     )
 
     instruction = client.models.calls[0]["config"].system_instruction
-    assert "Kubernetes → keep" in instruction
-    assert "control plane → plano de control" in instruction
+    # Same wording as glosa/text/translator.py (223df70): the old "term →
+    # keep" format must not leak into the corrected version's prompt.
+    assert '"Kubernetes": leave it as is, untranslated' in instruction
+    assert '"control plane": translate it as "plano de control"' in instruction
+    assert "→ keep" not in instruction
     assert "A talk about container orchestration." in instruction
 
 

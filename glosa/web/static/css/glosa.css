@@ -1529,6 +1529,18 @@
   .pick .tc { font-size: 11.5px; color: var(--ink-2); }
   .pick em { font-style: normal; color: var(--ink-3); }
 
+  /* Exportaciones de una sala (Tarea 11-resto): una charla terminada por renglón. */
+  .exports { display: grid; margin-block-start: 4px; }
+  .exports__item { padding: 9px 0; }
+  .exports__item + .exports__item { border-block-start: var(--border-w) solid var(--line); }
+  .exports__title { display: block; font-size: 13.5px; font-weight: 600; }
+  .exports__lang { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; margin-block-start: 4px; font-size: 12.5px; }
+  .exports__lang > b { font-weight: 600; color: var(--ink-2); }
+  .exports__lang a { color: var(--ink); }
+  .exports__status { color: var(--ink-3); }
+  .exports__status--ready { color: var(--on); }
+  .exports__status--failed { color: var(--fault); }
+
   /* La estación de una sala "emitter" (Tarea 14a): su enlace (con la clave) y su QR. */
   .drawer__state + .station-link { margin-block-start: 14px; }
   .station-link__row { display: flex; gap: 6px; }

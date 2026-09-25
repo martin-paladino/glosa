@@ -335,6 +335,29 @@ async def test_back_to_auto_stops_an_agenda_talk_that_is_not_the_next_one(db) ->
         await db.update_talk(opened_early, status="scheduled", actual_start=None, actual_end=None)
 
 
+async def test_back_to_auto_stops_tomorrows_talk_even_when_it_is_the_next_one(db) -> None:  # Ruling 44, 6C
+    """The "starts today" half of _early_next, left untested by the
+    "not the next one" test above (there, C and T both fail the earlier
+    "is upcoming[0]" check on their own, so the date check is never
+    reached). Here, C's slot has already ended, so tomorrow's T really is
+    the room's only upcoming talk (upcoming[0]) once opened -- and it must
+    still be stopped, since it does not start today."""
+    talks = [_talk("C", "16:00", "17:00"), _talk("T", "10:00", "11:00", day=DAY + timedelta(days=1))]
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=talks, at_time=at("16:00"))
+    await pilot.tick()  # C, by the autopilot
+    move_to(clock, at("17:00"))
+    await pilot.tick()  # C's slot ends: idle
+    assert workers["r1"].talk is None
+
+    move_to(clock, at("17:30"))
+    await pilot.start_talk("r1", "T")  # tomorrow's talk, rehearsed early
+    move_to(clock, at("17:31"))
+    await pilot.set_mode("r1", "auto")
+    await pilot.tick()
+
+    assert workers["r1"].talk is None
+
+
 async def test_start_talk_on_the_running_talk_only_switches_to_manual(db) -> None:
     clock, workers, pilot, events = await _setup(
         db, _room("r1"), talks=[_talk("A", "14:00", "15:00")], at_time=at("13:59")
@@ -700,6 +723,9 @@ async def test_the_autopilot_drives_a_real_room_worker(db) -> None:  # 9.1, inte
     await _settle()
     assert worker.talk is not None and worker.talk.id == "A"
     assert bus.history("r1", "es", "A")[0].type == "talk"
+    # task-11r-brief.md item 7: the tick also refreshes the room's cached
+    # next-agenda-talk (RoomWorker.view()["next"]) -- here, B.
+    assert worker.view()["next"] is not None and worker.view()["next"]["talk_id"] == "B"
 
     move_to(clock, at("14:59"))
     await _settle()

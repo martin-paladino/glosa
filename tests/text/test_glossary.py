@@ -215,6 +215,23 @@ async def test_api_error_retries_once_then_returns_empty_list() -> None:
     assert len(client.models.calls) == 2
 
 
+async def test_last_error_distinguishes_a_failed_call_from_a_genuinely_empty_one() -> None:
+    """task-11r-brief.md's POST /suggest-glossary endpoint (Ruling 3): an
+    empty result because every attempt failed must read differently than an
+    empty result because the model just found nothing to suggest."""
+    failed, _ = _suggester([RuntimeError("boom"), RuntimeError("boom again")])
+    assert await failed.suggest(_talk()) == []
+    assert isinstance(failed.last_error, RuntimeError)
+
+    empty, _ = _suggester([_json_response([])])
+    assert await empty.suggest(_talk()) == []
+    assert empty.last_error is None
+
+    ok, _ = _suggester([_json_response([{"term": "Helm", "keep_in_english": True}])])
+    assert [t.term for t in await ok.suggest(_talk())] == ["Helm"]
+    assert ok.last_error is None
+
+
 async def test_thinking_level_is_low_not_minimal() -> None:
     suggester, client = _suggester([_json_response([])])
     await suggester.suggest(_talk())

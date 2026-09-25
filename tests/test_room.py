@@ -638,6 +638,60 @@ async def test_the_free_session_and_the_engine_config(db) -> None:
     assert last.type == "talk" and last.data["talk_id"] is None  # the audience goes idle
 
 
+# ------------------------------------------ next talk / latency_p50 (task-11r-brief.md item 7, Ruling 2) --
+
+
+async def test_view_next_reflects_set_next_talk(db) -> None:
+    """set_next_talk (called by Autopilot's tick, glosa/scheduler.py) is the
+    only thing that changes view()["next"]; view() itself never touches the
+    DB."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    ingests = IngestFactory()
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), ingests)
+
+    assert worker.view()["next"] is None
+
+    nxt = _talk("n1", language="en", targets=("es",))
+    nxt.start = datetime(2026, 1, 1, 15, 30, tzinfo=timezone.utc)
+    worker.set_next_talk(nxt)
+
+    assert worker.view()["next"] == {
+        "talk_id": "n1", "title": "Talk n1", "speakers": [], "language": "en", "start": "15:30",
+    }
+
+    worker.set_next_talk(None)
+    assert worker.view()["next"] is None
+
+
+async def test_latency_p50_is_none_when_idle_or_under_the_sample_floor(db) -> None:
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    ingests = IngestFactory()
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), ingests)
+
+    assert worker.latency_p50() is None  # idle: no run at all
+
+    await worker.start(None)
+    await run_for(clock, 0.1)
+    assert worker.latency_p50() is None  # a run exists, but no closed samples yet
+
+    run = worker._run
+    for i in range(9):  # 9 closed samples: alternating on_pause/on_output closes the PREVIOUS stretch
+        run.latency.on_pause(float(2 * i))
+        run.latency.on_output(float(2 * i + 1))
+    assert len(run.latency.samples()) == 8
+    assert worker.latency_p50() is None  # below the default floor (10)
+
+    run.latency.on_pause(float(2 * 9))
+    run.latency.on_output(float(2 * 9 + 1))
+    assert len(run.latency.samples()) == 9
+    assert worker.latency_p50(min_samples=9) == run.latency.p50()
+
+    await worker.stop()
+    assert worker.latency_p50() is None  # the run is gone once the talk ends
+
+
 async def test_status_cost_and_events_while_running(db) -> None:
     clock = DrivenClock()
     bus = CaptionBus(clock=clock)

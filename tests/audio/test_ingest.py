@@ -235,6 +235,57 @@ async def test_station_hub_connect_tolerates_a_close_failure_on_the_old_socket()
     assert hub.info("r1").connected is True
 
 
+@pytest.mark.asyncio
+async def test_station_hub_connect_serializes_concurrent_connections() -> None:
+    """Fix round 1, review #3: two connects interleaving around ``await
+    old.close(...)`` must not leave the loser's socket unclosed (and still
+    pushing into the queue). connect() takes a per-room lock around its
+    whole body, so a second connect() started while the first is still
+    inside its close() call blocks until the first finishes registering,
+    instead of both reading the same (stale) `old` and racing."""
+    hub = StationHub(FakeClock())
+    a = MagicMock()
+    await hub.connect("r1", a)  # gen 1: the connection that B and C will race to replace
+
+    entered_close = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def slow_close(code=1000):
+        entered_close.set()
+        await gate.wait()
+
+    a.close = AsyncMock(side_effect=slow_close)  # B's connect() will be stuck closing `a`
+    b = MagicMock()
+    b.close = AsyncMock()
+    c = MagicMock()
+    c.close = AsyncMock()
+
+    task_b = asyncio.ensure_future(hub.connect("r1", b))
+    await entered_close.wait()  # B is now inside `await old.close()` (old == a)
+
+    task_c = asyncio.ensure_future(hub.connect("r1", c))
+    await asyncio.sleep(0)
+    assert not task_b.done() and not task_c.done()
+
+    gate.set()  # let B finish closing `a` and register itself
+    gen_b = await task_b
+    gen_c = await task_c
+
+    a.close.assert_awaited_once_with(code=4409)
+    # The regression this guards against: without the lock, C could read
+    # `old` before B ever wrote its own socket into place, so B's socket
+    # would never be closed at all (and would keep pushing audio into the
+    # queue forever).
+    b.close.assert_awaited_once_with(code=4409)
+    assert gen_c == gen_b + 1
+
+    # Only C (the last writer) is registered now.
+    hub.disconnect("r1", gen_b)
+    assert hub.info("r1").connected is True
+    hub.disconnect("r1", gen_c)
+    assert hub.info("r1").connected is False
+
+
 def test_station_hub_hello_and_level_update_info() -> None:
     hub = StationHub(FakeClock())
     assert hub.info("r1") == ingest_module.StationInfo(

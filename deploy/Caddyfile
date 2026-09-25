@@ -13,7 +13,14 @@
 # from the internet for the ACME challenge.
 
 station.example.com {
-	reverse_proxy glosa:8000
+	# flush_interval -1: send each proxied chunk on as soon as it arrives,
+	# instead of buffering. Without it, Caddy's default buffering can hold
+	# back the audience captions' SSE stream (/api/stream/{room}/{lang})
+	# and the station's own responses for a beat -- fine for a normal page,
+	# not for live captions.
+	reverse_proxy glosa:8000 {
+		flush_interval -1
+	}
 }
 
 # --- Option B: LAN only, no public domain -----------------------------------
@@ -28,5 +35,7 @@ station.example.com {
 #
 # glosa.local {
 # 	tls internal
-# 	reverse_proxy glosa:8000
+# 	reverse_proxy glosa:8000 {
+# 		flush_interval -1
+# 	}
 # }

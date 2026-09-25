@@ -54,6 +54,10 @@ glosa.web.app:app_from_env`` works too, but then pass
 ``--timeout-graceful-shutdown``: an audience SSE stream never ends on its
 own, and without that timeout uvicorn waits for every open one on SIGTERM,
 so the lifespan never stops the rooms (talks not closed, cost not flushed).
+It also skips two things ``main()`` sets up directly on ``uvicorn.run()``
+(Task 14a fix round 1): ``RedactStationKeyFilter`` on the access logger
+(Ruling 50 -- a station's ``?key=...`` must never land in the access log)
+and ``--ws-max-size 65536``; pass both by hand if you run this way.
 """
 
 from __future__ import annotations
@@ -61,6 +65,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -70,6 +75,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from glosa.audio.ingest import AudioIngest, StationHub
 from glosa.captions.bus import CaptionBus
@@ -127,6 +134,69 @@ def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
         return LiveTranslateEngine(cfg, settings.gemini_api_key, clock, price_per_min=settings.prices.lt_per_min)
 
     return live
+
+
+class ReferrerPolicyMiddleware:
+    """Adds ``Referrer-Policy: same-origin`` to every HTTP response (Task
+    14a fix round 1, review #1): a station's URL carries a stable secret
+    (``?key=...``, Ruling 38) and base.html loads Google Fonts
+    cross-origin, so without this header (and the matching ``<meta
+    name="referrer">`` in base.html, which covers the HTML case on its
+    own) that secret would leak via the Referer header on the very first
+    cross-origin request the page makes.
+
+    A raw ASGI middleware, not Starlette's ``BaseHTTPMiddleware``: it only
+    ever touches the ``http.response.start`` message, never the body, so
+    it can't interfere with the audience SSE stream (glosa/web/sse.py) or
+    the station WebSocket (the latter isn't HTTP at all, and is skipped
+    outright below).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_header(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Referrer-Policy"] = "same-origin"
+            await send(message)
+
+        await self.app(scope, receive, send_with_header)
+
+
+# Matches a station key up to the next `&` or whitespace, so `?key=<hex>` is
+# redacted but a following `&lang=es` (or the rest of the log line) is not
+# swallowed with it.
+_STATION_KEY_IN_QUERY = re.compile(r"key=[^&\s]+")
+
+
+class RedactStationKeyFilter(logging.Filter):
+    """Rewrites ``key=<...>`` to ``key=REDACTED`` in uvicorn's access log
+    records (Task 14a fix round 1, review #2; Ruling 50: keep access logs,
+    but a station's stable secret must never land in them -- every station
+    page load and WS (re)connect otherwise writes ``?key=<secret>`` to
+    stdout as-is). ``main()`` installs one instance on the
+    ``uvicorn.access`` logger.
+
+    uvicorn's access logger formats its message from ``record.args`` (a
+    tuple -- ``client_addr, method, full_path, http_version, status_code``,
+    see ``uvicorn.protocols.http.*_impl.py``), not a pre-rendered string:
+    %-formatting happens lazily, only once a handler actually emits the
+    record, so this rewrites ``args`` (every string element, defensively --
+    not just the one index) rather than ``msg``.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple):
+            record.args = tuple(
+                _STATION_KEY_IN_QUERY.sub("key=REDACTED", a) if isinstance(a, str) else a for a in args
+            )
+        return True
 
 
 def create_app(
@@ -211,6 +281,7 @@ def create_app(
             db.close()
 
     app = FastAPI(title="Glosa", lifespan=lifespan)
+    app.add_middleware(ReferrerPolicyMiddleware)
     app.state.settings = settings
     app.state.clock = clock
     app.state.bus = bus
@@ -326,12 +397,21 @@ def main() -> None:
     """``python -m glosa.web.app``: serve Glosa on $HOST:$PORT."""
     import uvicorn
 
+    # Ruling 50 / Task 14a fix round 1: redact station keys before they
+    # ever reach the access log (installed on the logger, not passed to
+    # uvicorn.run(), since uvicorn's own log config doesn't take filters).
+    logging.getLogger("uvicorn.access").addFilter(RedactStationKeyFilter())
+
     uvicorn.run(
         "glosa.web.app:app_from_env",
         factory=True,
         host=os.environ.get("HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "8000")),
         timeout_graceful_shutdown=SHUTDOWN_GRACE_S,
+        # A 3200-byte audio frame or a station's JSON control message never
+        # comes close to this; bounds the per-frame size the station
+        # WebSocket (glosa/web/station.py) will accept.
+        ws_max_size=65536,
     )
 
 

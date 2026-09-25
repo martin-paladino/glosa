@@ -214,6 +214,7 @@ class StationHub:
         self._clock = clock
         self._queues: dict[str, asyncio.Queue[bytes]] = {}
         self._state: dict[str, _StationState] = {}
+        self._connect_locks: dict[str, asyncio.Lock] = {}
 
     def queue(self, room_id: str) -> asyncio.Queue[bytes]:
         queue = self._queues.get(room_id)
@@ -227,22 +228,39 @@ class StationHub:
             state = self._state[room_id] = _StationState()
         return state
 
+    def _connect_lock(self, room_id: str) -> asyncio.Lock:
+        # No `await` between the dict lookup and the (possible) insert, so
+        # this is safe without its own lock: asyncio is single-threaded and
+        # cooperative, and nothing here yields control mid-way.
+        lock = self._connect_locks.get(room_id)
+        if lock is None:
+            lock = self._connect_locks[room_id] = asyncio.Lock()
+        return lock
+
     async def connect(self, room_id: str, ws: _StationSocket) -> int:
         """Register ``ws`` as ``room_id``'s one active station, closing (4409)
         whatever was connected before (a reload, a second tab, a flaky
         network: the newest connection always wins). Returns a generation
         number: pass it to ``disconnect`` so a superseded connection's own
-        cleanup can't clear the *new* one's state."""
-        state = self._state_of(room_id)
-        old = state.ws
-        if old is not None:
-            with contextlib.suppress(Exception):
-                await old.close(code=4409)
-        state.ws = ws
-        state.generation += 1
-        state.device = None
-        state.level_db = None
-        return state.generation
+        cleanup can't clear the *new* one's state.
+
+        Fix round 1, review #3: the whole body runs under a per-room lock.
+        Without it, two connects arriving close together could both read
+        the same (stale) ``state.ws`` before either had written its own
+        socket in -- the loser's socket would then never be closed (4409)
+        and would keep pushing audio into the queue forever, alongside the
+        winner's."""
+        async with self._connect_lock(room_id):
+            state = self._state_of(room_id)
+            old = state.ws
+            if old is not None:
+                with contextlib.suppress(Exception):
+                    await old.close(code=4409)
+            state.ws = ws
+            state.generation += 1
+            state.device = None
+            state.level_db = None
+            return state.generation
 
     def disconnect(self, room_id: str, generation: int) -> None:
         state = self._state.get(room_id)

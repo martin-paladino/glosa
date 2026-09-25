@@ -366,3 +366,36 @@ def test_create_app_wires_an_emitter_room_to_the_station_hub(tmp_path: Path) -> 
         # it through EmitterIngest, which is the wiring this test is for.
         assert app.state.station_hub.queue("r1").qsize() == 0
         assert "station:" in app.state.workers["r1"].status().detail
+
+
+# ---- fix round 1: Referrer-Policy (review #1) ---------------------------------
+
+
+def test_referrer_policy_header_and_meta_on_the_station_page(tmp_path: Path) -> None:
+    """The station URL carries a stable secret (?key=...) in its own
+    address; base.html loads Google Fonts cross-origin, so without a
+    referrer policy that secret would leak via the Referer header. Both
+    the response header (create_app()'s middleware -- catches every
+    route, HTML or not) and the meta tag (base.html -- every page that
+    extends it) must be present."""
+    settings = Settings(
+        gemini_api_key="unused",
+        admin_password=ADMIN_PASSWORD,
+        engine_mode="fake",
+        db_path=str(tmp_path / "glosa.db"),
+        rooms=[
+            RoomCfg(
+                id="r1", name="Sala Uno", source_type="emitter", source_url="r1",
+                language="en", default_targets=["es"],
+            )
+        ],
+    )
+    app = create_app(settings)
+
+    with TestClient(app) as client:
+        key = station.station_key(ADMIN_PASSWORD, "r1")
+        response = client.get(f"/station/r1?key={key}")
+
+        assert response.status_code == 200
+        assert response.headers["referrer-policy"] == "same-origin"
+        assert '<meta name="referrer" content="same-origin">' in response.text

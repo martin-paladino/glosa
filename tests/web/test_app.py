@@ -304,3 +304,32 @@ async def test_shutdown_acloses_every_room_worker(tmp_path, monkeypatch: pytest.
         assert closed == []
 
     assert sorted(closed) == ["r1", "r2"]
+
+
+async def test_shutdown_stops_the_shared_mlx_threads_within_the_hook_grace(tmp_path, monkeypatch) -> None:
+    """task-16-review.md Important #1: the lifespan shuts the local mode's
+    shared MLX executors down, bounded by HOOK_GRACE_S."""
+    from glosa.config import RoomCfg, Settings
+    from glosa.engines import local as local_engine
+    from glosa.text import local_translator
+    from glosa.web.app import HOOK_GRACE_S, create_app
+
+    calls: list[tuple[str, float]] = []
+
+    def recorder(name: str):
+        async def shutdown_shared_model(timeout: float) -> None:
+            calls.append((name, timeout))
+
+        return shutdown_shared_model
+
+    monkeypatch.setattr(local_engine, "shutdown_shared_model", recorder("parakeet"))
+    monkeypatch.setattr(local_translator, "shutdown_shared_model", recorder("translategemma"))
+    settings = Settings(
+        gemini_api_key="unused", admin_password="test-password", db_path=str(tmp_path / "glosa.db"),
+        rooms=[RoomCfg(id="r1", name="Uno", source_type="file", source_url=None, default_targets=["es"])],
+    )
+    app = create_app(settings, autopilot_interval_s=3600)
+    async with app.router.lifespan_context(app):
+        assert calls == []
+
+    assert sorted(calls) == [("parakeet", HOOK_GRACE_S), ("translategemma", HOOK_GRACE_S)]

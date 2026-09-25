@@ -23,7 +23,8 @@ rooms. The lifespan:
      task named ``autopilot``;
   5. on shutdown cancels that loop (a tick in progress finishes), stops
      every room, gives the talk-end hooks ``HOOK_GRACE_S``, then does the
-     same for any boot-time stale-talk hooks still running (below).
+     same for any boot-time stale-talk hooks still running (below), then
+     stops the local mode's shared MLX threads (at most ``HOOK_GRACE_S``).
 
 A corrected build that a shutdown cut off stays "pending" (``_export_talk``
 marks every language pending before building any); the next boot queues it
@@ -117,6 +118,7 @@ from glosa.db import init_db
 from glosa.engines.base import EngineFactory
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
+from glosa.engines import local as local_engine
 from glosa.engines.local import LocalParakeetEngine
 from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig, Room, Talk
@@ -124,6 +126,7 @@ from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
 from glosa.summary import FakeSummarizer, Summarizer, SummaryScheduler, SummaryStore
 from glosa.talk_check import TalkCheckerLike, TalkCheckScheduler, TalkMismatchStore, build_talk_checker
+from glosa.text import local_translator
 from glosa.text.corrector import build_corrected
 from glosa.web import admin_api, admin_listen, admin_stream, pages, public_api, station, test_audio
 from glosa.web.admin_events import AdminEvents
@@ -459,6 +462,16 @@ def create_app(
                     log.error("room %s: stop failed", worker.room.id, exc_info=result)
             await asyncio.gather(*(w.drain_hooks(HOOK_GRACE_S) for w in rooms), return_exceptions=True)
             await _drain_boot_hooks(boot_hooks, HOOK_GRACE_S)
+            # task-16-review.md Important #1: the local mode's shared MLX
+            # threads (a no-op unless engine_mode local ever used them).
+            results = await asyncio.gather(
+                local_engine.shutdown_shared_model(HOOK_GRACE_S),
+                local_translator.shutdown_shared_model(HOOK_GRACE_S),
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    log.error("could not stop a shared MLX thread", exc_info=result)
             workers.clear()
             db.close()
 

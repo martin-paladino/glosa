@@ -54,6 +54,7 @@ from typing import Callable
 
 from glosa.clock import Clock, RealClock
 from glosa.config import ConfigError
+from glosa.engines.local import shutdown_executor
 from glosa.models import GlossaryTerm
 from glosa.text.translator import Translation
 
@@ -153,7 +154,19 @@ async def _get_shared_model(generate_fn: GenerateFn | None) -> _SharedTranslateM
 def reset_shared_model() -> None:
     """Test-only: drop the process-wide singleton."""
     global _shared_model
-    _shared_model = None
+    model, _shared_model = _shared_model, None
+    if model is not None:
+        model._executor.shutdown(wait=False, cancel_futures=True)
+
+
+async def shutdown_shared_model(timeout: float) -> None:
+    """App shutdown (glosa/web/app.py's lifespan; task-16-review.md
+    Important #1): stop the shared MLX thread, waiting at most ``timeout``
+    s (glosa/engines/local.py's shutdown_shared_model, same rules)."""
+    global _shared_model
+    model, _shared_model = _shared_model, None
+    if model is not None:
+        await shutdown_executor(model._executor, timeout, "translategemma-mlx")
 
 
 class LocalTranslator:

@@ -363,6 +363,7 @@ with latency, cost, glossary support and sources:
   own `db_path` (SQLite; no shared state between instances). Point each
   instance's admin panel and audience links at its own host/port.
 - **Budget by audio-minutes**, not by room count: see [Costs](#costs).
+- **The silence gate stops billing audio between talks and during long pauses.** After `silence_gate_s` (default 20 s, 0 disables — `config.yaml`) with no voice, a room stops sending audio to the engine (a 1 s pre-roll is kept and replayed first when speech returns, so nothing is lost); over a day with idle stretches between talks this can meaningfully cut the audio-minutes billed per room. The cumulative seconds saved are in each room's status (`gated_s`), and "silence gate: paused Ns" shows in the admin's per-room detail while active.
 
 ## Deployment
 

@@ -78,7 +78,8 @@ Failures (the engines never raise: they report ``error`` then ``closed``)
       over at once.
     - While no session can take audio, the last ``buffer_s`` s of chunks are
       held back, then sent to the next session. They were never sent
-      anywhere else.
+      anywhere else. ``hold_from(t)`` extends that (up to ``HOLD_MAX_S``)
+      for audio from ``t`` on: where speech resumes after a silence gate.
     - Every engine is ``close()``d when it is retired (after the drain), when
       its ``closed`` event is seen, and on ``stop()``.
 
@@ -136,6 +137,7 @@ PAYMENT_RETRY_S = 30.0
 GO_AWAY_URGENT_S = 20.0  # less notice than this: switch as soon as possible
 GO_AWAY_MARGIN_S = 15.0  # otherwise switch this long before the server's deadline
 STOP_GRACE_S = 2.0  # stop(): how long to wait for the sessions' final events
+HOLD_MAX_S = 8.0  # hold_from(): the most audio held back past buffer_s for a resumption
 # Loop turns a new session's first events() read gets to report a failed
 # connect (FakeEngine needs 2: one sleep(0), then the yield).
 _CONFIRM_TURNS = 5
@@ -230,6 +232,7 @@ class SessionRelay:
         self._connect_deadline = math.inf
         self._draining: list[_Session] = []
         self._pending: deque[AudioChunk] = deque()  # audio no session has taken yet
+        self._hold_from: float | None = None  # hold_from(): not pruned before a session takes it
 
         self._next_attempt_at: float | None = None  # backoff / payment wait
         self._failures = 0  # consecutive, for the backoff
@@ -268,6 +271,13 @@ class SessionRelay:
         ``take_pending()``), under the same ``buffer_s`` rule."""
         self._pending.extendleft(reversed(chunks))
 
+    def hold_from(self, t: float) -> None:
+        """Audio from ``t`` (audio clock) on is where speech resumes (task-19:
+        the silence gate's pre-roll): while no session can take audio, hold
+        it past ``buffer_s`` -- up to ``HOLD_MAX_S`` -- rather than prune the
+        first words. Lifted once a session takes the held audio."""
+        self._hold_from = t
+
     async def start(self) -> None:
         """Begin connecting the first session. Returns at once: audio fed
         before it is up is held (up to ``buffer_s``) and sent when it is."""
@@ -289,8 +299,12 @@ class SessionRelay:
         self._pending.append(chunk)
         while self._pending and self._active is not None:
             await self._send(self._active, self._pending.popleft())
-        if self._active is None:
+        if self._active is not None:
+            self._hold_from = None
+        else:
             horizon = chunk.t - self.buffer_s
+            if self._hold_from is not None:
+                horizon = min(horizon, max(self._hold_from, chunk.t - HOLD_MAX_S))
             while self._pending and self._pending[0].t < horizon:
                 self._pending.popleft()
 

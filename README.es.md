@@ -384,6 +384,7 @@ fuentes: [`docs/alternatives.md`](docs/alternatives.md) (en inglés).
   instancia a su propio host/puerto.
 - **Presupuestá por minutos de audio**, no por cantidad de salas: ver
   [Costos](#costos).
+- **La compuerta de silencio deja de facturar audio entre charlas y en pausas largas.** Después de `silence_gate_s` segundos sin voz (20 s por defecto; 0 la desactiva — `config.yaml`), la sala deja de enviar audio al motor (guarda 1 s de pre-roll y lo manda primero cuando vuelve la voz, así no se pierde nada); en un día con tiempos muertos entre charlas esto baja bastante los minutos de audio facturados por sala. Los segundos ahorrados figuran en el estado de cada sala (`gated_s`), y el detalle de la sala en el admin muestra "silence gate: paused Ns" mientras está activa.
 
 ## Despliegue
 

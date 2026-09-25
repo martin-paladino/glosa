@@ -151,3 +151,4 @@ class RoomStatus:
     cost_usd: float
     talk_id: str | None
     detail: str
+    gated_s: float = 0.0  # Task 19: cumulative seconds the silence gate has saved (not sent)

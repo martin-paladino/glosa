@@ -91,3 +91,8 @@ segmenter:
 # Shift applied to Live Translate timestamps when generating exports, in
 # seconds (measured p50 translation delay; see samples/fixtures/lt_en.jsonl).
 default_export_shift_s: 2.4
+
+# Stop sending audio to the engine after this many seconds with no speech
+# (per-room VAD); the last 1 s is kept and sent first when voice returns, so
+# nothing is lost. 0 disables the gate.
+silence_gate_s: 20.0

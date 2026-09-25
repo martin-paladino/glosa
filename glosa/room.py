@@ -2,18 +2,20 @@
 
 ::
 
-    AudioIngest -> EnergyVad -> SessionRelay (the talk's engine)
+    AudioIngest -> EnergyVad -> SilenceGate -> SessionRelay (the talk's engine)
       -> source text: CaptionAssembler per (engine session, language), or "set"
       -> translations: Live Translate's own, and/or the translation lane
       -> CaptionBus.publish -> db.save_segment when a segment closes
 
 Per 100 ms chunk (Ruling 23): ``vad.process(chunk)``, then
-``relay.feed(chunk, voiced=vad.in_speech)`` (the watchdog needs ``voiced``),
-then ``relay.on_vad(ev)`` for each VAD event, then ``lane.tick()``. A
-separate task consumes ``relay.events()``: ``source_delta``/``source_final``
-go to the talk's language, ``target_delta`` to the first translation
-language (routed by kind, not by ``ev.lang``), and every ``meta["usd"]``
-increment is added to the room's cost.
+``gate.update(chunk, voiced=vad.in_speech)`` (task-19: after 20 s with no
+speech, withholds it instead of returning it -- see "Silence gate" below),
+then ``relay.feed(c, voiced=vad.in_speech)`` for whatever it returns (the
+watchdog needs ``voiced``), then ``relay.on_vad(ev)`` for each VAD event,
+then ``lane.tick()``. A separate task consumes ``relay.events()``:
+``source_delta``/``source_final`` go to the talk's language, ``target_delta``
+to the first translation language (routed by kind, not by ``ev.lang``), and
+every ``meta["usd"]`` increment is added to the room's cost.
 
 Engines (glosa/room_text.py)
     Each talk runs its own ``Talk.engine``; a free session, the default for
@@ -106,6 +108,59 @@ Costs
     cost and are written as one costs row per component every
     ``COST_FLUSH_S`` and at the end of a run.
 
+Silence gate (task-19, glosa/audio/gate.py)
+    ``_feed`` still runs the VAD, ``relay.on_vad``, the lane's ``tick`` and
+    level tracking on every chunk; only ``relay.feed()`` (the audio actually
+    billed) is gated, via ``run.gate.update(chunk, voiced)``. (c), (d), (e)
+    of the design follow from what already existed; (b) needs the two
+    hooks described under "Relay" below:
+
+    - Watchdog: ``SessionRelay._poll()`` -- the only place that checks
+      ``StallWatchdog.stalled()`` -- runs solely inside ``feed()``. No
+      ``feed()`` calls while gated means no stall check, so a silent room
+      can never trip "audio present but no engine output" (also why
+      ``status()`` hardcodes ``stall_active=False``: the relay always
+      reconnects a stall itself, at once).
+    - Relay: what gating freezes is only the relay's ``_poll()`` path, reached
+      solely from ``feed()``: the watchdog above, the standby/force rotation
+      deadlines, the connect timeout and the backoff retry. What keeps
+      running is event-driven: each session's ``_pump()`` task reads its
+      engine's events regardless of ``feed()``, so a ``go_away``, a session
+      that dies (e.g. aged past its lifetime, since no proactive rotation
+      fires while gated) and a failed connect of the standby a ``go_away``
+      starts are all handled while gated -- bumping ``relay.stats`` -- and
+      ``_tick_loop`` runs on its own clock too. Ruling 58: those are
+      housekeeping, not incidents. ``_relay_incidents(gated=True)`` (the
+      tick while gated, and ``_feed`` once more the instant voice returns,
+      so nothing in the last half tick slips through) logs them at info and
+      only moves the baselines: no ``last_reconnect_at`` ("recent
+      reconnect" yellow), nothing for FlapDetector (no fallback). A
+      non-retryable error still halts the relay and falls back as usual.
+      When voice returns with no session up yet (the old one died, the
+      retry waits for ``feed()``), ``relay.hold_from(pre-roll start)``
+      keeps the pre-roll and first words past ``buffer_s`` (up to
+      ``HOLD_MAX_S``) until the new session takes them.
+    - The glossary engine's ``end_utterance()`` (transcribe-live's
+      ``audio_stream_end``) is called from a VAD ``pause`` event, which
+      fires ~``pause_ms`` (400 ms) after speech ends -- long before
+      ``GATE_AFTER_S`` (20 s) is even reached, so gating never delays it.
+    - Level metrics: ``run.levels`` is appended every chunk regardless of
+      gating, so ``status()``'s "level below threshold with active talk"
+      check still reflects the real, silent room -- not the gate's own
+      state.
+    - Cost: engines only bill audio actually handed to ``send_audio()``, so
+      not calling ``relay.feed()`` while gated already keeps cost
+      accounting exact; no separate bookkeeping was needed.
+
+    The gate itself is transparent to a fallback/engine swap
+    (``_swap_engine``): it lives on ``_Run``, untouched by
+    ``_apply_engine``, so it keeps counting across an engine change.
+    ``run.gate.gated_s`` is the cumulative audio (seconds) never sent (not
+    counting the pre-roll, which is sent, just delayed); ``status()``
+    appends "silence gate: paused Ns" to the admin-only detail string while
+    gated (``run.gate.paused_s``), after every other detail so it never
+    changes ``state``.
+
 Sources
     ``start(talk)`` plays the room's configured source; ``play_file(path)``
     replaces the source of the running talk (or starts the free session).
@@ -150,6 +205,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from glosa.audio.gate import SilenceGate
 from glosa.audio.ingest import CHUNK_BYTES, CHUNK_S, AudioIngest, StationHub
 from glosa.audio.vad import EnergyVad
 from glosa.captions.assembler import CaptionAssembler
@@ -267,6 +323,7 @@ class _Run:
     target: str  # the first translation language (Live Translate's, with "fast")
     source: tuple[str, str, bool]  # what the audio loop plays: (source_type, source_url, realtime)
     vad: EnergyVad
+    gate: SilenceGate  # Task 19: what NOT to forward to the engine while silent
     tracks: dict[str, _Track]
     t0: float
     # Task 14b (Ruling 5, the admin "Escuchar el audio" feature): the clock
@@ -532,6 +589,8 @@ class RoomWorker:
                     state, detail = "red", "engine halted: non-retryable error, waiting for a reconnect"
         if self.room.source_type == "emitter" and self._station_hub is not None:
             detail = f"{detail} | {self._station_summary()}"
+        if run is not None and run.gate.gated:  # Task 19: admin-only, does not affect state
+            detail = f"{detail} | silence gate: paused {run.gate.paused_s:.0f}s"
         return RoomStatus(
             state=state,
             level_db=level,
@@ -540,6 +599,7 @@ class RoomWorker:
             cost_usd=self._cost_usd,
             talk_id=talk_id,
             detail=detail,
+            gated_s=round(run.gate.gated_s, 1) if run is not None else 0.0,
         )
 
     def latency_p50(self, min_samples: int = 10) -> float | None:
@@ -644,6 +704,7 @@ class RoomWorker:
             target=langs[0],
             source=(source_type, source_url, realtime),
             vad=EnergyVad(self._settings.vad.pause_ms, self._settings.vad.min_speech_s),
+            gate=SilenceGate(self._settings.silence_gate_s),
             tracks=tracks,
             t0=now - elapsed,
             last_cost_flush=now,
@@ -923,7 +984,17 @@ class RoomWorker:
 
     async def _feed(self, run: _Run, chunk: AudioChunk) -> None:
         events = run.vad.process(chunk)
-        await run.relay.feed(chunk, voiced=run.vad.in_speech)
+        voiced = run.vad.in_speech
+        was_gated = run.gate.gated
+        out = run.gate.update(chunk, voiced)  # [] while gated; pre-roll + chunk on return
+        if was_gated and not run.gate.gated:
+            # Voice is back: whatever the relay did since the last tick was
+            # still gated housekeeping (Ruling 58), and the pre-roll must
+            # survive a replacement session that is not up yet.
+            await self._relay_incidents(run, self._clock.now(), gated=True)
+            run.relay.hold_from(out[0].t)
+        for to_send in out:
+            await run.relay.feed(to_send, voiced=voiced)
         now = self._clock.now()
         for ev in events:
             run.relay.on_vad(ev)
@@ -1157,6 +1228,23 @@ class RoomWorker:
             run.tick = asyncio.ensure_future(self._safe_tick(run))
             await asyncio.shield(run.tick)
 
+    async def _relay_incidents(self, run: _Run, now: float, *, gated: bool) -> bool:
+        """Take the relay's new reconnects/errors (``relay.stats``) into
+        ``run.last_reconnect_at`` and FlapDetector; returns whether it is
+        flapping. ``gated`` (Ruling 58): they happened while the silence gate
+        was closed -- the event-driven path replacing a session nobody is
+        feeding -- so they are logged as housekeeping and only move the
+        baselines: no "recent reconnect" yellow, no fallback incident."""
+        stats = run.relay.stats
+        if stats["reconnects"] > run.reconnects:
+            run.reconnects = stats["reconnects"]
+            if gated:
+                await self._log("info", "reconnect", f"engine reconnect #{run.reconnects} while silence-gated")
+            else:
+                run.last_reconnect_at = now
+                await self._log("warning", "reconnect", f"engine reconnect #{run.reconnects}")
+        return run.flaps.update(stats, run.manual_reconnects, now, count=not gated)
+
     async def _safe_tick(self, run: _Run) -> None:
         try:
             await self._tick(run, self._clock.now())
@@ -1182,11 +1270,7 @@ class RoomWorker:
         if stats["rotations"] > run.rotations:
             run.rotations = stats["rotations"]
             await self._log("info", "rotation", f"session handover #{run.rotations}")
-        if stats["reconnects"] > run.reconnects:
-            run.reconnects = stats["reconnects"]
-            run.last_reconnect_at = now
-            await self._log("warning", "reconnect", f"engine reconnect #{run.reconnects}")
-        flapping = run.flaps.update(stats, run.manual_reconnects, now)
+        flapping = await self._relay_incidents(run, now, gated=run.gate.gated)
         # Ruling 49: halted (a non-retryable error) falls back at once, unless
         # the key was refused (glossary would be too); the halt's code comes
         # with its error event, so a halt waits for that event to be handled.

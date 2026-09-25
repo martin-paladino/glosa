@@ -423,6 +423,13 @@ class Database:
         )
         await self._run(lambda con: con.execute(sql, (talk_id, lang, status, _now_iso())))
 
+    async def get_pending_exports(self) -> list[tuple[str, str]]:
+        """Every (talk_id, lang) whose corrected build was left "pending" (a
+        shutdown cut it off): the boot queues them again (final-review-A I4)."""
+        sql = "SELECT talk_id, lang FROM exports WHERE status = 'pending' ORDER BY talk_id, lang"
+        rows = await self._run(lambda con: con.execute(sql).fetchall())
+        return [(r["talk_id"], r["lang"]) for r in rows]
+
     async def get_export_status(self, talk_id: str, lang: str) -> str | None:
         sql = "SELECT status FROM exports WHERE talk_id = ? AND lang = ?"
         row = await self._run(lambda con: con.execute(sql, (talk_id, lang)).fetchone())

@@ -33,6 +33,17 @@ MAX_RESTARTS = 5
 
 SourceType = Literal["file", "url", "youtube", "emitter"]
 
+# final-review-A I6 (spec §6: "ffmpeg termina o no llega audio en 5 s ->
+# reinicio con espera creciente"), for the live ffmpeg sources only: a clean
+# exit is a dropped stream, not the end of the talk, and a read that waits
+# longer than NO_AUDIO_TIMEOUT_S (a half-open connection) kills ffmpeg; both
+# go through the usual restart/backoff. The first chunk of each attempt gets
+# CONNECT_TIMEOUT_S instead (connecting and probing a live stream can take a
+# few seconds by itself).
+LIVE_SOURCES = ("url", "youtube")
+NO_AUDIO_TIMEOUT_S = 5.0
+CONNECT_TIMEOUT_S = 15.0
+
 # StationHub: how many 100 ms chunks the per-room queue holds (5 s) before it
 # starts dropping the oldest one, and how long without audio (Ruling 38)
 # before a room reports "station disconnected".
@@ -78,12 +89,16 @@ class AudioIngest:
 
     On an unexpected ffmpeg failure (non-zero exit, or failure to even start)
     the process is restarted with growing backoff (1, 2, 4, 8, 16 s), up to
-    MAX_RESTARTS times; `restarts` counts how many restarts have happened and
+    MAX_RESTARTS times in a row (M1: an attempt that delivers audio starts the
+    budget and the backoff over); `restarts` counts every restart so far and
     `last_error` holds the most recent failure's message. After the last
     retry also fails, chunks() ends (a "terminal error": last_error stays
-    set, no more chunks are yielded). A clean ffmpeg exit (returncode 0, e.g.
-    a finite input file finished decoding) ends chunks() normally, with no
-    restart and last_error left as None.
+    set, no more chunks are yielded). For a ``file``, a clean ffmpeg exit
+    (returncode 0: the file finished decoding) ends chunks() normally, with
+    no restart and last_error left as None. For a live ``url``/``youtube``
+    source (I6) a clean exit ("the stream ended") and no audio for
+    NO_AUDIO_TIMEOUT_S (CONNECT_TIMEOUT_S for an attempt's first chunk) are
+    failures like any other: restart with backoff, chunk times continuous.
 
     For source_type == "youtube", the URL is re-resolved (via
     resolve_youtube, through build_ffmpeg_cmd) on every attempt, including
@@ -135,22 +150,35 @@ class AudioIngest:
                     error = f"failed to start {cmd[0]!r}: {exc}"
                 else:
                     assert proc.stdout is not None
+                    live = self.source_type in LIVE_SOURCES
                     try:
+                        timeout = CONNECT_TIMEOUT_S
                         try:
                             while True:
-                                data = await proc.stdout.readexactly(CHUNK_BYTES)
+                                if live:
+                                    data = await asyncio.wait_for(proc.stdout.readexactly(CHUNK_BYTES), timeout)
+                                    timeout = NO_AUDIO_TIMEOUT_S
+                                else:
+                                    data = await proc.stdout.readexactly(CHUNK_BYTES)
                                 yield AudioChunk(pcm=data, t=self._t)
                                 self._t = round(self._t + CHUNK_S, 2)
+                                attempt = 0  # M1: audio flows again: the restart budget starts over
                         except asyncio.IncompleteReadError:
                             pass  # EOF; any trailing partial (< CHUNK_BYTES) is dropped
+                        except TimeoutError:  # I6: a stalled live stream
+                            error = f"no audio for {timeout:g} s"
 
-                        returncode = await proc.wait()
-                        if returncode == 0:
-                            return  # clean end of stream
-                        stderr = b""
-                        if proc.stderr is not None:
-                            stderr = await proc.stderr.read()
-                        error = stderr.decode(errors="replace").strip() or f"{cmd[0]} exited {returncode}"
+                        if error is None:
+                            returncode = await proc.wait()
+                            if returncode == 0 and not live:
+                                return  # clean end of a file
+                            if returncode == 0:
+                                error = "the stream ended"  # I6: a live stream dropped
+                            else:
+                                stderr = b""
+                                if proc.stderr is not None:
+                                    stderr = await proc.stderr.read()
+                                error = stderr.decode(errors="replace").strip() or f"{cmd[0]} exited {returncode}"
                     finally:
                         # If we were cancelled/abandoned mid-stream (caller
                         # stopped iterating), don't leave ffmpeg running.
@@ -164,7 +192,7 @@ class AudioIngest:
 
             wait_s = RESTART_BACKOFFS_S[attempt]
             attempt += 1
-            self.restarts = attempt
+            self.restarts += 1  # cumulative (RoomWorker compares it across chunks)
             await self.clock.sleep(wait_s)
 
 

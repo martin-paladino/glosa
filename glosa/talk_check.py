@@ -47,6 +47,7 @@ from typing import Any, Protocol
 
 from glosa.clock import Clock
 from glosa.models import Talk
+from glosa.room import is_free_talk
 
 logger = logging.getLogger(__name__)
 log = logger  # both spellings used elsewhere in this codebase; keep one object
@@ -279,7 +280,8 @@ class TalkCheckScheduler:
     async def tick(self) -> None:
         room_id = self._worker.room.id
         talk = self._worker.talk
-        if talk is None or self._checker is None or self._autopilot.mode(room_id) != "auto":
+        # final-review-A I2: a free session has no agenda to disagree with.
+        if talk is None or is_free_talk(talk.id) or self._checker is None or self._autopilot.mode(room_id) != "auto":
             self._reset(room_id)
             return
         if talk.id != self._talk_id:

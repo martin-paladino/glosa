@@ -5,9 +5,13 @@ so the operator can judge caption/translation quality without a live talk.
 ``POST /api/admin/rooms/{room_id}/test-audio``: multipart form, either
 ``sample`` (``en`` or ``es`` -- the repo's own ``samples/{lang}_clip.opus``)
 or ``file`` (an upload, saved under ``UPLOADS_DIR``, 50 MB max -> 413).
-Either way this ends in ``RoomWorker.play_file(path)`` (glosa/room.py),
-which plays the file at real-time speed as the room's audio -- a running
-talk keeps its engine session, an idle room starts its free session.
+Either way this ends in ``Autopilot.play_test_audio`` (glosa/scheduler.py,
+under the room's lock) and ``RoomWorker.play_file(path)`` (glosa/room.py),
+which plays the file at real-time speed as the room's audio -- as a test
+session (C1, Ruling 60): 409 with the reason while an agenda talk is open
+or due within the autopilot's lead; a running free session switches back to
+its own source when the clip ends, an idle room gets a free session of its
+own.
 
 A router of its own (not glosa/web/admin_api.py, Task 12's file) with the
 same dependencies as its ``api_router`` (``require_admin`` then
@@ -31,7 +35,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
-from glosa.room import RoomWorker
+from glosa.room import RoomWorker, SoundCheckRefused
 from glosa.web.auth import require_admin, require_csrf_header
 
 # Same dependency order as glosa/web/admin_api.py's api_router (require_admin,
@@ -87,10 +91,18 @@ async def play_test_audio(
     else:
         assert sample is not None
         path = _sample_path(sample)
+    autopilot = getattr(request.app.state, "autopilot", None)
     try:
-        await worker.play_file(str(path))
+        if autopilot is not None:  # C1: under the room's lock, after its checks
+            await autopilot.play_test_audio(room_id, str(path))
+        else:
+            await worker.play_file(str(path))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"clip not found: {path}") from exc
+    except SoundCheckRefused as exc:
+        if has_file:
+            path.unlink(missing_ok=True)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True}
 
 

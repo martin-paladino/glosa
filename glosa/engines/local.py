@@ -165,7 +165,34 @@ def reset_shared_model() -> None:
     """Test-only: drop the process-wide singleton so the next engine built
     starts fresh (each test gets its own injected fake)."""
     global _shared_model
-    _shared_model = None
+    model, _shared_model = _shared_model, None
+    if model is not None:
+        model._executor.shutdown(wait=False, cancel_futures=True)
+
+
+async def shutdown_shared_model(timeout: float) -> None:
+    """App shutdown (glosa/web/app.py's lifespan; task-16-review.md
+    Important #1): stop the shared MLX thread, waiting at most ``timeout``
+    s. A call still in flight (a cold model load can take ~90 s) is not
+    waited for past that: logged, then left to the interpreter's exit."""
+    global _shared_model
+    model, _shared_model = _shared_model, None
+    if model is not None:
+        await shutdown_executor(model._executor, timeout, "parakeet-mlx")
+
+
+async def shutdown_executor(executor: concurrent.futures.ThreadPoolExecutor, timeout: float, name: str) -> None:
+    """``executor.shutdown`` (queued calls cancelled) without blocking the
+    event loop, waiting up to ``timeout`` s for its thread(s) to finish."""
+    executor.shutdown(wait=False, cancel_futures=True)
+    threads = list(getattr(executor, "_threads", ()))
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while any(t.is_alive() for t in threads):
+        if loop.time() >= deadline:
+            log.warning("%s: a call is still running after %s s: not waiting for it", name, timeout)
+            return
+        await asyncio.sleep(0.02)
 
 
 class LocalParakeetEngine:

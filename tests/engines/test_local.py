@@ -196,3 +196,47 @@ async def test_shared_model_serializes_calls_with_a_lock() -> None:
     )
     assert set(results) == {"a", "b", "c"}
     assert model.max_calls_in_flight == 1
+
+
+# ---- shutdown of the shared MLX thread (task-16-review.md Important #1) --------
+
+
+async def test_shutdown_shared_model_stops_the_mlx_thread_and_drops_the_singleton() -> None:
+    import glosa.engines.local as local
+
+    model = await local._get_shared_model(lambda pcm: "ok")
+    assert await model.transcribe(b"x") == "ok"  # the dedicated thread is running now
+    threads = list(model._executor._threads)
+    assert threads and all(t.is_alive() for t in threads)
+
+    await local.shutdown_shared_model(timeout=2.0)
+
+    assert not any(t.is_alive() for t in threads)
+    assert local._shared_model is None
+    await local.shutdown_shared_model(timeout=2.0)  # nothing left: a no-op
+
+
+async def test_shutdown_shared_model_does_not_wait_past_its_timeout_for_a_call_in_flight() -> None:
+    import threading
+
+    import glosa.engines.local as local
+
+    release = threading.Event()
+    started = threading.Event()
+
+    def stuck(pcm: bytes) -> str:
+        started.set()
+        release.wait(5)
+        return "late"
+
+    model = await local._get_shared_model(stuck)
+    call = asyncio.ensure_future(model.transcribe(b"x"))
+    while not started.is_set():
+        await asyncio.sleep(0.01)
+
+    began = time.monotonic()
+    await local.shutdown_shared_model(timeout=0.1)
+    assert time.monotonic() - began < 1.0  # bounded, the MLX call is not waited for
+
+    release.set()
+    assert await call == "late"

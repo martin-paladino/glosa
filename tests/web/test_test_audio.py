@@ -194,3 +194,56 @@ def test_without_the_csrf_header_is_403() -> None:
 
     assert response.status_code == 403
     worker.play_file.assert_not_awaited()
+
+
+# ---- through the autopilot (C1, Ruling 60) ----------------------------------------
+
+
+def test_with_an_autopilot_the_clip_goes_through_it_under_its_room_lock() -> None:
+    worker = _worker()
+    app = _make_app({"r1": worker})
+    app.state.autopilot = MagicMock()
+    app.state.autopilot.play_test_audio = AsyncMock()
+    client = _client(app)
+
+    response = client.post("/api/admin/rooms/r1/test-audio", data={"sample": "en"}, headers=CSRF)
+
+    assert response.status_code == 200
+    app.state.autopilot.play_test_audio.assert_awaited_once()
+    (room_id, path), _ = app.state.autopilot.play_test_audio.call_args
+    assert room_id == "r1" and Path(path).name == "en_clip.opus"
+    worker.play_file.assert_not_awaited()  # the autopilot calls it, after its checks
+
+
+def test_a_refused_clip_is_409_with_the_reason_and_no_upload_left_behind(_uploads_dir: Path) -> None:
+    from glosa.room import SoundCheckRefused
+
+    worker = _worker()
+    app = _make_app({"r1": worker})
+    app.state.autopilot = MagicMock()
+    reason = "an agenda talk is live in this room (Talk A): test audio would end it"
+    app.state.autopilot.play_test_audio = AsyncMock(side_effect=SoundCheckRefused(reason))
+    client = _client(app)
+
+    response = client.post(
+        "/api/admin/rooms/r1/test-audio",
+        files={"file": ("clip.wav", io.BytesIO(b"RIFF..."), "audio/wav")},
+        headers=CSRF,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == reason
+    assert list(_uploads_dir.glob("*")) == []
+
+
+def test_without_an_autopilot_a_refusal_from_the_worker_is_409_too() -> None:
+    from glosa.room import SoundCheckRefused
+
+    worker = _worker()
+    worker.play_file = AsyncMock(side_effect=SoundCheckRefused("an agenda talk is live in this room"))
+    app = _make_app({"r1": worker})
+    client = _client(app)
+
+    response = client.post("/api/admin/rooms/r1/test-audio", data={"sample": "en"}, headers=CSRF)
+
+    assert response.status_code == 409

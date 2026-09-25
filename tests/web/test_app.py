@@ -239,10 +239,12 @@ async def test_export_talk_builds_every_target_language_but_not_the_source_one(
     monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
     events = _FakeAdminEvents()
     talk = _talk("t1", language="en", targets=("en", "es", "pt"))  # "en" target == source: skipped
+    db = _StatusDb()
 
-    await _export_talk(talk, db=object(), settings=_FakeSettings(), admin_events=events)
+    await _export_talk(talk, db=db, settings=_FakeSettings(), admin_events=events)
 
     assert sorted(calls) == [("t1", "es"), ("t1", "pt")]
+    assert db.statuses == [("t1", "es", "pending"), ("t1", "pt", "pending")]  # I4: all queued first
     assert sorted(events.published) == [
         ("export_failed", {"talk_id": "t1", "room_id": "r1", "lang": "pt"}),
         ("export_ready", {"talk_id": "t1", "room_id": "r1", "lang": "es"}),
@@ -251,6 +253,14 @@ async def test_export_talk_builds_every_target_language_but_not_the_source_one(
 
 class _FakeSettings:
     gemini_api_key = "unused"
+
+
+class _StatusDb:
+    def __init__(self) -> None:
+        self.statuses: list[tuple[str, str, str]] = []
+
+    async def set_export_status(self, talk_id: str, lang: str, status: str) -> None:
+        self.statuses.append((talk_id, lang, status))
 
 
 # No TestClient-based integration test for the WS 4401 case: Starlette's
@@ -263,3 +273,87 @@ class _FakeSettings:
 # filter against records shaped exactly like uvicorn's real calls) and the
 # manual, real-server verification already done for this task are the
 # coverage available here.
+
+
+# ---------------------------------------------------- shutdown (final-review-A I1)
+
+
+async def test_shutdown_acloses_every_room_worker(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """RoomWorker.stop() runs between talks and keeps the Jev meter's HTTP
+    client; the lifespan's shutdown calls RoomWorker.aclose(), which also
+    closes it."""
+    from glosa.config import RoomCfg, Settings
+    from glosa.room import RoomWorker
+    from glosa.web.app import create_app
+
+    closed: list[str] = []
+
+    async def fake_aclose(self) -> None:
+        closed.append(self.room.id)
+
+    monkeypatch.setattr(RoomWorker, "aclose", fake_aclose)
+    settings = Settings(
+        gemini_api_key="unused", admin_password="test-password", db_path=str(tmp_path / "glosa.db"),
+        rooms=[
+            RoomCfg(id="r1", name="Uno", source_type="file", source_url=None, default_targets=["es"]),
+            RoomCfg(id="r2", name="Dos", source_type="file", source_url=None, default_targets=["es"]),
+        ],
+    )
+    app = create_app(settings, autopilot_interval_s=3600)
+    async with app.router.lifespan_context(app):
+        assert closed == []
+
+    assert sorted(closed) == ["r1", "r2"]
+
+
+async def test_shutdown_stops_the_shared_mlx_threads_within_the_hook_grace(tmp_path, monkeypatch) -> None:
+    """task-16-review.md Important #1: the lifespan shuts the local mode's
+    shared MLX executors down, bounded by HOOK_GRACE_S."""
+    from glosa.config import RoomCfg, Settings
+    from glosa.engines import local as local_engine
+    from glosa.text import local_translator
+    from glosa.web.app import HOOK_GRACE_S, create_app
+
+    calls: list[tuple[str, float]] = []
+
+    def recorder(name: str):
+        async def shutdown_shared_model(timeout: float) -> None:
+            calls.append((name, timeout))
+
+        return shutdown_shared_model
+
+    monkeypatch.setattr(local_engine, "shutdown_shared_model", recorder("parakeet"))
+    monkeypatch.setattr(local_translator, "shutdown_shared_model", recorder("translategemma"))
+    settings = Settings(
+        gemini_api_key="unused", admin_password="test-password", db_path=str(tmp_path / "glosa.db"),
+        rooms=[RoomCfg(id="r1", name="Uno", source_type="file", source_url=None, default_targets=["es"])],
+    )
+    app = create_app(settings, autopilot_interval_s=3600)
+    async with app.router.lifespan_context(app):
+        assert calls == []
+
+    assert sorted(calls) == [("parakeet", HOOK_GRACE_S), ("translategemma", HOOK_GRACE_S)]
+
+
+@pytest.mark.parametrize("engine_mode", ["fake", "local"])
+async def test_export_talk_never_calls_the_api_in_fake_or_local_mode(
+    monkeypatch: pytest.MonkeyPatch, engine_mode: str
+) -> None:  # M3
+    """engine_mode fake (make demo-fake) and local ("no Gemini, no internet,
+    no API key spent") promise no API calls: an agenda talk's end must not
+    reach gemini with whatever key is in .env."""
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build_corrected(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        return "ready"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
+    settings = _FakeSettings()
+    settings.engine_mode = engine_mode
+    events = _FakeAdminEvents()
+    db = _StatusDb()
+
+    await _export_talk(_talk("t1"), db=db, settings=settings, admin_events=events)
+
+    assert calls == [] and db.statuses == [] and events.published == []

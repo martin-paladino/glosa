@@ -114,3 +114,21 @@ async def test_shared_model_serializes_calls_with_a_lock() -> None:
     )
     assert set(results) == {"a", "b", "c"}
     assert model.max_calls_in_flight == 1
+
+
+# ---- shutdown of the shared MLX thread (task-16-review.md Important #1) --------
+
+
+async def test_shutdown_shared_model_stops_the_mlx_thread_and_drops_the_singleton() -> None:
+    import glosa.text.local_translator as local_translator
+
+    model = await local_translator._get_shared_model(lambda text, src, tgt: text)
+    assert await model.generate("hola", "es", "en") == "hola"
+    threads = list(model._executor._threads)
+    assert threads and all(t.is_alive() for t in threads)
+
+    await local_translator.shutdown_shared_model(timeout=2.0)
+
+    assert not any(t.is_alive() for t in threads)
+    assert local_translator._shared_model is None
+    await local_translator.shutdown_shared_model(timeout=2.0)  # a no-op

@@ -113,3 +113,52 @@ def test_adaptive_floor_detects_voice_over_background_noise() -> None:
     assert events, "expected the voice segment to be detected"
     assert events[0].kind == "speech_start"
     assert 1.9 <= events[0].t <= 2.3
+
+
+def test_steady_noise_after_digital_silence_stops_reading_as_speech() -> None:  # final-review-A I5
+    """The console is muted (digital silence: the floor drops to -96 dBFS),
+    then the line's steady analog noise (~-70 dBFS) comes in. The floor used
+    to adapt only on non-voice chunks, so that noise read as endless speech
+    (no pause ever again). It must adapt while "in speech" too when the
+    level is steady, so pauses resume within a few seconds; speech on top
+    of that noise then still gets its pauses."""
+    vad = EnergyVad(pause_ms=400, min_speech_s=1.5)
+    noise_amp = 18  # uniform noise, RMS = 18/sqrt(3) ~ 10.4 -> ~ -70 dBFS
+    pcm = _silence_pcm(3.0) + _noise_pcm(noise_amp, 8.0, seed=4)
+    for i in range(3):  # then speech (2 s) with 1-s pauses, on top of the same noise
+        pcm += _mix(_noise_pcm(noise_amp, 2.0, seed=10 + i), _tone_pcm(440, 1800, 2.0))
+        pcm += _noise_pcm(noise_amp, 1.0, seed=20 + i)
+
+    events = _run(vad, _to_chunks(pcm))
+
+    first_pause = next(e for e in events if e.kind == "pause")
+    assert first_pause.t <= 3.0 + 6.0  # within a few seconds of the noise coming in
+    speech_pauses = [e for e in events if e.kind == "pause" and e.t > 11.0]
+    assert len(speech_pauses) == 3  # one per 1-s pause between the phrases
+    assert vad.in_speech is False  # the trailing noise is not speech
+
+
+def test_compressed_speech_is_not_mistaken_for_steady_noise() -> None:  # final-review-A re-review R1
+    """A console vocal chain (compressor/limiter) keeps speech within ~1-2 dB
+    for seconds at a time. That must NOT count as "steady" noise, or the
+    floor rises into the voice and invents pauses mid-phrase."""
+    vad = EnergyVad(pause_ms=400, min_speech_s=1.5)
+    speech = b"".join(_tone_pcm(440, amp, 0.1) for amp in [16000, 13000] * 60)  # 12 s, ~1.8 dB swings
+
+    events = _run(vad, _to_chunks(speech))
+
+    assert [e for e in events if e.kind == "pause"] == []  # one continuous phrase: no invented pauses
+    assert vad.in_speech is True
+
+
+def test_real_speech_level_changes_never_move_the_floor_mid_speech() -> None:
+    """Speech is not steady (syllables): a long voice run whose level keeps
+    changing leaves the floor alone, so the next pause is still detected."""
+    vad = EnergyVad(pause_ms=400, min_speech_s=1.5)
+    speech = b"".join(_tone_pcm(440, amp, 0.2) for amp in [16000, 4000] * 25)  # 10 s, 12 dB swings
+    pcm = _noise_pcm(58, 2.0, seed=1) + speech + _noise_pcm(58, 1.0, seed=3)
+
+    events = _run(vad, _to_chunks(pcm))
+
+    assert [e.kind for e in events] == ["speech_start", "pause"]
+    assert abs(events[1].t - 12.4) < 0.15

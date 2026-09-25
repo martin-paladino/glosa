@@ -153,6 +153,28 @@ def test_engine_mode_rejects_unknown_values(env_file: Path, tmp_path: Path) -> N
         Settings.load(env_path=str(env_file), config_path=str(config))
 
 
+def test_a_room_can_loop_its_file_only_in_the_fake_demo(env_file: Path) -> None:  # demo loop
+    """``loop: true`` (a file source only) is set in config.demo-fake.yaml,
+    never in config.demo.yaml (that one spends real API money)."""
+    root = Path(__file__).resolve().parents[1]
+    fake = Settings.load(env_path=str(env_file), config_path=str(root / "config.demo-fake.yaml"))
+    real = Settings.load(env_path=str(env_file), config_path=str(root / "config.demo.yaml"))
+
+    assert {r.id: r.loop for r in fake.rooms} == {"demo-en": True, "demo-es": True, "station-demo": False}
+    assert not any(r.loop for r in real.rooms)
+
+
+def test_loop_is_only_for_file_sources(env_file: Path, tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "rooms:\n  - {id: r1, name: R1, source_type: url, source_url: 'https://x.test/live', loop: true}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="loop"):
+        Settings.load(env_path=str(env_file), config_path=str(config))
+
+
 # ---- readable errors for a broken config.yaml -------------------------------
 
 

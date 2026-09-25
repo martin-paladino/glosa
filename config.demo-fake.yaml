@@ -16,6 +16,11 @@
 # built by scripts/build_demo_translations.py -- see samples/README.md);
 # any segment not in that recording (e.g. a different talk's Spanish audio)
 # falls back to FakeTranslator's placeholder ("[en] <source text>").
+#
+# demo-en and demo-es have `loop: true`: their free session replays the clip
+# forever (a fresh fake engine session each time, in step with the audio),
+# so whoever opens the demo late still finds live captions. Only here: the
+# same in config.demo.yaml would spend real API money all day.
 
 event_name: Glosa demo
 timezone: UTC
@@ -32,12 +37,14 @@ rooms:
     source_url: samples/en_clip.opus
     language: en
     default_targets: [es]
+    loop: true  # the free session plays the clip again and again (never in config.demo.yaml)
   - id: demo-es
     name: "Demo: Spanish to English"
     source_type: file
     source_url: samples/es_clip.opus
     language: es
     default_targets: [en]
+    loop: true
   - id: station-demo
     name: "Demo: room station"
     source_type: emitter

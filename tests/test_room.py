@@ -251,7 +251,9 @@ class FakeQualityMeter:
     async def score(self, src: str, tgt: str) -> float | None:
         self.calls.append((src, tgt))
         await asyncio.sleep(0)
-        return self.result
+        # The real QualityMeter's closed HTTP client raises, which it
+        # swallows into None (final-review-A I1).
+        return None if self.closed else self.result
 
     def add(self, p: float | None) -> None:
         if p is not None:
@@ -930,6 +932,51 @@ async def test_a_source_that_recovered_then_ended_ends_the_talk(db) -> None:
     assert "source_down" not in [e.type for e in await db.recent_events(10)]
 
 
+def _loop_settings() -> Settings:
+    return Settings(
+        gemini_api_key="test-key", admin_password="test-password",
+        rooms=[RoomCfg(id="r1", name="Sala r1", source_type="file", source_url="fake://r1", loop=True)],
+    )
+
+
+async def test_a_looping_file_restarts_seamlessly_during_a_free_session(db) -> None:  # the demo loop
+    """``loop: true`` (config.demo-fake.yaml): a free session whose file ends
+    plays it again instead of ending -- on a continuous audio clock, with a
+    fresh engine session (FakeEngine replays in step with the audio), and
+    no "recent reconnect" nor fallback incident for it."""
+    clock = DrivenClock()
+    ingests = IngestFactory(seconds=3.0)
+    factory = Factory(clock, FAKE_LT)
+    worker = _worker(_room(), _loop_settings(), CaptionBus(clock=clock), db, clock, factory, ingests, tail_s=1.0)
+    await worker.start(None)
+    free = worker.talk
+
+    await run_for(clock, 7.5)
+
+    assert worker.talk is free and worker.status().state != "idle"
+    assert [i.args for i in ingests.made] == [("file", "fake://r1", False)] * 3
+    sent = [t for engine in factory.engines for t in engine.sent]
+    assert sent == sorted(sent) and len(set(sent)) == len(sent)  # one continuous audio clock
+    assert max(sent) == pytest.approx(7.4, abs=0.15)  # no tail silence between loops
+    assert len(factory.configs) == 3  # a fresh engine session per loop
+    assert "reconnect" not in worker.status().detail
+    assert (await db.get_talk(free.id)).status == "live"
+    await worker.stop()
+
+
+async def test_a_looping_file_still_ends_an_agenda_talk(db) -> None:
+    clock = DrivenClock()
+    ingests = IngestFactory(seconds=3.0)
+    worker = _worker(_room(), _loop_settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests,
+                     tail_s=0.5)
+    await worker.start(_agenda_talk("a"))
+
+    await run_for(clock, 5.0)
+
+    assert worker.talk is None and len(ingests.made) == 1
+    assert (await db.get_talk("a")).status == "done"
+
+
 async def test_play_file_rejects_a_missing_file(tmp_path: Path, db) -> None:
     clock = DrivenClock()
     worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), IngestFactory())
@@ -937,6 +984,80 @@ async def test_play_file_rejects_a_missing_file(tmp_path: Path, db) -> None:
     with pytest.raises(FileNotFoundError):
         await worker.play_file(str(tmp_path / "missing.opus"))
     assert worker.talk is None
+
+
+class _ClipIngests(IngestFactory):
+    """The room's own source (fake://...) runs forever; a test clip lasts
+    ``clip_s`` s and ends cleanly."""
+
+    def __init__(self, clip_s: float) -> None:
+        super().__init__()
+        self.clip_s = clip_s
+
+    def __call__(self, source_type, source_url, realtime, clock) -> FakeIngest:
+        seconds = None if source_url.startswith("fake://") else self.clip_s
+        ingest = FakeIngest(source_type, source_url, realtime, clock, seconds=seconds)
+        self.made.append(ingest)
+        return ingest
+
+
+async def test_play_file_refuses_an_open_agenda_talk(tmp_path: Path, db) -> None:  # C1, Ruling 60
+    """Test audio must never end, replace or pollute an agenda talk: not a
+    live one, nor one whose source is down."""
+    from glosa.room import SoundCheckRefused
+
+    clock = DrivenClock()
+    ingests = IngestFactory(seconds=1.0, error="ffmpeg: connection refused")
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+    await worker.start(_agenda_talk("a"))
+    await run_for(clock, 0.5)
+
+    with pytest.raises(SoundCheckRefused, match="Talk a"):
+        await worker.play_file(_clip(tmp_path))
+    assert worker.talk.id == "a" and len(ingests.made) == 1 and not worker.testing
+
+    await run_for(clock, 2.0)
+    assert worker.status().state == "red" and worker.talk.id == "a"  # source down, talk on
+    with pytest.raises(SoundCheckRefused):
+        await worker.play_file(_clip(tmp_path))
+    assert worker.talk.id == "a" and len(ingests.made) == 1
+    await worker.stop()
+
+
+async def test_a_test_clip_over_a_free_session_switches_back_to_the_rooms_source(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    ingests = _ClipIngests(clip_s=2.0)
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+    await worker.start(None)
+    await run_for(clock, 1.0)
+    free = worker.talk
+
+    await worker.play_file(_clip(tmp_path))
+    await run_for(clock, 1.0)
+    assert worker.testing and worker.talk is free
+
+    await run_for(clock, 3.0)  # the clip and its tail end
+
+    assert worker.talk is free and not worker.testing  # the free session goes on...
+    assert [i.args[1] for i in ingests.made] == ["fake://r1", _clip(tmp_path), "fake://r1"]  # ...on its own source
+    assert ingests.made[2].yielded > 0
+    await worker.stop()
+
+
+async def test_a_test_clip_in_an_idle_room_ends_its_own_session(tmp_path: Path, db) -> None:
+    clock = DrivenClock()
+    ingests = _ClipIngests(clip_s=2.0)
+    worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests, tail_s=0.5)
+
+    await worker.play_file(_clip(tmp_path))
+    await run_for(clock, 1.0)
+    assert worker.testing and worker.talk.id == FREE_R1
+
+    await run_for(clock, 3.0)
+
+    assert worker.talk is None and not worker.testing and worker.status().state == "idle"
+    assert len(ingests.made) == 1
+    await worker.stop()
 
 
 async def test_the_free_session_id_is_unique_per_run_in_the_event_timezone(db) -> None:  # Ruling 27
@@ -1424,7 +1545,7 @@ async def test_restarting_the_running_talk_takes_its_edited_fields_from_the_db(t
     began = worker.talk.actual_start
 
     await db.update_talk("a", targets=["en", "es"], title="Edited while live")
-    await worker.play_file(_clip(tmp_path))  # same talk, new pipeline
+    await worker.start(worker.talk)  # same talk, new pipeline (play_file refuses an agenda talk: C1)
     await run_for(clock, 0.5)
 
     stored = await db.get_talk("a")
@@ -2267,7 +2388,32 @@ async def test_quality_feed_scores_fast_track_pairs_and_status_surfaces_the_aver
     assert worker.status().quality == pytest.approx(0.42)
     assert worker.status().state == "yellow"  # below the 0.5 quality threshold; latency/level otherwise green
     await worker.stop()
-    assert meter.closed == 1  # stop() closes the meter's HTTP client after any in-flight score
+    assert meter.closed == 0  # I1: stop() between talks keeps the meter's HTTP client
+    await worker.aclose()
+    assert meter.closed == 1  # only the final shutdown closes it, after any in-flight score
+
+
+async def test_quality_is_still_measured_after_a_break(db, fake_typesafe_sdk) -> None:  # I1
+    """The autopilot stop()s a room between two talks: the next talk's
+    quality must still be measured (the meter's HTTP client stays open)."""
+    clock = DrivenClock()
+    meter = FakeQualityMeter(result=0.8)
+    worker = _worker(_room(), _settings(typesafe_api_key="fake-key"), CaptionBus(clock=clock), db, clock,
+                     Factory(clock, FAKE_LT, FAKE_LT), IngestFactory(), quality_factory=lambda key: meter)
+    await worker.start(_talk("t1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 10.0)
+    await worker.stop()  # the break
+    assert worker.status().quality is None  # M6: an idle room shows no (previous talk's) quality
+
+    clock.advance(20.0)  # past QUALITY_MIN_INTERVAL_S since t1's last score
+    await worker.start(_talk("t2", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 10.0)
+
+    assert worker.status().quality == pytest.approx(0.8)
+    await worker.aclose()
+    assert meter.closed == 1 and worker.talk is None
+    await worker.aclose()  # idempotent
+    assert meter.closed == 1
 
 
 async def test_quality_feed_scores_glossary_lane_pairs_es_to_en(db, fake_typesafe_sdk) -> None:  # Task 13w

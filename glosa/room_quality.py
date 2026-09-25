@@ -173,8 +173,9 @@ class QualityFeed:
         return self._meter.avg()
 
     async def aclose(self) -> None:
-        """Release the meter's HTTP client. Idempotent: RoomWorker.stop()
-        may be called more than once (already-stopped is a no-op)."""
+        """Release the meter's HTTP client. Idempotent. Only at the final
+        shutdown (RoomWorker.aclose()): RoomWorker.stop() runs between talks
+        and the next talk still needs the client (final-review-A I1)."""
         if self._closed:
             return
         self._closed = True

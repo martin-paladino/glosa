@@ -52,6 +52,10 @@ operator action, run one at a time per room, so a tick can never undo an
 action that raced it. Rooms tick concurrently; one failing room (say, no
 audio source: logged once per talk) does not keep the others from ticking.
 
+"Probar con audio" (C1, Ruling 60) goes through ``play_test_audio`` under the
+room's lock: refused while an agenda talk is open or (auto) due within
+``lead_s``; otherwise the clip's test session is left alone by the tick
+until it ends (a talk that comes due still replaces it).
 Admin events (``events``, glosa/web/admin_events.py): ``room_mode``,
 ``talk_started`` (``by``: ``autopilot`` | ``operator``), ``room_reconnect``
 and ``room_restart`` (Task 12: ``restart`` reopens a dead source for the
@@ -71,7 +75,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from glosa.clock import Clock
 from glosa.db import Database
 from glosa.models import Room, Talk
-from glosa.room import is_free_talk
+from glosa.room import SoundCheckRefused, is_free_talk
 
 log = logging.getLogger(__name__)
 
@@ -245,6 +249,33 @@ class Autopilot:
         self._publish("room_restart", {"room_id": room_id, "talk_id": talk.id})
         return talk
 
+    async def play_test_audio(self, room_id: str, path: str) -> None:
+        """"Probar con audio" (C1, Ruling 60), under the room's lock: test
+        audio must never end, replace or pollute an agenda talk.
+        SoundCheckRefused (a message for the operator) while an agenda talk
+        is open in the room or, in ``auto``, when one is due now or within
+        the next ``lead_s`` (the autopilot would cut the clip off to open
+        it). Otherwise ``worker.play_file(path)``: a test session, which the
+        tick leaves alone until the clip ends."""
+        worker = self._worker(room_id)
+        await self._load_modes()
+        async with self._lock(room_id):
+            current = worker.talk
+            if current is not None and not is_free_talk(current.id):
+                raise SoundCheckRefused.open_talk(current)
+            if self.mode(room_id) == "auto":
+                now = self._clock.wall()
+                agenda = await self._agenda(room_id, now)
+                soon = self._due(agenda, now) or self._due(agenda, now + self._lead)
+                if soon is not None:
+                    lead = round(self._lead.total_seconds())
+                    raise SoundCheckRefused(
+                        f"the agenda talk {soon.title!r} starts at {soon.start.astimezone(self._tz):%H:%M} "
+                        f"and the autopilot opens it {lead} s before: test audio would be cut off. "
+                        "Try again after it, or switch the room to manual."
+                    )
+            await worker.play_file(path)
+
     # ------------------------------------------------------------ internals
 
     async def _tick_room(self, room_id: str, now: datetime) -> None:
@@ -261,6 +292,8 @@ class Autopilot:
                 if due is not None:
                     if current is None or current.id != due.id:
                         await self._open(worker, due, by="autopilot")
+                elif getattr(worker, "testing", False):
+                    pass  # C1: a "Probar con audio" clip plays until it ends
                 elif current is not None and not self._early_next(current, agenda, now):
                     log.info("autopilot: room %s: nothing scheduled now, stopping %s", room_id, current.id)
                     await self._log(room_id, "autopilot", f"idle: nothing scheduled now (stopped {current.id})")

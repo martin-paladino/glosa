@@ -4,7 +4,11 @@ EnergyVad classifies each incoming AudioChunk (PCM 16 kHz mono s16le) as
 voice or non-voice by comparing its RMS level (in dBFS) against a noise
 floor that is itself an exponential moving average of recent non-voice
 chunks. A chunk counts as voice once its level exceeds the floor by
-VOICE_MARGIN_DB (10 dB, per spec).
+VOICE_MARGIN_DB (10 dB, per spec). During a voice run of 3 s or more whose
+level has stayed steady for the last second (hum, line noise, a sustained
+tone: not speech), the floor also creeps towards it, slowly, so a steady
+background that came in above a digital-silence floor stops reading as
+endless speech (final-review-A I5).
 
 End-of-speech ("pause") fires once >= pause_ms of continuous silence has
 followed a voice run that itself lasted >= min_speech_s; shorter blips end
@@ -15,6 +19,7 @@ the spec's "400 ms of silence with at least 1.5 s of voice".
 from __future__ import annotations
 
 import array
+import collections
 import math
 import sys
 
@@ -31,6 +36,16 @@ BYTES_PER_SAMPLE = 2
 _INITIAL_FLOOR_DB = -30.0
 _FLOOR_EMA_ALPHA = 0.2
 _MIN_LEVEL_DB = -96.0  # ~ dynamic range floor of 16-bit PCM
+# final-review-A I5: the floor also adapts "in speech", slowly, once a voice
+# run has lasted _STEADY_AFTER_S and its last _STEADY_WINDOW chunks are
+# steady (level spread <= _STEADY_MAX_STDEV_DB): hum, line noise or a
+# sustained tone after digital silence, not speech (syllables swing it by
+# 10+ dB). Otherwise such a level read as endless speech: no pauses (the
+# hybrid VAD), the silence gate never closing.
+_STEADY_AFTER_S = 3.0
+_STEADY_WINDOW = 10  # chunks (1 s of 100-ms chunks)
+_STEADY_MAX_STDEV_DB = 0.5
+_IN_SPEECH_ALPHA = 0.05
 
 VOICE_MARGIN_DB = 10.0  # "hay voz si el nivel supera el piso en 10 dB"
 
@@ -78,6 +93,7 @@ class EnergyVad:
         self._floor_db: float = _INITIAL_FLOOR_DB
         self._speech_start_t: float | None = None
         self._silence_start_t: float | None = None
+        self._voice_levels: collections.deque[float] = collections.deque(maxlen=_STEADY_WINDOW)
 
     def process(self, chunk: AudioChunk) -> list[VadEvent]:
         events: list[VadEvent] = []
@@ -92,11 +108,14 @@ class EnergyVad:
             if not self.in_speech:
                 self.in_speech = True
                 self._speech_start_t = chunk.t
+                self._voice_levels.clear()
                 events.append(VadEvent(kind="speech_start", t=chunk.t))
+            self._voice_levels.append(level)
+            self._adapt_in_speech(chunk.t, level)
             return events
 
-        # Non-voice chunk: adapt the noise floor towards it (never while a
-        # chunk was classified as voice, per spec).
+        # Non-voice chunk: adapt the noise floor towards it (a voice chunk
+        # only moves it in a long steady run: _adapt_in_speech, I5).
         self._floor_db = _FLOOR_EMA_ALPHA * level + (1 - _FLOOR_EMA_ALPHA) * self._floor_db
 
         if not self.in_speech:
@@ -118,3 +137,15 @@ class EnergyVad:
             self._silence_start_t = None
 
         return events
+
+    def _adapt_in_speech(self, t: float, level: float) -> None:
+        """I5: a long, steady "voice" run moves the floor towards its level."""
+        if self._speech_start_t is None or t - self._speech_start_t < _STEADY_AFTER_S - 1e-9:
+            return
+        window = self._voice_levels
+        if len(window) < _STEADY_WINDOW:
+            return
+        mean = sum(window) / len(window)
+        spread = math.sqrt(sum((x - mean) ** 2 for x in window) / len(window))
+        if spread <= _STEADY_MAX_STDEV_DB:
+            self._floor_db = _IN_SPEECH_ALPHA * level + (1 - _IN_SPEECH_ALPHA) * self._floor_db

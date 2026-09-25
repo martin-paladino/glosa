@@ -163,7 +163,11 @@ Silence gate (task-19, glosa/audio/gate.py)
 
 Sources
     ``start(talk)`` plays the room's configured source; ``play_file(path)``
-    replaces the source of the running talk (or starts the free session).
+    ("Probar con audio", C1/Ruling 60) replaces the source of a running
+    free session until the clip ends (then switches back), or starts a free
+    session of its own; it refuses an agenda talk (``SoundCheckRefused``).
+    A room with ``loop: true`` (config.demo-fake.yaml only) plays its file
+    again when it ends during a free session (``_loop_again``).
     When a source ends by itself, the pipeline stops:
       - a clean end (a file that finished) first feeds ``tail_s`` s of
         silence so the engine can finish the last phrase, then ends the
@@ -276,7 +280,19 @@ def is_free_talk(talk_id: str) -> bool:
     return talk_id.startswith(FREE_SESSION_PREFIX)
 
 
-__all__ = ["RoomWorker", "is_free_talk", "target_lang"]
+class SoundCheckRefused(RuntimeError):
+    """"Probar con audio" refused (C1, Ruling 60): test audio must never end,
+    replace or pollute an agenda talk. The message is for the operator."""
+
+    @classmethod
+    def open_talk(cls, talk: Talk) -> SoundCheckRefused:
+        return cls(
+            f"an agenda talk is open in this room ({talk.title}): test audio would end it. "
+            "Try it between talks or in another room."
+        )
+
+
+__all__ = ["RoomWorker", "SoundCheckRefused", "is_free_talk", "target_lang"]
 
 
 @dataclass
@@ -334,6 +350,12 @@ class _Run:
     # subtracts it from now() for the play position to seek the admin's
     # <audio> to; unused (and meaningless) for every other source_type.
     file_started_at: float = 0.0
+    # C1 (Ruling 60): a "Probar con audio" clip is playing (play_file). The
+    # autopilot leaves such a session alone until the clip ends; ``resume``
+    # is the free session's own source to switch back to then (None: the
+    # clip started the session, which ends with it).
+    test: bool = False
+    resume: tuple[str, str, bool] | None = None
     # The engine side, set by RoomWorker._apply_engine (again on a hot swap):
     engine: str = "fast"  # "fast" | "glossary"
     relay: SessionRelay = None  # type: ignore[assignment]
@@ -397,6 +419,7 @@ class RoomWorker:
         self._station_hub = station_hub
         cfg = next((r for r in settings.rooms if r.id == room.id), None)
         self.language = cfg.language if cfg is not None else "en"
+        self._loop = cfg is not None and cfg.loop  # the demo loop (config.demo-fake.yaml)
         try:
             self._tz: timezone | ZoneInfo = ZoneInfo(settings.timezone)
         except (ZoneInfoNotFoundError, ValueError):
@@ -445,7 +468,9 @@ class RoomWorker:
             await self._start_locked(talk, self.room.source_type, self.room.source_url, self._realtime)
 
     async def stop(self) -> None:
-        """End the talk and stop the pipeline. No task is left running."""
+        """End the talk and stop the pipeline. No task is left running. The
+        room can start again: the Jev meter's HTTP client stays open (I1:
+        the autopilot stops rooms between talks); ``aclose()`` closes it."""
         async with self._lock:
             if self._run is not None:
                 await self._teardown(self._run)
@@ -453,26 +478,48 @@ class RoomWorker:
                 await self._end_talk()
             self._source_down = None
         await self._wait_aux()
+
+    async def aclose(self) -> None:
+        """Final shutdown (the app's lifespan only): ``stop()``, then release
+        the Jev meter's HTTP client. Idempotent."""
+        await self.stop()
         if self._quality is not None:
             await self._quality.aclose()
 
+    @property
+    def testing(self) -> bool:
+        """Whether a "Probar con audio" clip is playing (C1): the autopilot
+        leaves the room alone until it ends."""
+        return self._run is not None and self._run.test
+
     async def play_file(self, path: str) -> None:
         """"Probar con audio": play ``path`` at real-time speed as the room's
-        audio. A running talk keeps its engine session and just changes
-        source; otherwise the current talk (or the free session) starts.
-        Raises FileNotFoundError at once for a missing file."""
+        audio, as a test session (C1, Ruling 60). Never on an agenda talk
+        (SoundCheckRefused: it would end it and its captions would pollute
+        it), whether live or with its source down. A running free session
+        keeps its engine session and just changes source, and switches back
+        to its own source when the clip ends; in an idle room the clip starts
+        a free session of its own, which ends with it. Raises
+        FileNotFoundError at once for a missing file."""
         if not Path(path).is_file():
             raise FileNotFoundError(path)
         async with self._lock:
+            talk = self.talk
+            if talk is not None and not is_free_talk(talk.id):
+                raise SoundCheckRefused.open_talk(talk)
             run = self._run
             if run is None:
-                await self._start_locked(self.talk, "file", path, True)
+                await self._start_locked(talk, "file", path, True)
+                assert self._run is not None
+                self._run.test = True
                 return
+            resume = run.resume if run.test else run.source
             if run.audio is not None:
                 run.audio.cancel()
                 self._report(await asyncio.gather(run.audio, return_exceptions=True), "audio")
             self._source_down = None
             run.source = ("file", path, True)
+            run.test, run.resume = True, resume
             run.file_started_at = self._clock.now()  # Task 14b: this file's own clock starts over
             run.audio = self._spawn(self._audio_loop(run, "file", path, True), "audio")
             await self._log("info", "source_change", f"playing file {path}")
@@ -561,7 +608,7 @@ class RoomWorker:
         level = run.vad.level_db if run is not None else MIN_LEVEL_DB
         latency = run.latency.p50() if run is not None else None
         talk_id = self.talk.id if self.talk is not None else None
-        quality = self._quality.avg() if self._quality is not None else None
+        quality = self._quality.avg() if self._quality is not None and self.talk is not None else None  # M6
         if quality is not None:
             quality = round(quality, 2)
         if self.talk is None:
@@ -954,6 +1001,18 @@ class RoomWorker:
         async with self._lock:
             if self._run is not run or run.audio is not audio:
                 return  # stopped, restarted or given another source meanwhile
+            if not error and self._loops(run):
+                await self._loop_again(run)
+                return
+            if run.test and run.resume is not None:  # C1: the free session goes back to its own source
+                if error:
+                    log.warning("room %s: test clip failed: %s", self.room.id, error)
+                source, run.test, run.resume = run.resume, False, None
+                run.source = source
+                run.file_started_at = self._clock.now()
+                run.audio = self._spawn(self._audio_loop(run, *source), "audio")
+                await self._log("info", "source_change", f"test clip over: back to {source[1]}")
+                return
             await self._teardown(run)
             if error:
                 self._source_down = error
@@ -961,6 +1020,29 @@ class RoomWorker:
                 await self._log("error", "source_down", error)
             else:
                 await self._end_talk()
+
+    def _loops(self, run: _Run) -> bool:
+        """The demo loop (``RoomCfg.loop``): a free session playing the room's
+        own file (not a test clip) plays it again when it ends."""
+        return (
+            self._loop
+            and not run.test
+            and is_free_talk(run.talk.id)
+            and run.source[:2] == ("file", self.room.source_url)
+        )
+
+    async def _loop_again(self, run: _Run) -> None:
+        """Play the file again on the same run: the audio clock goes on
+        (``_audio_loop`` starts at ``run.t_next``), no tail, no talk end. A
+        fresh engine session starts with it (a FakeEngine replays its
+        recording in step with the audio); that reconnect is housekeeping:
+        neither a fallback incident nor a "recent reconnect"."""
+        run.file_started_at = self._clock.now()
+        run.audio = self._spawn(self._audio_loop(run, *run.source), "audio")
+        run.manual_reconnects += 1
+        await run.relay.reconnect("loop")
+        run.reconnects = run.relay.stats["reconnects"]
+        log.info("room %s: looping %s", self.room.id, run.source[1])
 
     # ------------------------------------------------------------ audio
 
@@ -983,7 +1065,7 @@ class RoomWorker:
             # source died for good only if it kept failing after its last chunk.
             if getattr(ingest, "restarts", 0) > restarts_seen:
                 error = getattr(ingest, "last_error", None) or "the source stopped"
-            else:  # a clean end: let the engine finish the last phrase
+            elif not self._loops(run):  # a clean end: let the engine finish the last phrase
                 for _ in range(round(self._tail_s / CHUNK_S)):
                     await self._clock.sleep(CHUNK_S)
                     await self._feed(run, AudioChunk(pcm=SILENCE, t=run.t_next))

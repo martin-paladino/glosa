@@ -143,11 +143,17 @@ def room_page(slug: str, request: Request):
         worker = _find_worker(request, room["slug"])
     listen = worker is not None and is_authenticated(request) and worker.test_file() is not None
 
+    # B-I3 (Ruling 56): in qr_only nothing public may reveal the other
+    # rooms' slug->name mapping, and every /s/{slug} link 404s there anyway
+    # (only the token works). The side list shows nothing else to link to.
+    nav = (
+        []
+        if qr_only
+        else [_room_summary(r, ui, forced) | {"current": r is room} for r in all_rooms]
+    )
     context = base | {
         "room": summary,
-        "nav": [
-            _room_summary(r, ui, forced) | {"current": r is room} for r in all_rooms
-        ],
+        "nav": nav,
         "caption_lang": caption_lang,
         "source": source,
         "direction": _direction(source, caption_lang, ui),

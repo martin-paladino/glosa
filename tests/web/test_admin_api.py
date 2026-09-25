@@ -634,4 +634,4 @@ def test_the_room_keys_are_discoverable() -> None:
 
     assert 'aria-describedby="hint-shortcuts"' in html and 'id="hint-shortcuts"' in html
     assert 'popovertarget="shortcuts-pop"' in html and 'id="shortcuts-pop" popover' in html
-    assert "1 a 9: abre el panel de esa sala." in html
+    assert "Atajos de teclado" in html and 'popovertargetaction="hide"' in html

@@ -748,6 +748,7 @@
     if (!pipWindow || !pipMirror) return;
     const lines = captionLines(pipSourcePage(), PIP_LINES);
     pipMirror.replaceChildren(...lines.map((text) => el("p", { class: "pip-line" }, text)));
+    pipMirror.scrollTop = pipMirror.scrollHeight;   // belt and braces: newest words in view
   }
 
   function copyStylesInto(doc) {

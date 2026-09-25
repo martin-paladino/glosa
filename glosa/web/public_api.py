@@ -39,7 +39,9 @@
     can be guessed). An authenticated admin session always works. ``shift_s``
     is the room's current LatencyTracker p50
     (RoomWorker.latency_p50(), >=10 samples) if there is one, else
-    ``Settings.default_export_shift_s`` -- a room-wide estimate, not one
+    ``Settings.default_export_shift_s``; a glossary-engine talk always uses
+    ``exports.GLOSSARY_SHIFT_S`` (its captions are stored at source-cut
+    time, so only the transcription lag applies) -- a room-wide estimate, not one
     recomputed per (possibly long-finished) talk. ``Content-Disposition:
     attachment`` names the file "slug-titulo-lang-version.ext"
     (glosa.exports.export_filename).
@@ -54,7 +56,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from glosa.exports import CONTENT_TYPE, ExportSegment, export_filename, render
+from glosa.exports import CONTENT_TYPE, GLOSSARY_SHIFT_S, ExportSegment, export_filename, render
 from glosa.models import RoomStatus
 from glosa.room import RoomWorker
 from glosa.web.auth import is_authenticated
@@ -135,7 +137,8 @@ async def export_file(talk_id: str, lang: str, fmt: str, request: Request, versi
 
     segments = await db.get_segments(talk_id, lang, version)
     export_segs = [ExportSegment(text=s.text, t_start=s.t_start, t_end=s.t_end) for s in segments]
-    body = render(fmt, export_segs, shift_s=_shift_s(request, talk.room_id, settings))
+    shift_s = GLOSSARY_SHIFT_S if talk.engine == "glossary" else _shift_s(request, talk.room_id, settings)
+    body = render(fmt, export_segs, shift_s=shift_s)
     room_slug = _room_slug(request, talk.room_id)
     filename = export_filename(room_slug, talk.title, lang, version, fmt)
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}

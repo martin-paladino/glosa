@@ -34,6 +34,10 @@ import unicodedata
 from dataclasses import dataclass
 
 _MAX_LINE_CHARS = 42
+# The glossary engine stores every caption (source and translations) at the
+# time of its source cut, so only its transcription lag needs shifting
+# (p50 ~0.7-0.9 s, bench/results.md); the fast engine stores arrival times.
+GLOSSARY_SHIFT_S = 0.8
 _MAX_LINES_PER_CUE = 2
 
 

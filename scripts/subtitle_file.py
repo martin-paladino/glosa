@@ -19,9 +19,11 @@ printed, logged or written to any file this script produces).
 Writes ``<stem>.<lang>.vtt`` and ``<stem>.<lang>.srt`` for the source
 language and every ``--targets`` language, via glosa/exports.py's
 ``render()`` -- the SAME renderer glosa/web/public_api.py's ``GET
-/exports`` route uses, with the same ``shift_s`` rule (task-11r-brief.md
-Ruling 2, see ``_shift_s()`` below): the room's current-run latency p50 if
-there is enough signal, else ``Settings.default_export_shift_s``. Prints
+/exports`` route uses. Cues are moved earlier by ``--shift`` if given;
+else by GLOSSARY_SHIFT_S for the glossary engine (it stores captions at
+their source cut's time, so only the transcription lag applies), or for the
+fast engine by the latency measured during the run (else
+``Settings.default_export_shift_s``). Prints
 progress while the room runs and the real cost (``Database.total_cost()``)
 at the end.
 
@@ -63,7 +65,7 @@ from glosa.captions.bus import CaptionBus  # noqa: E402
 from glosa.clock import RealClock  # noqa: E402
 from glosa.config import RoomCfg, Settings  # noqa: E402
 from glosa.db import Database, init_db  # noqa: E402
-from glosa.exports import ExportSegment, render  # noqa: E402
+from glosa.exports import GLOSSARY_SHIFT_S, ExportSegment, render  # noqa: E402
 from glosa.models import GlossaryTerm, Room, Talk  # noqa: E402
 from glosa.room import RoomWorker  # noqa: E402
 from glosa.web.app import make_engine_factory  # noqa: E402
@@ -132,19 +134,6 @@ def _build_room_and_talk(
     return room, talk
 
 
-def _shift_s(worker: RoomWorker, settings: Settings) -> float:
-    """The same rule glosa/web/public_api.py's export route applies
-    (task-11r-brief.md Ruling 2): the room's CURRENT run's latency p50 if
-    there is enough signal, else the configured default. By the time we
-    render here the run has just ended (RoomWorker clears its run on talk
-    end -- see RoomWorker.latency_p50()'s own docstring), so this normally
-    falls through to default_export_shift_s, exactly what the route itself
-    would do for a finished talk (its live run is long gone by export time
-    there too)."""
-    p50 = worker.latency_p50()
-    return p50 if p50 is not None else settings.default_export_shift_s
-
-
 async def _write_exports(
     db: Database, talk_id: str, langs: list[str], shift_s: float, out_dir: Path, stem: str
 ) -> list[Path]:
@@ -176,6 +165,7 @@ async def run_subtitle_file(
     engine_mode: str = "live",
     fake_fixture: str | None = None,
     quiet: bool = False,
+    shift_s: float | None = None,
 ) -> Result:
     """Drive one real RoomWorker on ``input_path`` and write VTT/SRT for
     ``source_lang`` and every ``targets`` language. ``engine_mode``/
@@ -210,7 +200,12 @@ async def run_subtitle_file(
 
     if not quiet:
         print(f"subtitling {input_path.name}: {source_lang} -> {', '.join(targets)} (engine={engine})")
-    shift_s = settings.default_export_shift_s
+    # The glossary engine stores every caption (source and translations) at
+    # the time of its source cut, so only the transcription lag (~0.7-0.9 s,
+    # bench/results.md) needs shifting; the fast engine stores ARRIVAL times
+    # (Live Translate's ~2.4 s). An explicit --shift always wins.
+    fixed_shift = shift_s
+    shift_s = GLOSSARY_SHIFT_S if engine == "glossary" else settings.default_export_shift_s
     measured_shift: float | None = None
     try:
         await worker.start(talk)
@@ -223,7 +218,10 @@ async def run_subtitle_file(
             if not quiet and worker.audio_s - last_reported >= 5.0:
                 print(f"  ...{worker.audio_s:.1f}s processed")
                 last_reported = worker.audio_s
-        shift_s = measured_shift if measured_shift is not None else _shift_s(worker, settings)
+        if fixed_shift is not None:
+            shift_s = fixed_shift
+        elif measured_shift is not None and engine != "glossary":  # glossary times are cut times already
+            shift_s = measured_shift
     finally:
         await worker.stop()
 
@@ -253,6 +251,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--engine", choices=ENGINES, default=DEFAULT_ENGINE, help=f"engine kind (default: {DEFAULT_ENGINE})")
     parser.add_argument("--out-dir", type=Path, default=None, dest="out_dir", help="output directory (default: next to INPUT)")
+    parser.add_argument(
+        "--shift", type=float, default=None,
+        help=f"seconds to move every cue earlier (default: {GLOSSARY_SHIFT_S} for glossary, the measured latency or "
+        "default_export_shift_s for fast)",
+    )
     parser.add_argument("--glossary", default=None, help='glossary terms, e.g. "Kubernetes,namespaces=espacios de nombres"')
     return parser
 
@@ -270,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(
             run_subtitle_file(
                 args.input, source_lang=args.lang, targets=targets, engine=args.engine,
-                glossary=glossary, out_dir=args.out_dir, api_key=api_key,
+                glossary=glossary, out_dir=args.out_dir, api_key=api_key, shift_s=args.shift,
             )
         )
     except SubtitleFileError as exc:

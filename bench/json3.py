@@ -1,21 +1,35 @@
 """bench/json3.py: parse YouTube ``json3`` auto-caption files (see
-samples/README.md) into word-level timings, and derive the reference
-"utterance end" timestamps latency is measured against, plus a small
-two-pointer matcher pairing those reference times to caption-bus arrival
-times. Pure, no I/O beyond reading the json3 file; no network.
+samples/README.md) into word-level timings, and the **progress-lag**
+latency metric (Task 15c fix round 1) built on top of them. Pure, no I/O
+beyond reading the json3 file; no network.
 
-Why "utterance end" is estimated, not read directly: json3 gives each
-word's *start* time (``event.tStartMs + seg.tOffsetMs``) but never a
-duration, so a word's end is not directly available. ``utterances()``
-estimates it: a word's own end is its start plus the gap to the next word,
-capped at ``word_cap_s`` (a plausible max spoken-word length; the excess,
-if any, is silence). A new utterance starts whenever that gap reaches
-``gap_s`` (a pause at least this long looks like a sentence/thought
-boundary, not just inter-word spacing) -- this mirrors, but is independent
-of, the room's own VAD pause (glosa/audio/vad.py, ~400 ms hangover): using
-the *reference* transcript's own timing keeps the benchmark's latency
-numbers grounded in when the speaker actually stopped talking, not in the
-system-under-test's own idea of when that happened.
+Progress-lag, in short (see .superpowers/sdd/2026-09-24-glosa/
+task-15c-fix1.md for the full rationale): the previous metric
+(``match_next``, removed here) paired each reference *utterance end* with
+the "earliest unclaimed caption-bus event at or after it" -- with frequent
+events (e.g. the glossary engine's fast interim ``set`` updates on the
+source track) that measures event density, not latency, and it produced
+implausible numbers (a "26 s" source latency where an earlier, independent
+measurement put it at ~0.9 s). Progress-lag instead compares two
+*cumulative* curves that both only ever go up:
+
+- ``spoken_curve``: S(t), cumulative words spoken by time t (one point per
+  json3 word, already offset so t=0 is the clip's start -- see
+  samples/README.md).
+- ``screen_curve``: C(t), cumulative words visible on a caption track at
+  time t, replayed from the recorded ``append``/``set``/``close`` bus
+  events (``append`` concatenates onto the segment's current text, ``set``
+  *replaces* it -- so a run of ``set`` interim revisions must not be
+  double-counted as if each one were new text on top of the last; the
+  running max keeps the curve monotone even if an ASR revision briefly
+  shortens a segment's text).
+
+Both curves are normalised by their own final total (a translation is not
+the same length as its source), then for progress fractions f = 0.05, 0.10,
+..., 0.95, ``progress_lag`` reports lag(f) = t_C(f) - t_S(f) -- "how far
+behind the screen is once X% of the words have been said/shown" -- as
+p50/p90 over those 19 points. A track with no events at all yields
+(None, None, 0), rendered as "--" (bench/report.py).
 """
 
 from __future__ import annotations
@@ -25,20 +39,13 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_GAP_S = 0.5  # min. inter-word gap treated as an utterance boundary
-DEFAULT_WORD_CAP_S = 0.35  # max. assumed duration of a single spoken word
+PROGRESS_POINTS: tuple[float, ...] = tuple(round(0.05 * i, 2) for i in range(1, 20))  # 0.05 .. 0.95
 
 
 @dataclass(frozen=True)
 class Word:
     text: str
     start_s: float
-
-
-@dataclass(frozen=True)
-class Utterance:
-    text: str
-    end_s: float  # estimated moment speech stops, see module docstring
 
 
 def load_words(path: str | Path) -> list[Word]:
@@ -62,54 +69,6 @@ def full_text(words: list[Word]) -> str:
     return " ".join(w.text for w in words)
 
 
-def utterances(
-    words: list[Word], gap_s: float = DEFAULT_GAP_S, word_cap_s: float = DEFAULT_WORD_CAP_S
-) -> list[Utterance]:
-    """Group ``words`` into utterances at gaps >= ``gap_s``; each
-    utterance's ``end_s`` is its last word's estimated end (see module
-    docstring)."""
-    if not words:
-        return []
-    ends: list[float] = []
-    for i, word in enumerate(words):
-        gap = (words[i + 1].start_s - word.start_s) if i + 1 < len(words) else word_cap_s
-        ends.append(word.start_s + min(max(gap, 0.0), word_cap_s))
-
-    out: list[Utterance] = []
-    group_texts = [words[0].text]
-    group_end = ends[0]
-    for i in range(1, len(words)):
-        gap = words[i].start_s - words[i - 1].start_s
-        if gap >= gap_s:
-            out.append(Utterance(text=" ".join(group_texts), end_s=group_end))
-            group_texts = []
-        group_texts.append(words[i].text)
-        group_end = ends[i]
-    out.append(Utterance(text=" ".join(group_texts), end_s=group_end))
-    return out
-
-
-def match_next(ref_ends: list[float], event_times: list[float]) -> list[float | None]:
-    """Pair each (sorted) reference time with the earliest ``event_times``
-    value at or after it that no earlier reference already claimed; the
-    latency for a matched pair is ``event_time - ref_time``. A reference
-    with nothing left to claim (e.g. the clip's last utterance, if no
-    caption event followed it before the run ended) gets ``None``."""
-    events = sorted(event_times)
-    refs = sorted(ref_ends)
-    j = 0
-    out: list[float | None] = []
-    for t in refs:
-        while j < len(events) and events[j] < t:
-            j += 1
-        if j < len(events):
-            out.append(events[j] - t)
-            j += 1
-        else:
-            out.append(None)
-    return out
-
-
 def pct(values: list[float], q: float) -> float:
     """Nearest-rank percentile (q in [0, 1])."""
     ordered = sorted(values)
@@ -118,16 +77,78 @@ def pct(values: list[float], q: float) -> float:
     return ordered[max(0, math.ceil(q * len(ordered)) - 1)]
 
 
-def latency_stats(ref_ends: list[float], event_times: list[float]) -> tuple[float | None, float | None, int]:
-    """p50/p90/n latency of ``event_times`` (bus-message arrival times) after
-    ``ref_ends`` (reference utterance-end times), via ``match_next``. Both
-    the "source" and "translation" latency numbers in bench/bench.py are
-    this same computation applied to a different track's event times --
-    (None, None, 0) when either list is empty (e.g. the "fast" engine's
-    source track, which never publishes anything: see bench/bench.py)."""
-    if not ref_ends or not event_times:
+def spoken_curve(words: list[Word]) -> list[tuple[float, int]]:
+    """S(t): cumulative words spoken by time t -- one point per word (in
+    speaking order), ``(word.start_s, index + 1)``. Already monotone (each
+    word adds exactly one)."""
+    return [(w.start_s, i + 1) for i, w in enumerate(words)]
+
+
+def screen_curve(events: list[dict], lang: str) -> list[tuple[float, int]]:
+    """C(t): cumulative words visible on ``lang``'s caption track at time
+    t, replayed from ``events`` (bench/bench.py's recorded CaptionBus
+    messages: dicts with ``t``/``lang``/``type``/``seg``/``text``).
+    ``append`` concatenates onto its segment's current text; ``set``
+    *replaces* it (a segment's whole current text, per glosa/room.py's
+    ``_set_source`` -- counting it on top of the previous ``set`` would
+    double-count words already on screen); ``close`` carries no text and
+    only ever finalises a segment already accounted for, so it adds no
+    point. One point per append/set event, on the running max of the total
+    word count across all of ``lang``'s segments so far (keeps the curve
+    monotone even when a ``set`` revises a segment's text shorter, e.g. an
+    ASR hypothesis correction)."""
+    seg_text: dict[object, str] = {}
+    running_max = 0
+    points: list[tuple[float, int]] = []
+    for event in sorted(events, key=lambda e: e.get("t", 0.0)):
+        if event.get("lang") != lang:
+            continue
+        etype = event.get("type")
+        if etype == "append":
+            seg_text[event.get("seg")] = seg_text.get(event.get("seg"), "") + (event.get("text") or "")
+        elif etype == "set":
+            seg_text[event.get("seg")] = event.get("text") or ""
+        else:
+            continue
+        total_words = sum(len(text.split()) for text in seg_text.values())
+        running_max = max(running_max, total_words)
+        points.append((event["t"], running_max))
+    return points
+
+
+def time_at_fraction(curve: list[tuple[float, int]], fraction: float) -> float | None:
+    """The earliest t in ``curve`` (a non-decreasing-count series, e.g.
+    from ``spoken_curve``/``screen_curve``) at which the cumulative count
+    is >= ``fraction`` of the curve's own final (max) value. ``None`` if
+    ``curve`` is empty or its final value is 0 (no words counted)."""
+    if not curve:
+        return None
+    total = curve[-1][1]
+    if total <= 0:
+        return None
+    threshold = fraction * total
+    for t, count in curve:
+        if count >= threshold:
+            return t
+    return curve[-1][0]  # unreachable for fraction <= 1: curve[-1]'s count == total
+
+
+def progress_lag(
+    spoken: list[tuple[float, int]], screen: list[tuple[float, int]]
+) -> tuple[float | None, float | None, int]:
+    """p50/p90/n progress-lag (see module docstring): lag(f) =
+    t_screen(f) - t_spoken(f) for f in ``PROGRESS_POINTS``, each curve's
+    fractions taken against its own final total. (None, None, 0) if either
+    curve is empty (a track with no events at all)."""
+    if not spoken or not screen:
         return None, None, 0
-    deltas = [d for d in match_next(ref_ends, event_times) if d is not None]
-    if not deltas:
+    lags: list[float] = []
+    for f in PROGRESS_POINTS:
+        t_spoken = time_at_fraction(spoken, f)
+        t_screen = time_at_fraction(screen, f)
+        if t_spoken is None or t_screen is None:
+            continue
+        lags.append(t_screen - t_spoken)
+    if not lags:
         return None, None, 0
-    return pct(deltas, 0.5), pct(deltas, 0.9), len(deltas)
+    return pct(lags, 0.5), pct(lags, 0.9), len(lags)

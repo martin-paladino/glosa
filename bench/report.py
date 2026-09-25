@@ -11,9 +11,13 @@ from dataclasses import dataclass
 class RunStats:
     clip: str
     engine: str  # "fast" | "glossary"
-    source_lat_p50: float | None  # None: no source track (the "fast" engine)
+    # progress-lag p50/p90 (bench/json3.py's progress_lag), seconds; None
+    # only when the track published no events at all (not "fast has no
+    # source track" -- it turns out fast DOES publish one, see
+    # task-15c-fix1.md and bench/results.md's Method section).
+    source_lat_p50: float | None
     source_lat_p90: float | None
-    source_lat_n: int
+    source_lat_n: int  # number of PROGRESS_POINTS matched (0 if no events)
     trans_lat_p50: float | None
     trans_lat_p90: float | None
     trans_lat_n: int
@@ -29,7 +33,7 @@ class RunStats:
 
 def _fmt_lat(p50: float | None, p90: float | None, n: int) -> str:
     if p50 is None:
-        return "n/a (no source track)"
+        return "—"  # em dash: "this track has no events" (task-15c-fix1.md)
     return f"{p50:.2f} / {p90:.2f} (n={n})"
 
 

@@ -19,8 +19,18 @@ from pathlib import Path
 
 import pytest
 
-from bench.bench import CLIPS, ENGINES, parse_only, to_glossary_terms
-from bench.json3 import Word, full_text, latency_stats, load_words, match_next, pct, utterances
+from bench.bench import CLIPS, ENGINES, parse_only, reconstruct_final_text, to_glossary_terms
+from bench.json3 import (
+    PROGRESS_POINTS,
+    Word,
+    full_text,
+    load_words,
+    pct,
+    progress_lag,
+    screen_curve,
+    spoken_curve,
+    time_at_fraction,
+)
 from bench.report import RunStats, render_table
 from bench.terms import Term, TermReport, best_count, count_occurrences, load_terms, normalize, overall_pct, score_terms
 
@@ -63,32 +73,6 @@ def test_full_text_joins_words_in_speaking_order() -> None:
     assert full_text([Word("a", 0.0), Word("b", 1.0)]) == "a b"
 
 
-def test_utterances_splits_at_a_gap_and_caps_word_duration() -> None:
-    # "a b c" close together, a >=0.5s gap, then "d e" close together.
-    words = [Word("a", 0.0), Word("b", 0.2), Word("c", 0.4), Word("d", 1.0), Word("e", 1.2)]
-    utts = utterances(words, gap_s=0.5, word_cap_s=0.35)
-    assert [u.text for u in utts] == ["a b c", "d e"]
-    # c's real gap to d is 0.6s but capped at word_cap_s (0.35): end = 0.4 + 0.35 = 0.75
-    assert utts[0].end_s == 0.75
-    # e is the last word: its end uses word_cap_s as its own assumed duration: 1.2 + 0.35 = 1.55
-    assert math.isclose(utts[1].end_s, 1.55)
-
-
-def test_utterances_empty_input() -> None:
-    assert utterances([]) == []
-
-
-def test_match_next_pairs_each_ref_with_earliest_unclaimed_later_event() -> None:
-    deltas = match_next(ref_ends=[0.75, 1.55], event_times=[1.0, 2.0])
-    assert deltas == pytest.approx([1.0 - 0.75, 2.0 - 1.55])
-
-
-def test_match_next_none_when_no_event_left_to_claim() -> None:
-    deltas = match_next(ref_ends=[0.75, 1.55, 3.0], event_times=[1.0, 2.0])
-    assert deltas[2] is None
-    assert deltas[:2] == pytest.approx([0.25, 0.45])
-
-
 def test_pct_nearest_rank() -> None:
     values = [float(v) for v in range(1, 11)]  # 1..10
     assert pct(values, 0.5) == 5.0
@@ -99,16 +83,110 @@ def test_pct_empty_is_nan() -> None:
     assert math.isnan(pct([], 0.5))
 
 
-def test_latency_stats_empty_ref_or_events_is_none() -> None:
-    assert latency_stats([], [1.0]) == (None, None, 0)
-    assert latency_stats([1.0], []) == (None, None, 0)
+# ------------------------------------------------------------- progress-lag
 
 
-def test_latency_stats_matches_match_next_and_pct() -> None:
-    p50, p90, n = latency_stats([0.75, 1.55], [1.0, 2.0])
-    assert n == 2
-    assert p50 == pytest.approx(0.25)
-    assert p90 == pytest.approx(0.45)
+def test_spoken_curve_is_cumulative_word_count_over_time() -> None:
+    words = [Word("a", 0.0), Word("b", 1.0), Word("c", 1.5)]
+    assert spoken_curve(words) == [(0.0, 1), (1.0, 2), (1.5, 3)]
+
+
+def test_screen_curve_append_accumulates_within_a_segment() -> None:
+    events = [
+        {"t": 1.0, "lang": "en", "type": "append", "seg": 0, "text": "hello "},
+        {"t": 2.0, "lang": "en", "type": "append", "seg": 0, "text": "world"},
+    ]
+    assert screen_curve(events, "en") == [(1.0, 1), (2.0, 2)]
+
+
+def test_screen_curve_set_replaces_not_appends() -> None:
+    # A `set` carries the segment's WHOLE current text (VERBATIM transcribe
+    # interim revisions): counting it as a fresh append on top of the
+    # previous `set` would double-count words already on screen.
+    events = [
+        {"t": 1.0, "lang": "en", "type": "set", "seg": 0, "text": "hello"},
+        {"t": 2.0, "lang": "en", "type": "set", "seg": 0, "text": "hello world"},
+    ]
+    assert screen_curve(events, "en") == [(1.0, 1), (2.0, 2)]  # not (2.0, 1 + 2 = 3)
+
+
+def test_screen_curve_running_max_when_a_set_revises_the_text_shorter() -> None:
+    events = [
+        {"t": 1.0, "lang": "en", "type": "set", "seg": 0, "text": "hello world"},  # 2 words
+        {"t": 2.0, "lang": "en", "type": "set", "seg": 0, "text": "hi"},  # ASR revises down to 1
+    ]
+    assert screen_curve(events, "en") == [(1.0, 2), (2.0, 2)]  # stays at the running max, not 1
+
+
+def test_screen_curve_sums_open_segments_and_ignores_close_and_other_langs() -> None:
+    events = [
+        {"t": 1.0, "lang": "en", "type": "append", "seg": 0, "text": "a b"},
+        {"t": 1.2, "lang": "es", "type": "append", "seg": 0, "text": "otro idioma"},  # different lang: ignored
+        {"t": 1.5, "lang": "en", "type": "close", "seg": 0},  # no text: no new point
+        {"t": 2.0, "lang": "en", "type": "append", "seg": 1, "text": "c"},
+    ]
+    assert screen_curve(events, "en") == [(1.0, 2), (2.0, 3)]
+
+
+def test_screen_curve_empty_when_the_track_has_no_events() -> None:
+    assert screen_curve([], "en") == []
+    assert screen_curve([{"t": 1.0, "lang": "es", "type": "append", "seg": 0, "text": "hola"}], "en") == []
+
+
+def test_time_at_fraction_earliest_point_reaching_the_threshold() -> None:
+    curve = [(0.0, 1), (1.0, 3), (2.0, 5)]  # total = 5
+    assert time_at_fraction(curve, 0.5) == 1.0  # needs >= 2.5 -> first point with count >= 2.5
+    assert time_at_fraction(curve, 1.0) == 2.0
+
+
+def test_time_at_fraction_empty_curve_is_none() -> None:
+    assert time_at_fraction([], 0.5) is None
+
+
+def test_progress_points_are_5pct_steps_from_5_to_95() -> None:
+    assert PROGRESS_POINTS[0] == pytest.approx(0.05)
+    assert PROGRESS_POINTS[-1] == pytest.approx(0.95)
+    assert len(PROGRESS_POINTS) == 19
+
+
+def test_progress_lag_constant_delay_gives_lag_approximately_equal_to_the_delay() -> None:
+    # 10 words spoken one per second; each appears on screen, as its own
+    # segment, exactly 2.5s after it was spoken.
+    words = [Word(str(i), float(i)) for i in range(10)]
+    spoken = spoken_curve(words)
+    events = [{"t": float(i) + 2.5, "lang": "en", "type": "append", "seg": i, "text": "w"} for i in range(10)]
+    screen = screen_curve(events, "en")
+    p50, p90, n = progress_lag(spoken, screen)
+    assert p50 == pytest.approx(2.5)
+    assert p90 == pytest.approx(2.5)
+    assert n == len(PROGRESS_POINTS)
+
+
+def test_progress_lag_none_when_a_track_has_no_events() -> None:
+    spoken = spoken_curve([Word("a", 0.0)])
+    assert progress_lag(spoken, []) == (None, None, 0)
+    assert progress_lag([], []) == (None, None, 0)
+
+
+# --------------------------------------------------------- text reconstruction
+
+
+def test_reconstruct_final_text_concatenates_segments_in_order() -> None:
+    events = [
+        {"t": 2.0, "lang": "es", "type": "append", "seg": 1, "text": "mundo"},
+        {"t": 1.0, "lang": "es", "type": "append", "seg": 0, "text": "hola"},
+        {"t": 1.5, "lang": "es", "type": "close", "seg": 0},
+        {"t": 0.5, "lang": "en", "type": "append", "seg": 0, "text": "other track"},
+    ]
+    assert reconstruct_final_text(events, "es") == "hola mundo"
+
+
+def test_reconstruct_final_text_set_keeps_only_the_latest_text() -> None:
+    events = [
+        {"t": 1.0, "lang": "en", "type": "set", "seg": 0, "text": "So,"},
+        {"t": 2.0, "lang": "en", "type": "set", "seg": 0, "text": "So, what"},
+    ]
+    assert reconstruct_final_text(events, "en") == "So, what"
 
 
 # --------------------------------------------------------------------- terms
@@ -192,9 +270,9 @@ def _stats(**overrides) -> RunStats:
     return RunStats(**base)
 
 
-def test_render_table_marks_fast_source_latency_as_no_source_track() -> None:
+def test_render_table_marks_a_missing_track_lag_as_em_dash() -> None:
     table = render_table([_stats()])
-    assert "n/a (no source track)" in table
+    assert " — " in table  # "—" == "—"
     assert "| en_clip | fast |" in table
 
 

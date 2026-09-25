@@ -1392,6 +1392,9 @@
   /* Franja: las celdas no se aplastan (se pisarían); con logo del evento, el logo
      reemplaza al nombre. Idioma y salida, grises como todo lo que no es estado. */
   .masthead__cell { flex: none; }
+  /* El logo del evento sin color (el color es estado): cuando no hay versión en
+     blanco y negro al lado del archivo configurado, en escala de grises. */
+  .event-logo--mono { filter: grayscale(1); }
   .masthead__tools { gap: 12px; }
   @container glosa (max-width: 90rem) {           /* 1440 px: todos los estados, logo y gasto a la vez */
     .masthead__cell { padding: 0 16px; }

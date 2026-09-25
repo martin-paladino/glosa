@@ -81,6 +81,10 @@ Mode = Literal["auto", "manual"]
 MODES: tuple[Mode, ...] = ("auto", "manual")
 
 
+class NoTalkToRestart(LookupError):
+    """``Autopilot.restart`` on a room that runs no talk."""
+
+
 class Worker(Protocol):
     """The part of glosa.room.RoomWorker the autopilot drives."""
 
@@ -229,13 +233,13 @@ class Autopilot:
         source again for the talk the room runs -- the same talk (no talk
         end, no free session, same actual_start). The talk is read under the
         room's lock, so a tick or an operator action in progress is never
-        undone by a stale one. The mode stays. LookupError: no talk running;
-        ValueError: the room has no audio source."""
+        undone by a stale one. The mode stays. NoTalkToRestart: no talk
+        running; ValueError: the room has no audio source."""
         worker = self._worker(room_id)
         async with self._lock(room_id):
             talk = worker.talk
             if talk is None:
-                raise LookupError(f"room {room_id!r} has no talk to restart")
+                raise NoTalkToRestart(f"room {room_id!r} has no talk to restart")
             await worker.start(talk)
         await self._log(room_id, "restart", f"{talk.id}: source reopened by the operator")
         self._publish("room_restart", {"room_id": room_id, "talk_id": talk.id})

@@ -27,7 +27,7 @@ from glosa.config import RoomCfg, Settings
 from glosa.db import init_db
 from glosa.models import AudioChunk, EngineEvent, Room, Talk
 from glosa.room import RoomWorker
-from glosa.scheduler import Autopilot
+from glosa.scheduler import Autopilot, NoTalkToRestart
 from glosa.web.admin_events import AdminEvents
 
 TZ = "America/Argentina/Buenos_Aires"
@@ -450,7 +450,7 @@ async def test_restart_reads_the_talk_under_the_room_lock(db) -> None:
     await worker.stop()  # the holder ends the talk meanwhile
     lock.release()
 
-    with pytest.raises(LookupError):
+    with pytest.raises(NoTalkToRestart):
         await restarting
     assert worker.starts() == ["A"]
 
@@ -458,10 +458,24 @@ async def test_restart_reads_the_talk_under_the_room_lock(db) -> None:
 async def test_restart_needs_a_talk_and_a_known_room(db) -> None:
     clock, workers, pilot, _ = await _setup(db, _room("r1"), at_time=at("14:10"))
 
-    with pytest.raises(LookupError):
+    with pytest.raises(NoTalkToRestart):
         await pilot.restart("r1")
     with pytest.raises(KeyError):
         await pilot.restart("nope")
+
+
+async def test_a_failure_inside_the_restart_is_not_no_talk(db) -> None:
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")],
+                                            at_time=at("14:10"))
+    await pilot.tick()
+
+    async def broken(talk=None):
+        raise KeyError("something inside start")
+
+    workers["r1"].start = broken
+    with pytest.raises(KeyError) as caught:
+        await pilot.restart("r1")
+    assert not isinstance(caught.value, NoTalkToRestart)
 
 
 # ---------------------------------------------------------------- server restart (9.4b)

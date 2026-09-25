@@ -16,7 +16,7 @@
     <div class="masthead__cell">
       <a class="wordmark" href="/" aria-label="Glosa">glosa</a>
       {%- if logo_url %}
-      <img class="event-logo" src="{{ logo_url }}" alt="{{ event_name }}">
+      <img class="event-logo{% if logo_mono %} event-logo--mono{% endif %}" src="{{ logo_url }}" alt="{{ event_name }}">
       {%- endif %}
       <div class="masthead__event"><b>{{ event_name }}</b><span>{{ at("admin_title") }}</span></div>
     </div>

@@ -106,12 +106,13 @@ import asyncio
 import base64
 import http.client
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict
 from datetime import date, datetime, timezone, tzinfo
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -127,6 +128,7 @@ from glosa.agenda.nerdearla_import import SkippedSession, parse_nerdearla_report
 from glosa.i18n import ADMIN_STRINGS, SUPPORTED, Lang, admin_t, detect_lang
 from glosa.models import GlossaryTerm, Talk
 from glosa.room import RoomWorker, is_free_talk
+from glosa.scheduler import NoTalkToRestart
 from glosa.web import admin_stream
 from glosa.web.auth import (
     COOKIE_MAX_AGE_S,
@@ -159,6 +161,11 @@ _FAILED_LOGIN_DELAY_S = 1.0
 # in the panel's import form fills it in.
 NERDEARLA_AGENDA_URL = "https://backstage.nerdearla.com/api/sessions/?event_id=148d7ff3-134c-48b5-8bc2-52bf025d2ac4"
 _VARY = {"Vary": "Accept-Language"}
+# The panel holds the station links (with their keys): never cached.
+_PAGE_HEADERS = _VARY | {"Cache-Control": "no-store"}
+STATIC_DIR = Path(__file__).parent / "static"
+# A forwarded host is only taken when it looks like one (host, IPv4 or [IPv6], optional port).
+_HOST_RE = re.compile(r"(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?")
 
 
 # ---- pages ------------------------------------------------------------------
@@ -186,7 +193,7 @@ async def admin_page(request: Request):
         "state": view,
     }
     context = _page_context(request, ui) | {"view": view, "config": config}
-    return templates.TemplateResponse(request, "admin.html", context, headers=_VARY)
+    return templates.TemplateResponse(request, "admin.html", context, headers=_PAGE_HEADERS)
 
 
 @router.get("/admin/login", include_in_schema=False)
@@ -196,21 +203,63 @@ def login_page(request: Request):
         return RedirectResponse("/admin" + _lang_suffix(forced), status_code=303)
     config = {"page": "login", "ui": ui, "tz": request.app.state.settings.timezone, "i18n": ADMIN_STRINGS[ui]}
     context = _page_context(request, ui) | {"config": config}
-    return templates.TemplateResponse(request, "admin_login.html", context, headers=_VARY)
+    return templates.TemplateResponse(request, "admin_login.html", context, headers=_PAGE_HEADERS)
 
 
 def _stations(request: Request) -> dict[str, dict[str, str]]:
     """Each emitter room's station link (Task 14a, glosa/web/station.py) and
-    its QR, for the drawer. The link carries the station key: it only ever
-    goes into this admin-only page."""
+    its QR, for the drawer: the same absolute URL (the panel copies ``url``,
+    it never rebuilds it). The link carries the station key: it only ever
+    goes into this admin-only page (sent with ``Cache-Control: no-store``)."""
     password = request.app.state.settings.admin_password
-    base = str(request.base_url).rstrip("/")
+    base = public_base(request)
     stations = {}
     for worker in _workers(request):
         if worker.room.source_type == "emitter":
-            url = station_url(worker.room.id, password)
-            stations[worker.room.id] = {"url": url, "qr": qr_data_uri(base + url)}
+            url = base + station_url(worker.room.id, password)
+            stations[worker.room.id] = {"url": url, "qr": qr_data_uri(url)}
     return stations
+
+
+def public_base(request: Request) -> str:
+    """Ruling 52: the panel's origin as the browser sees it, for the station
+    link and its QR. Behind a TLS proxy (deploy/Caddyfile) uvicorn only
+    trusts X-Forwarded-* from 127.0.0.1, so ``request.base_url`` says
+    ``http://`` and a scanned QR would send the key in the clear: take the
+    scheme from ``X-Forwarded-Proto`` (http or https only) and the host from
+    ``X-Forwarded-Host`` (when it looks like a host), else the request's own
+    (its ``Host``). The first value of a list wins (the client-facing hop).
+    A spoofed header only changes this admin's own page."""
+    scheme, _, rest = str(request.base_url).partition("://")
+    host = rest.split("/", 1)[0]
+    proto = _first(request.headers.get("x-forwarded-proto")).lower()
+    if proto in ("http", "https"):
+        scheme = proto
+    forwarded = _first(request.headers.get("x-forwarded-host"))
+    if forwarded and _HOST_RE.fullmatch(forwarded):
+        host = forwarded
+    return f"{scheme}://{host}"
+
+
+def _first(header: str | None) -> str:
+    return (header or "").split(",", 1)[0].strip()
+
+
+def admin_logo(logo_url: str | None) -> tuple[str | None, bool]:
+    """The event logo for the panel, which keeps colour for state: the
+    official black-and-white version when the configured file has one next
+    to it (``name-bw.ext``, like static/branding/nerdearla/), else the logo
+    itself shown in greyscale (the second value: needs the filter)."""
+    if not logo_url:
+        return None, False
+    path = PurePosixPath(urllib.parse.urlparse(logo_url).path)
+    if path.stem.endswith("-bw"):
+        return logo_url, False
+    if logo_url.startswith("/static/") and path.suffix:
+        variant = path.with_name(f"{path.stem}-bw{path.suffix}")
+        if (STATIC_DIR / variant.relative_to("/static")).is_file():
+            return str(variant), False
+    return logo_url, True
 
 
 def qr_data_uri(text: str) -> str:
@@ -253,11 +302,13 @@ def _lang_suffix(forced: Lang | None) -> str:
 def _page_context(request: Request, ui: Lang) -> dict[str, Any]:
     branding = getattr(request.app.state, "branding", None) or {}
     settings = request.app.state.settings
+    logo, mono = admin_logo(branding.get("logo_url"))
     return {
         "ui": ui,
         "at": lambda key: admin_t(key, ui),
         "event_name": branding.get("event_name") or settings.event_name or "Glosa",
-        "logo_url": branding.get("logo_url"),
+        "logo_url": logo,
+        "logo_mono": mono,
         "langs": [{"code": code, "current": code == ui} for code in SUPPORTED],
     }
 
@@ -408,7 +459,7 @@ async def restart_room(room_id: str, request: Request) -> dict:
     worker = _worker(request, room_id)
     try:
         await request.app.state.autopilot.restart(room_id)
-    except LookupError as exc:
+    except NoTalkToRestart as exc:
         raise HTTPException(status_code=409, detail="the room has no talk to restart") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

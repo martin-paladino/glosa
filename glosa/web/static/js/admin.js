@@ -269,8 +269,10 @@
     if (expired) return;
     expired = true;
     if (source) source.close();
+    closeDrawer();                                  // its focus trap would keep the toast out of reach
     admin.classList.add("admin--stale");
     toast(T.session_expired, { sticky: true, link: { href: `/admin/login?lang=${cfg.ui}`, text: T.log_in_again } });
+    $("[data-toast-text] a", toastEl)?.focus();
   }
 
   // ---- state frames -------------------------------------------------------------------
@@ -813,14 +815,19 @@
     });
     $("[data-d-station-copy]", drawerEl).addEventListener("click", async () => {
       const input = $("[data-d-station-url]", drawerEl);
+      let copied = true;
       try {
         await navigator.clipboard.writeText(input.value);   // needs HTTPS or localhost
       } catch {
         input.focus();
         input.select();
-        document.execCommand("copy");
+        try {
+          copied = document.execCommand("copy");
+        } catch {
+          copied = false;
+        }
       }
-      toast(T.copied);
+      toast(copied ? T.copied : T.copy_failed);
     });
     $("[data-d-pick-cancel]", drawerEl).addEventListener("click", () => togglePick(false));
     $("[data-d-pick]", drawerEl).addEventListener("submit", async (event) => {
@@ -962,7 +969,7 @@
     const link = cfg.stations?.[room.id];
     const url = $("[data-d-station-url]", d);
     if (link && !url.value) {
-      url.value = window.location.origin + link.url;
+      url.value = link.url;                          // the server's string: the same one the QR encodes
       $("[data-d-station-qr]", d).src = link.qr;
     }
   }

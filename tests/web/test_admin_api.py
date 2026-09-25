@@ -353,13 +353,79 @@ def test_an_emitter_room_gets_its_station_link_and_qr_in_the_panel_only() -> Non
 
     stations = _config(html)["stations"]
     assert list(stations) == ["st"]
-    assert stations["st"]["url"] == station_url("st", ADMIN_PASSWORD)
-    assert stations["st"]["qr"].startswith("data:image/svg+xml;base64,")
+    # No proxy headers: the request's own base (TestClient's http://testserver).
+    assert stations["st"]["url"] == "http://testserver" + station_url("st", ADMIN_PASSWORD)
+    assert stations["st"]["qr"] == admin_api.qr_data_uri(stations["st"]["url"])
     for hook in ("data-d-station-sec", "data-d-station-state", "data-d-station-url", "data-d-station-copy",
                  "data-d-station-qr", 'data-slot="station-reload"'):
         assert hook in html, hook
     anonymous = _client(_make_app(workers={"st": station_room}), authenticated=False).get("/admin/login").text
     assert station_url("st", ADMIN_PASSWORD).split("key=")[1] not in anonymous
+
+
+def _station_app() -> FastAPI:
+    station_room = _worker("st", "st", "Sala Estación")
+    station_room.room.source_type = "emitter"
+    return _make_app(workers={"st": station_room})
+
+
+def test_behind_a_proxy_the_station_link_and_its_qr_are_the_public_https_url() -> None:  # Ruling 52
+    # Caddy (deploy/Caddyfile) terminates TLS; uvicorn only trusts
+    # X-Forwarded-* from 127.0.0.1, so request.base_url says http://.
+    client = _client(_station_app())
+
+    html = client.get("/admin", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "glosa.example.org"}).text
+
+    station = _config(html)["stations"]["st"]
+    assert station["url"] == "https://glosa.example.org" + station_url("st", ADMIN_PASSWORD)
+    assert station["qr"] == admin_api.qr_data_uri(station["url"])  # the QR encodes that exact string
+
+
+@pytest.mark.parametrize(
+    ("headers", "base"),
+    [
+        ({}, "http://testserver"),
+        ({"X-Forwarded-Proto": "https"}, "https://testserver"),
+        ({"X-Forwarded-Proto": "https, http", "X-Forwarded-Host": "glosa.example.org, internal"},
+         "https://glosa.example.org"),
+        ({"X-Forwarded-Proto": "javascript"}, "http://testserver"),
+        ({"X-Forwarded-Host": "evil.example/path?x=1"}, "http://testserver"),
+        ({"Host": "glosa.local:8443", "X-Forwarded-Proto": "https"}, "https://glosa.local:8443"),
+    ],
+    ids=["own-base", "proto-only", "first-of-a-list", "bad-scheme", "bad-host", "host-header"],
+)
+def test_the_station_base_takes_only_a_sane_forwarded_scheme_and_host(headers: dict, base: str) -> None:
+    client = _client(_station_app())
+
+    station = _config(client.get("/admin", headers=headers).text)["stations"]["st"]
+
+    assert station["url"] == base + station_url("st", ADMIN_PASSWORD)
+
+
+def test_the_admin_pages_are_never_cached() -> None:  # they hold the station links (and keys)
+    app = _station_app()
+    assert _client(app).get("/admin").headers["cache-control"] == "no-store"
+    assert _client(app, authenticated=False).get("/admin/login").headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    ("logo", "shown", "mono"),
+    [
+        ("/static/branding/nerdearla/nerdearla-logo.svg", "/static/branding/nerdearla/nerdearla-logo-bw.svg", False),
+        ("/static/branding/nerdearla/nerdearla-logo-bw.svg", "/static/branding/nerdearla/nerdearla-logo-bw.svg", False),
+        ("https://cdn.example.org/event.png", "https://cdn.example.org/event.png", True),
+    ],
+    ids=["has-a-bw-variant", "already-bw", "no-variant"],
+)
+def test_the_admin_shows_the_event_logo_without_colour(logo: str, shown: str, mono: bool) -> None:
+    # Colour only for state: the official black-and-white version when the
+    # configured logo has one next to it, else the logo in greyscale.
+    app = _make_app(branding={"event_name": "Nerdearla 2026", "logo_url": logo})
+    for path, authenticated in (("/admin", True), ("/admin/login", False)):
+        html = _client(app, authenticated=authenticated).get(path).text
+        img = re.search(r'<img class="event-logo[^"]*" src="([^"]+)"', html)
+        assert img and img.group(1) == shown, path
+        assert ('class="event-logo event-logo--mono"' in html) is mono, path
 
 
 # ---- POST /api/admin/rooms/{id}/start, /stop -------------------------------
@@ -483,3 +549,17 @@ async def test_create_app_mounts_admin(tmp_path: Path) -> None:
 
     assert response.status_code == 303
     assert response.headers["location"] == "/admin/login"
+
+
+def test_restart_turns_only_no_talk_or_no_source_into_a_409() -> None:
+    from glosa.scheduler import NoTalkToRestart
+
+    app = _make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")})
+    client = _client(app)
+    app.state.autopilot.restart = AsyncMock(side_effect=NoTalkToRestart("room 'r1' has no talk to restart"))
+    assert client.post("/api/admin/rooms/r1/restart", headers=CSRF).status_code == 409
+    app.state.autopilot.restart = AsyncMock(side_effect=ValueError("room 'r1' has no audio source"))
+    assert client.post("/api/admin/rooms/r1/restart", headers=CSRF).status_code == 409
+    app.state.autopilot.restart = AsyncMock(side_effect=KeyError("a bug inside worker.start"))
+    with pytest.raises(KeyError):  # a bug, not "no talk": no misleading 409
+        client.post("/api/admin/rooms/r1/restart", headers=CSRF)

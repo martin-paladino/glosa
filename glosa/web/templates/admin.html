@@ -61,7 +61,7 @@
       <a class="wordmark" href="/" aria-label="Glosa">glosa</a>
       {#- The event's logo stands for its name (the strip has no room for both). #}
       {%- if logo_url %}
-      <img class="event-logo" src="{{ logo_url }}" alt="{{ event_name }}" title="{{ event_name }}">
+      <img class="event-logo{% if logo_mono %} event-logo--mono{% endif %}" src="{{ logo_url }}" alt="{{ event_name }}" title="{{ event_name }}">
       {%- else %}
       <div class="masthead__event"><b>{{ event_name }}</b><span data-event-date></span></div>
       {%- endif %}

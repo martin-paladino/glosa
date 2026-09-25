@@ -22,7 +22,8 @@
   {%- if brand_css %}
   <style>:root { {% for name, value in brand_css %}{{ name }}: {{ value }}; {% endfor %}}</style>
   {%- endif %}
-  {#- Theme and text size before first paint, so the page never flashes. #}
+  {#- Theme, text size and the room view's folded room list (Task ui3)
+      before first paint, so the page never flashes. #}
   <script>
     (function () {
       try {
@@ -31,6 +32,7 @@
         var scale = parseFloat(localStorage.getItem("glosa.scale"));
         if (theme === "light" || theme === "dark" || theme === "contrast") root.dataset.theme = theme;
         if (scale >= 0.8 && scale <= 1.75) root.style.setProperty("--caption-scale", String(scale));
+        if (localStorage.getItem("glosa.roomNav") === "closed") root.dataset.roomNav = "closed";
       } catch (e) {}
     })();
   </script>

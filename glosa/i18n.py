@@ -119,6 +119,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "free_session": "Sesión libre",
         # Task ui2: the panel's drag handle (mouse/touch/arrow keys)
         "move_panel": "Mover",
+        # Task ui3: folding the side room list (desktop room view)
+        "room_list": "Lista de salas",
+        "hide_rooms": "Ocultar las salas",
+        "show_rooms": "Mostrar las salas",
     },
     "en": {
         # Navigation and brand
@@ -224,6 +228,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "free_session": "Free session",
         # Task ui2: the panel's drag handle (mouse/touch/arrow keys)
         "move_panel": "Move",
+        # Task ui3: folding the side room list (desktop room view)
+        "room_list": "Room list",
+        "hide_rooms": "Hide the rooms",
+        "show_rooms": "Show the rooms",
     },
 }
 
@@ -461,6 +469,7 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "tip_reload_station": "Recarga la página de la estación de la sala (el F5 a distancia).",
         "tip_test_audio": "Reproduce una muestra o un archivo como si fuera el audio de la sala, para probar sin micrófono.",
         "tip_listen_audio": "Escuchá el audio que está entrando, sincronizado con los subtítulos. Solo en modo prueba.",
+        "tip_public_qr": "Página para imprimir o proyectar con el QR de esta sala.",
         "export_free_note": "Sesión libre: solo versión en vivo.",
         "key_opens": "Tecla {key}: abre {room}",
         "shortcuts": "Atajos",
@@ -572,6 +581,7 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "station_no_audio": "Todavía no mandó audio.",
         "station_offline": "No hay una estación conectada.",
         "station_link": "Enlace de la estación",
+        "public_qr": "QR para el público",
         "station_link_hint": "Abrilo en el mini PC de la sala. Lleva la clave de la estación: no lo compartas.",
         "copy": "Copiar",
         "copied": "Enlace copiado.",
@@ -792,6 +802,7 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "tip_reload_station": "Reloads the room station's page (a remote F5).",
         "tip_test_audio": "Plays a sample or a file as if it were the room's audio, to test without a microphone.",
         "tip_listen_audio": "Listen to the incoming audio, in sync with the captions. Test mode only.",
+        "tip_public_qr": "A page to print or project with this room's QR code.",
         "export_free_note": "Free session: live version only.",
         "key_opens": "Key {key}: opens {room}",
         "shortcuts": "Shortcuts",
@@ -903,6 +914,7 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "station_no_audio": "No audio yet.",
         "station_offline": "No station is connected.",
         "station_link": "Station link",
+        "public_qr": "Audience QR",
         "station_link_hint": "Open it on the room's mini PC. It carries the station key: do not share it.",
         "copy": "Copy",
         "copied": "Link copied.",

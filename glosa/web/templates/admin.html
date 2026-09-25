@@ -180,6 +180,9 @@
     <div class="drawer__head"><kbd data-d-key></kbd><h2 class="drawer__title" data-d-name></h2>
       <button class="drawer__close" type="button" data-close>{{ at("close") }} <kbd>Esc</kbd></button></div>
     <p class="drawer__state"><i class="led" data-d-led></i><span data-d-state></span></p>
+    {#- Task ui3: the room's printable/projectable audience QR (/qr/{slug}; in
+        qr_only mode it encodes the /s/{token} link). admin.js sets the href. #}
+    <p class="drawer__qr"><a data-d-qr target="_blank" rel="noopener" title="{{ at('tip_public_qr') }}">{{ at("public_qr") }}<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5h5v5M8.5 1.5 1.5 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></p>
   </section>
   <section class="drawer__sec" data-d-talk-sec>
     <b class="drawer__talk" data-d-talk></b><span class="drawer__who" data-d-who></span>

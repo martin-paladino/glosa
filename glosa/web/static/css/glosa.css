@@ -879,12 +879,38 @@
     scrollbar-width: thin;
     scrollbar-color: var(--line-2) transparent;
   }
+  /* El título y, a su derecha, la tecla que pliega la lista (Tarea ui3). */
+  .room-nav__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-block-size: 40px;
+    padding: 8px 8px 0 16px;
+  }
   .room-nav__title {
-    padding: 16px 16px 8px;
+    min-inline-size: 0;
     font: 700 var(--step-0)/1 var(--font-label);
     font-stretch: 86%;
     color: var(--ink-2);
   }
+  .room-nav__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    inline-size: 32px;
+    block-size: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--ink-3);
+    transition: background-color var(--dur-ui), color var(--dur-ui);
+  }
+  .room-nav__toggle:hover { background: var(--key-hover); color: var(--ink); }
+  .room-nav__toggle svg { inline-size: 18px; block-size: 18px; }
+  /* El panel del ícono va lleno con la lista abierta, vacío con la lista plegada. */
+  :root[data-room-nav="closed"] .room-nav__pane { opacity: 0; }
   .room-nav__item {
     display: grid;
     gap: 4px;
@@ -1927,6 +1953,12 @@
   .exports__status--ready { color: var(--on); }
   .exports__status--failed { color: var(--fault); }
 
+  /* El QR para el público (Tarea ui3): la página de /qr/{sala}, en otra pestaña. */
+  .drawer__qr { margin-block-start: 8px; font-size: 12.5px; }
+  .drawer__qr a { display: inline-flex; align-items: baseline; gap: 4px; color: var(--ink-2); }
+  .drawer__qr a:hover { color: var(--ink); }
+  .drawer__qr svg { inline-size: 9px; block-size: 9px; flex: none; }
+
   /* La estación de una sala "emitter" (Tarea 14a): su enlace (con la clave) y su QR. */
   .drawer__state + .station-link { margin-block-start: 14px; }
   .station-link__row { display: flex; gap: 6px; }
@@ -2055,7 +2087,8 @@
       --tap: 40px;
       --caption-base: clamp(1.5rem, 0.75rem + 1.3cqi, 2.25rem);
       --head-pad: 2rem;
-      grid-template-columns: 17rem minmax(0, 1fr) auto;
+      --nav-w: 17rem;
+      grid-template-columns: var(--nav-col, var(--nav-w)) minmax(0, 1fr) auto;
       grid-template-rows: auto minmax(0, 1fr);
       grid-template-areas:
         "head head  controls"
@@ -2110,6 +2143,19 @@
     .room .transcript--facing { --caption-base: clamp(1.25rem, 0.5rem + 1.05cqi, 1.75rem); }
     .room .transcript--facing > .page { padding-inline-end: 2.5rem; }
     .room .transcript--facing > .page + .page { padding-inline: 2.5rem 0; }
+
+    /* Lista plegada (Tarea ui3): queda un riel con su tecla y los subtítulos toman
+       el ancho. El encabezado deja de seguir las columnas de la sala, así la marca
+       y el nombre de la sala no se mueven. Sin tecla (qr_only) no se pliega. */
+    :root[data-room-nav="closed"] .room:has(> .room-nav [data-action="room-nav"]) {
+      --nav-col: 3rem;
+    }
+    :root[data-room-nav="closed"] .room:has(> .room-nav [data-action="room-nav"]) > .room-head {
+      grid-template-columns: var(--nav-w) minmax(0, 1fr);
+    }
+    :root[data-room-nav="closed"] .room-nav:has([data-action="room-nav"]) > :not(.room-nav__head),
+    :root[data-room-nav="closed"] .room-nav:has([data-action="room-nav"]) .room-nav__title { display: none; }
+    :root[data-room-nav="closed"] .room-nav:has([data-action="room-nav"]) .room-nav__head { justify-content: center; padding-inline: 0; }
   }
   @container glosa (64rem <= width < 75rem) {
     .room .control__word { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
@@ -2117,7 +2163,8 @@
   @container glosa (min-width: 75rem) {
     .room {
       --head-pad: 3rem;
-      grid-template-columns: 20rem minmax(0, 1fr) auto auto;
+      --nav-w: 20rem;
+      grid-template-columns: var(--nav-col, var(--nav-w)) minmax(0, 1fr) auto auto;
       grid-template-areas:
         "head head  controls clock"
         "nav  stage stage    stage";

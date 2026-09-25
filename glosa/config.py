@@ -164,7 +164,14 @@ class Settings(BaseSettings):
         yaml_path = Path(config_path)
         data: dict[str, Any] = {}
         if yaml_path.exists():
-            loaded = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            try:
+                loaded = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+            except yaml.YAMLError as exc:
+                location = ""
+                mark = getattr(exc, "problem_mark", None)
+                if mark is not None:
+                    location = f" (line {mark.line + 1}, column {mark.column + 1})"
+                raise ConfigError(f"{yaml_path}: invalid YAML{location}: {exc}") from exc
             if not isinstance(loaded, dict):
                 raise ConfigError(f"{yaml_path} must contain a YAML mapping at the top level")
             data = loaded

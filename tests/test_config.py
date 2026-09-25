@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from glosa.config import ConfigError, Settings
 
@@ -141,6 +142,55 @@ def test_engine_mode_rejects_unknown_values(env_file: Path, tmp_path: Path) -> N
 
     with pytest.raises(ConfigError):
         Settings.load(env_path=str(env_file), config_path=str(config))
+
+
+# ---- readable errors for a broken config.yaml -------------------------------
+
+
+def test_malformed_yaml_raises_config_error_with_path_and_location(
+    env_file: Path, tmp_path: Path
+) -> None:
+    config = tmp_path / "config.yaml"
+    # Bad indentation: not valid YAML, raises yaml.YAMLError from safe_load.
+    config.write_text("rooms:\n  - id: main\n   name: bad indent\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError) as excinfo:
+        Settings.load(env_path=str(env_file), config_path=str(config))
+
+    message = str(excinfo.value)
+    assert str(config) in message
+    # yaml's 0-indexed problem_mark says line 2 (0-based) -> reported as
+    # line 3 for operators (1-indexed, like an editor).
+    assert "line 3" in message
+    assert "column" in message
+    # The raw YAMLError must not leak out; it's wrapped.
+    assert not isinstance(excinfo.value, yaml.YAMLError)
+
+
+def test_malformed_yaml_config_error_chains_the_original_yaml_error(
+    env_file: Path, tmp_path: Path
+) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("rooms:\n  - id: main\n   name: bad indent\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError) as excinfo:
+        Settings.load(env_path=str(env_file), config_path=str(config))
+
+    assert isinstance(excinfo.value.__cause__, yaml.YAMLError)
+
+
+def test_yaml_that_is_not_a_mapping_raises_a_readable_config_error(
+    env_file: Path, tmp_path: Path
+) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("- just\n- a\n- list\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError) as excinfo:
+        Settings.load(env_path=str(env_file), config_path=str(config))
+
+    message = str(excinfo.value)
+    assert str(config) in message
+    assert "mapping" in message
 
 
 # ---- Ruling 35: a weak ADMIN_PASSWORD must not boot ------------------------

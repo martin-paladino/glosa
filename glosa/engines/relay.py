@@ -255,6 +255,19 @@ class SessionRelay:
         """The number of the last session opened (``first_seq - 1`` before any)."""
         return self._seq
 
+    def take_pending(self) -> list[AudioChunk]:
+        """Hand over the chunks no session has taken yet (while no session
+        can take audio, the last ``buffer_s`` s are held), for a relay that
+        replaces this one (``preload``). They are no longer this relay's."""
+        chunks = list(self._pending)
+        self._pending.clear()
+        return chunks
+
+    def preload(self, chunks: list[AudioChunk]) -> None:
+        """Chunks to send before any fed later (another relay's
+        ``take_pending()``), under the same ``buffer_s`` rule."""
+        self._pending.extendleft(reversed(chunks))
+
     async def start(self) -> None:
         """Begin connecting the first session. Returns at once: audio fed
         before it is up is held (up to ``buffer_s``) and sent when it is."""

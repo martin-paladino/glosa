@@ -831,6 +831,27 @@ async def test_session_numbers_can_start_after_another_relays(steady: Path) -> N
     assert h.relay.last_seq == 5
 
 
+async def test_audio_held_by_a_relay_can_be_handed_to_another(tmp_path: Path, steady: Path) -> None:
+    """A room swapping engines moves the chunks its halted relay holds to the
+    new relay, which sends them first."""
+    h = Harness([Plan(write_fixture(tmp_path, "dies", extra=[error_record(1.0, 1008, False)]))])
+    await h.start()
+    await h.run_until(2.0, vad=talking(0))  # halted at 1 s (chunk 1.0 still went out): 1.1-2.0 s held back
+    assert h.relay.halted
+    held = h.relay.take_pending()
+    assert [c.t for c in held] == [pytest.approx(1.1 + 0.1 * k) for k in range(10)]
+    assert h.relay.take_pending() == []
+
+    other = Harness([Plan(steady)])
+    other.relay.preload(held)
+    await other.start()
+    await other.run_until(0.5, vad=talking(0))
+    [engine] = other.engines
+    assert engine.sent[:10] == [c.t for c in held]  # the handed chunks go first, then its own audio
+    await h.stop()
+    await other.stop()
+
+
 async def test_events_can_be_consumed_while_feeding(steady: Path) -> None:
     h = Harness([Plan(steady)])
     got: list[EngineEvent] = []

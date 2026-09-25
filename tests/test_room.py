@@ -1690,7 +1690,8 @@ async def test_a_halted_live_translate_swaps_to_the_glossary_engine_hot(tmp_path
 
     assert len(ingests.made) == 1 and not ingests.made[0].closed  # the same source, never reopened
     fast_t, glossary_t = factory.engines[0].sent, factory.engines[1].sent
-    assert glossary_t and 0 < glossary_t[0] - fast_t[-1] < 1.0  # the audio clock goes on
+    # not one chunk lost: what the halted relay held goes to the new one
+    assert glossary_t[0] == pytest.approx(fast_t[-1] + 0.1)
     assert all(round(b - a, 3) == 0.1 for a, b in zip(glossary_t, glossary_t[1:]))
     assert factory.configs[1].source_lang == "en"
     await worker.stop()
@@ -1743,6 +1744,35 @@ async def test_a_fallback_that_cannot_save_the_engine_says_so_and_still_switches
     assert [c.kind for c in factory.configs] == ["fast", "glossary"]
     assert "could not save engine=glossary for f1" in caplog.text
     await worker.stop()
+
+
+class BrokenTranslator:
+    def __init__(self, *args, **kwargs) -> None:
+        raise RuntimeError("no translator today")
+
+
+async def test_a_swap_that_cannot_build_the_new_engine_keeps_the_old_one(
+    tmp_path: Path, db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("glosa.room.Translator", BrokenTranslator)  # the glossary engine's lane needs one
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [_error(0.5, 1008, False)]), TR_ES)
+    worker = RoomWorker(_room(), _settings(), bus, db, clock, factory, ingest_factory=IngestFactory(), realtime=False)
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))  # one target: no lane yet
+    old_relay = worker._run.relay
+    await run_for(clock, 2.0)
+
+    assert [c.kind for c in factory.configs] == ["fast"]
+    assert worker._run.relay is old_relay and worker._run.engine == "fast" and worker._run.lane is None
+    assert worker.talk.engine == "fast" and (await db.get_talk("f1")).engine == "fast"
+    failed = [e for e in await _events(db) if e[1] == "fallback_failed"]
+    assert len(failed) == 1 and failed[0][0] == "error" and "no translator today" in failed[0][2]
+    assert not worker._run.ticker.done()  # the room keeps ticking (red: halted)
+    assert worker.status().state == "red"
+    await worker.stop()
+    assert not _live_tasks()
 
 
 async def test_a_rejected_api_key_halts_without_a_fallback(tmp_path: Path, db) -> None:

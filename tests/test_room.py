@@ -2268,7 +2268,8 @@ async def test_a_quiet_station_marks_the_room_red_and_resumes_without_restarting
         ingest_factory=emitter_factory, station_hub=hub, realtime=False,
     )
 
-    await worker.start(None)
+    # an agenda talk: a free session with no station is only 'waiting', not red
+    await worker.start(_talk("t1", language="en", targets=("es",), engine="fast"))
     await run_for(clock, 0.5)  # the ticker's first pass: no station audio yet
     status = worker.status()
     assert status.state == "red"
@@ -2285,8 +2286,8 @@ async def test_a_quiet_station_marks_the_room_red_and_resumes_without_restarting
 
     await run_for(clock, 8.0)  # let the fixture's deltas play out and segments idle-close
 
-    en = _history(bus, "r1", "en")
-    es = _history(bus, "r1", "es")
+    en = list(bus.history("r1", "en", "t1"))
+    es = list(bus.history("r1", "es", "t1"))
     for msgs in (en, es):
         kinds = {m.type for m in msgs}
         assert {"append", "close"} <= kinds, [m.type for m in msgs]
@@ -2296,7 +2297,7 @@ async def test_a_quiet_station_marks_the_room_red_and_resumes_without_restarting
     status = worker.status()
     assert status.state == "red"
     assert "station disconnected" in status.detail
-    assert worker.talk is not None and worker.talk.id == FREE_R1  # same talk throughout
+    assert worker.talk is not None and worker.talk.id == "t1"  # same talk throughout
 
     await worker.stop()
     assert not _live_tasks()

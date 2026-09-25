@@ -15,7 +15,8 @@
    Management by exception (docs/design/NOTES.md): a healthy room shows its
    name, light, time and captions; a problem adds one footer line with the
    suggested action; everything else lives in the side drawer (click a
-   monitor or press 1–9; Esc closes). No native dialogs.
+   monitor or press 1–9; Esc closes), which also edits the agenda (click a
+   talk) and imports it. No native dialogs: confirmations are inline.
 
    Elements are found by data-* hooks; the visual classes are glosa.css's.
    The login page (admin_login.html) uses only the login part and the clock.
@@ -850,6 +851,192 @@
     $("[data-d-log-empty]", drawerEl).hidden = events.length > 0;
   }
 
+  // ---- the drawer: a talk of the agenda ------------------------------------------------------
+
+  const LIVE_FIELDS = new Set(["title", "targets", "glossary"]);
+  const splitList = (text) => text.split(",").map((part) => part.trim()).filter(Boolean);
+
+  function parseGlossary(text) {
+    return text.split("\n").map((line) => line.trim()).filter(Boolean).map((line) => {
+      const at = line.indexOf("=");
+      if (at < 0) return { term: line, keep_in_english: true };
+      return { term: line.slice(0, at).trim(), keep_in_english: false, translation: line.slice(at + 1).trim() };
+    }).filter((term) => term.term);
+  }
+
+  async function openTalk(id, opener) {
+    let talk;
+    try {
+      talk = await api("GET", `/talks/${encodeURIComponent(id)}`);
+    } catch (error) {
+      if (error.status !== 401) toast(error.message);
+      return;
+    }
+    const current = { talk };
+    openDrawer("talk", id, opener, () => {
+      fillTalk(current.talk);
+      bindTalk(current);
+    });
+  }
+
+  function fillTalk(talk) {
+    const d = drawerEl;
+    const form = $("[data-talk-form]", d);
+    const field = (name) => form.elements.namedItem(name);
+    const room = rooms.get(talk.room_id);
+    drawerEl.setAttribute("aria-label", T.edit_talk);
+    $("[data-t-where]", d).textContent =
+      `${room ? room.name : talk.room_id}, ${isoHm(talk.start)}–${isoHm(talk.end)}. ${T[`status_${talk.status}`] || talk.status}.`;
+    $("[data-t-led]", d).className = `led led--${talk.status === "live" ? room?.state || "live" : "idle"}`;
+    field("title").value = talk.title;
+    field("speakers").value = talk.speakers.join(", ");
+    field("language").value = talk.language;
+    for (const box of form.querySelectorAll('input[name="targets"]')) box.checked = talk.targets.includes(box.value);
+    field("engine").value = talk.engine;
+    field("start").value = talk.start.slice(0, 16);
+    field("end").value = talk.end.slice(0, 16);
+    field("abstract").value = talk.abstract;
+    field("tags").value = talk.tags.join(", ");
+    field("glossary").value = talk.glossary.map((g) => (g.translation ? `${g.term}=${g.translation}` : g.term)).join("\n");
+    const live = talk.status === "live";
+    for (const control of form.querySelectorAll("input, select, textarea")) {
+      control.disabled = live && !LIVE_FIELDS.has(control.name);
+    }
+    const note = $("[data-t-note]", d);
+    note.hidden = talk.status === "scheduled";
+    note.textContent = live ? T.live_locked : T.done_note;
+    $("[data-t-delete-sec]", d).hidden = talk.status !== "scheduled";
+    $("[data-t-confirm]", d).hidden = true;
+    $("[data-t-delete]", d).hidden = false;
+  }
+
+  function bindTalk(current) {
+    const d = drawerEl;
+    const form = $("[data-talk-form]", d);
+    const field = (name) => form.elements.namedItem(name);
+    const error = $("[data-t-error]", d);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      error.hidden = true;
+      const talk = current.talk;
+      const title = field("title").value.trim();
+      if (!title) {
+        showNotice(error, say("error_prefix", { detail: T.talk_title }));
+        field("title").focus();
+        return;
+      }
+      const body = {
+        title,
+        targets: Array.from(form.querySelectorAll('input[name="targets"]:checked'), (box) => box.value),
+        glossary: parseGlossary(field("glossary").value),
+      };
+      if (talk.status !== "live") {
+        Object.assign(body, {
+          speakers: splitList(field("speakers").value),
+          language: field("language").value,
+          engine: field("engine").value,
+          start: field("start").value,
+          end: field("end").value,
+          abstract: field("abstract").value,
+          tags: splitList(field("tags").value),
+        });
+      }
+      const save = $("[data-t-save]", d);
+      busy(save, true, T.working);
+      try {
+        current.talk = await api("PUT", `/talks/${encodeURIComponent(talk.id)}`, body);
+        fillTalk(current.talk);
+        toast(T.saved);
+        reloadAgenda();
+      } catch (err) {
+        if (err.status !== 401) showNotice(error, err.message);
+      } finally {
+        busy(save, false);
+      }
+    });
+    const confirm = $("[data-t-confirm]", d);
+    $("[data-t-delete]", d).addEventListener("click", (event) => {
+      event.currentTarget.hidden = true;
+      $("[data-t-confirm-text]", d).textContent = say("delete_confirm", { title: current.talk.title });
+      confirm.hidden = false;
+      $("[data-t-delete-no]", d).focus();
+    });
+    $("[data-t-delete-no]", d).addEventListener("click", () => {
+      confirm.hidden = true;
+      $("[data-t-delete]", d).hidden = false;
+      $("[data-t-delete]", d).focus();
+    });
+    $("[data-t-delete-yes]", d).addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      busy(button, true, T.working);
+      try {
+        await api("DELETE", `/talks/${encodeURIComponent(current.talk.id)}`);
+        closeDrawer();
+        toast(T.deleted);
+        reloadAgenda();
+      } catch (err) {
+        busy(button, false);
+        if (err.status !== 401) showNotice(error, err.message);
+      }
+    });
+  }
+
+  // ---- the drawer: importing the agenda --------------------------------------------------------
+
+  function openImport(opener) {
+    openDrawer("import", null, opener, () => {
+      drawerEl.setAttribute("aria-label", T.import_agenda);
+      const form = $("[data-import-form]", drawerEl);
+      const field = (name) => form.elements.namedItem(name);
+      const error = $("[data-i-error]", drawerEl);
+      $("[data-use-nerdearla]", drawerEl).addEventListener("click", () => {
+        field("url").value = cfg.nerdearlaUrl;
+        field("format").value = "nerdearla";
+        field("url").focus();
+      });
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        error.hidden = true;
+        const file = field("file").files[0];
+        const url = field("url").value.trim();
+        if (Boolean(file) === Boolean(url)) {
+          showNotice(error, T.import_pick_one);
+          return;
+        }
+        const data = new FormData();
+        if (file) data.append("file", file);
+        else data.append("url", url);
+        if (field("format").value) data.append("format", field("format").value);
+        const go = $("[data-i-go]", drawerEl);
+        busy(go, true, T.working);
+        try {
+          showImport(await api("POST", "/agenda/import", data));
+          reloadAgenda();
+        } catch (err) {
+          if (err.status !== 401) showNotice(error, err.message);
+        } finally {
+          busy(go, false);
+        }
+      });
+    });
+  }
+
+  function showImport(result) {
+    const d = drawerEl;
+    $("[data-i-result]", d).hidden = false;
+    $("[data-i-imported]", d).textContent = plural("imported_n", result.imported);
+    const lists = [
+      ["skipped", result.skipped, (s) => [s.title || s.source_id || "?", " ", el("span", { text: s.reason })]],
+      ["removed", result.removed, (r) => [r.title]],
+    ];
+    for (const [name, items, render] of lists) {
+      const box = $(`[data-i-${name}-box]`, d);
+      box.hidden = items.length === 0;
+      $(`[data-i-${name}-sum]`, d).textContent = plural(`${name}_n`, items.length);
+      $(`[data-i-${name}]`, d).replaceChildren(...items.map((item) => el("li", {}, ...render(item))));
+    }
+  }
+
   // ---- input ---------------------------------------------------------------------------------
 
   document.addEventListener("click", (event) => {
@@ -863,6 +1050,9 @@
     }
     if (target.closest("[data-close]") && drawerEl.contains(target)) return closeDrawer();
     if (target.closest("[data-scrim]")) return closeDrawer();
+    const talk = target.closest("[data-talk-id]");
+    if (talk) return openTalk(talk.dataset.talkId, talk);
+    if (target.closest("[data-open-import]")) return openImport(target.closest("[data-open-import]"));
     const filter = target.closest("[data-log-filter]");
     if (filter) {
       logFilter = filter.dataset.logFilter;

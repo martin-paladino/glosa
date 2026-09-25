@@ -235,6 +235,21 @@ def test_admin_page_has_the_hooks_admin_js_needs() -> None:
     assert config["limits"] == {"latency": 5.0, "quality": 0.5, "level": -50.0}
 
 
+def test_admin_page_has_the_agenda_editing_hooks() -> None:
+    # Import and talk editing live in the same drawer, without native dialogs.
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    html = client.get("/admin", headers={"Accept-Language": "es"}).text
+
+    for hook in ("data-open-import", 'data-tpl="talk"', 'data-tpl="import"', "data-talk-form", 'name="glossary"',
+                 'type="datetime-local" name="start"', "data-t-delete", "data-t-confirm", "data-import-form",
+                 'type="file" name="file"', 'type="url" name="url"', "data-use-nerdearla", "data-i-result"):
+        assert hook in html, hook
+    assert "confirm(" not in html and "prompt(" not in html
+    assert "nerdearla.com" in _config(html)["nerdearlaUrl"]
+    assert client.get("/static/js/admin.js").text.count("window.confirm") == 0
+
+
 def test_admin_page_speaks_the_browser_language_or_the_chosen_one() -> None:
     client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
 

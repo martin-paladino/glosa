@@ -152,6 +152,9 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 # A cheap brute-force brake: a wrong password always takes at least this long.
 _FAILED_LOGIN_DELAY_S = 1.0
 
+# Nerdearla 2026's public agenda (glosa/agenda/nerdearla_import.py): one click
+# in the panel's import form fills it in.
+NERDEARLA_AGENDA_URL = "https://backstage.nerdearla.com/api/sessions/?event_id=148d7ff3-134c-48b5-8bc2-52bf025d2ac4"
 _VARY = {"Vary": "Accept-Language"}
 
 
@@ -175,6 +178,7 @@ async def admin_page(request: Request):
             "quality": admin_stream.QUALITY_MIN,
             "level": admin_stream.LEVEL_MIN_DB,
         },
+        "nerdearlaUrl": NERDEARLA_AGENDA_URL,
         "state": view,
     }
     context = _page_context(request, ui) | {"view": view, "config": config}

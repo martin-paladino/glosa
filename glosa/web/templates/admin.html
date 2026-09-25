@@ -123,6 +123,7 @@
         {%- else %}{{ view.next_change_text }}{% endif -%}
       </p>
       <div class="legend"><span><i class="swatch swatch--manual"></i>{{ at("legend_manual") }}</span><span><i class="swatch swatch--now"></i>{{ at("legend_now") }}</span></div>
+      <button class="btn btn--compact" type="button" data-open-import>{{ at("import_agenda") }}</button>
     </header>
     <div class="timeline" data-timeline style="--span: 270; --t: 0">
       <div class="timeline__axis tc" data-axis aria-hidden="true"></div>
@@ -146,7 +147,7 @@
   </div>
 </div>
 
-{#- The drawer's content: a room. -#}
+{#- The drawer's three contents: a room, a talk of the agenda, the import. -#}
 <template data-tpl="room">
   <section class="drawer__sec">
     <div class="drawer__head"><kbd data-d-key></kbd><h2 class="drawer__title" data-d-name></h2>
@@ -199,7 +200,74 @@
   </section>
 </template>
 
+<template data-tpl="talk">
+  <section class="drawer__sec">
+    <div class="drawer__head"><h2 class="drawer__title">{{ at("edit_talk") }}</h2>
+      <button class="drawer__close" type="button" data-close>{{ at("close") }} <kbd>Esc</kbd></button></div>
+    <p class="drawer__state"><i class="led led--idle" data-t-led></i><span data-t-where></span></p>
+  </section>
+  <form class="drawer__sec form" data-talk-form novalidate>
+    <p class="notice" data-t-note hidden></p>
+    <label class="field"><span class="field__label">{{ at("talk_title") }}</span><input name="title" required autocomplete="off"></label>
+    <label class="field"><span class="field__label">{{ at("speakers") }}</span><input name="speakers" autocomplete="off" aria-describedby="t-speakers-hint"><span class="field__hint" id="t-speakers-hint">{{ at("speakers_hint") }}</span></label>
+    <div class="field-row">
+      <label class="field"><span class="field__label">{{ at("talk_language") }}</span>
+        <select name="language"><option value="es">{{ at("lang_es") }}</option><option value="en">{{ at("lang_en") }}</option></select></label>
+      <fieldset class="field"><legend class="field__label">{{ at("targets") }}</legend>
+        <span class="checks"><label class="check"><input type="checkbox" name="targets" value="es"><abbr title="{{ at('lang_es') }}">ES</abbr></label><label class="check"><input type="checkbox" name="targets" value="en"><abbr title="{{ at('lang_en') }}">EN</abbr></label></span></fieldset>
+      <label class="field"><span class="field__label">{{ at("engine") }}</span>
+        <select name="engine"><option value="fast">{{ at("engine_fast") }}</option><option value="glossary">{{ at("engine_glossary") }}</option></select></label>
+    </div>
+    <div class="field-row field-row--2">
+      <label class="field"><span class="field__label">{{ at("starts") }}</span><input type="datetime-local" name="start" step="60" class="tc"></label>
+      <label class="field"><span class="field__label">{{ at("ends") }}</span><input type="datetime-local" name="end" step="60" class="tc"></label>
+    </div>
+    <label class="field"><span class="field__label">{{ at("abstract") }}</span><textarea name="abstract" rows="4"></textarea></label>
+    <label class="field"><span class="field__label">{{ at("tags") }}</span><input name="tags" autocomplete="off" aria-describedby="t-tags-hint"><span class="field__hint" id="t-tags-hint">{{ at("tags_hint") }}</span></label>
+    <label class="field"><span class="field__label">{{ at("glossary") }}</span><textarea name="glossary" rows="5" spellcheck="false" aria-describedby="t-glossary-hint"></textarea><span class="field__hint" id="t-glossary-hint">{{ at("glossary_hint") }}</span></label>
+    <p class="notice" data-t-error role="alert" hidden></p>
+    <div class="form__actions">
+      <button class="btn btn--primary" type="submit" data-t-save>{{ at("save_talk") }}</button>
+      <button class="btn btn--link" type="button" data-close>{{ at("cancel") }}</button>
+    </div>
+  </form>
+  <section class="drawer__sec" data-t-delete-sec hidden>
+    <button class="btn" type="button" data-t-delete>{{ at("delete_talk") }}</button>
+    <div class="confirm" data-t-confirm hidden>
+      <p class="confirm__text" data-t-confirm-text></p>
+      <div class="form__actions">
+        <button class="btn btn--primary" type="button" data-t-delete-yes>{{ at("delete_yes") }}</button>
+        <button class="btn btn--link" type="button" data-t-delete-no>{{ at("cancel") }}</button>
+      </div>
+    </div>
+  </section>
+</template>
 
+<template data-tpl="import">
+  <section class="drawer__sec">
+    <div class="drawer__head"><h2 class="drawer__title">{{ at("import_agenda") }}</h2>
+      <button class="drawer__close" type="button" data-close>{{ at("close") }} <kbd>Esc</kbd></button></div>
+    <p class="drawer__hint">{{ at("import_lede") }}</p>
+  </section>
+  <form class="drawer__sec form" data-import-form novalidate>
+    <label class="field"><span class="field__label">{{ at("import_file") }}</span><input type="file" name="file" accept=".csv,.json,text/csv,application/json"></label>
+    <p class="form__or">{{ at("import_or") }}</p>
+    <div class="field">
+      <label class="field__label" for="import-url">{{ at("import_url") }}</label>
+      <input id="import-url" type="url" name="url" placeholder="https://" autocomplete="off">
+      <button class="btn btn--link field__aside" type="button" data-use-nerdearla>{{ at("use_nerdearla") }}</button>
+    </div>
+    <label class="field field--narrow"><span class="field__label">{{ at("import_format") }}</span>
+      <select name="format"><option value="">{{ at("format_auto") }}</option><option value="csv">CSV</option><option value="nerdearla">Nerdearla (JSON)</option></select></label>
+    <p class="notice" data-i-error role="alert" hidden></p>
+    <div class="form__actions"><button class="btn btn--primary" type="submit" data-i-go>{{ at("import_go") }}</button></div>
+  </form>
+  <section class="drawer__sec" data-i-result role="status" hidden>
+    <p class="import__total" data-i-imported></p>
+    <details class="import__list" data-i-skipped-box><summary data-i-skipped-sum></summary><ul data-i-skipped></ul></details>
+    <details class="import__list" data-i-removed-box><summary data-i-removed-sum></summary><ul data-i-removed></ul></details>
+  </section>
+</template>
 
 <script type="application/json" id="glosa-admin">{{ config | tojson }}</script>
 {% endblock %}

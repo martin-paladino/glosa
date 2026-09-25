@@ -715,6 +715,24 @@ async def test_status_cost_and_events_while_running(db) -> None:
     assert "talk_start" in types and "talk_end" in types
 
 
+async def test_add_external_cost_joins_the_running_run_and_is_a_noop_when_idle(db) -> None:
+    """Task 17: glosa/summary.py's SummaryScheduler calls this to join the
+    room's own cost accounting (component "summary")."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory())
+
+    worker.add_external_cost("summary", 0.01, 1.0)  # idle: no run yet, silently dropped
+    assert worker.status().cost_usd == 0.0
+
+    await worker.start(None)
+    worker.add_external_cost("summary", 0.02, 1.0)
+    assert worker.status().cost_usd == pytest.approx(0.02)
+
+    await worker.stop()
+    assert await db.total_cost() == pytest.approx(0.02)  # flushed at teardown
+
+
 async def test_engine_that_cannot_be_built_turns_the_room_red(db) -> None:
     clock = DrivenClock()
     bus = CaptionBus(clock=clock)

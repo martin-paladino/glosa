@@ -555,6 +555,15 @@ class RoomWorker:
             return None
         return run.latency.p50()
 
+    def add_external_cost(self, component: str, usd: float, units: float) -> None:
+        """Task 17: lets a cost incurred outside the pipeline (the summary
+        poller, glosa/summary.py SummaryScheduler, which runs on its own
+        schedule) join this room's existing cost accounting -- the same
+        _add_cost/COST_FLUSH_S machinery the engine and the translation lane
+        use. A no-op with no talk running."""
+        if self._run is not None:
+            self._add_cost(self._run, component, usd, units)
+
     def _station_summary(self) -> str:
         """The connected station's info (Task 14a), for status()'s raw
         `detail` (admin-only, Ruling 29): connected or not, device, last

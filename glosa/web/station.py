@@ -65,7 +65,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from glosa.audio.ingest import CHUNK_BYTES, EmitterIngest, StationHub
-from glosa.i18n import STRINGS, Lang, detect_lang, endonym, join_names, lang_name, t
+from glosa.i18n import LANG_COOKIE, STRINGS, Lang, endonym, join_names, lang_name, resolve_ui_lang, t
 from glosa.room import IngestFactory, RoomWorker
 from glosa.web.auth import is_authenticated, require_admin, require_csrf_header
 
@@ -147,7 +147,12 @@ def station_page(room_id: str, request: Request, key: str = ""):
     settings = request.app.state.settings
     if not valid_station_key(settings.admin_password, room_id, key):
         raise HTTPException(status_code=403, detail="missing or invalid station key")
-    ui = detect_lang(request.headers.get("accept-language"))
+    ui = resolve_ui_lang(
+        query_lang=request.query_params.get("lang"),
+        cookie_lang=request.cookies.get(LANG_COOKIE),
+        configured=getattr(settings, "ui_language", "auto"),
+        accept_language=request.headers.get("accept-language"),
+    )[0]
     branding = getattr(request.app.state, "branding", None) or {}
     now = (worker.view() or {}).get("now")
     context = {

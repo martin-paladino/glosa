@@ -459,7 +459,8 @@ class RoomWorker:
 
     @property
     def has_source(self) -> bool:
-        return bool(self.room.source_url)
+        # an emitter room's audio comes from its station, not from source_url
+        return self.room.source_type == "emitter" or bool(self.room.source_url)
 
     async def start(self, talk: Talk | None = None) -> None:
         """Caption ``talk`` (the free session if None) from the room's

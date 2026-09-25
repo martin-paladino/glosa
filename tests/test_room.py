@@ -2793,7 +2793,7 @@ async def test_preroll_survives_a_slow_reconnect_after_the_gate_opens(tmp_path: 
     await worker.stop()
 
 
-def test_an_emitter_room_has_a_source_without_a_source_url(db) -> None:
+async def test_an_emitter_room_has_a_source_without_a_source_url(db) -> None:
     from dataclasses import replace
 
     clock = DrivenClock()
@@ -2801,3 +2801,6 @@ def test_an_emitter_room_has_a_source_without_a_source_url(db) -> None:
     worker = _worker(room, _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), IngestFactory())
 
     assert worker.has_source  # the station brings the audio: it still starts a free session at boot
+    await worker.start(None)  # no "has no audio source" error
+    assert worker.talk is not None
+    await worker.stop()

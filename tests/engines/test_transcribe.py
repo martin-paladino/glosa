@@ -110,17 +110,13 @@ def test_map_message_accepts_sdk_message_objects() -> None:
 def test_a_repeated_interim_is_not_emitted_again() -> None:
     # The server re-sends an unchanged interim (e.g. "Por cierto," twice, 0.5 s
     # apart). It is no progress: it must not look like output to the stall watchdog.
-    clock = FakeClock()
-    engine = _engine(clock)
+    engine = _engine()
     events = _map_all(engine, [INTERIM_1, INTERIM_1, INTERIM_2, FINAL_1])
-    clock.advance(2.0)  # past the stale window (see the next test)
-    events += engine._map_message(INTERIM_1)
 
     assert [(ev.kind, ev.text) for ev in events] == [
         ("source_delta", "Por cierto,"),
         ("source_delta", "Por cierto, cuando ustedes"),
         ("source_final", "Por cierto, cuando ustedes reciben la factura."),
-        ("source_delta", "Por cierto,"),  # a new segment that happens to start the same way
     ]
 
 
@@ -170,6 +166,75 @@ def test_the_closed_segments_text_at_the_start_of_the_next_interims_is_cut_off()
         ("source_delta", "En nodos tenés tantos"),
         ("source_final", "En nodos tenés tantos miles de dólares gastados."),
     ]
+
+
+def test_the_stale_text_is_cut_however_late_it_comes(caplog: pytest.LogCaptureFixture) -> None:
+    """No timer: the closed segment's text is stale until a clean interim
+    or the next final, 2 s or 3 s after the final alike."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    with caplog.at_level(logging.INFO, logger="glosa.engines.transcribe"):
+        clock.advance(2.0)
+        events = engine._map_message(INTERIM_3)  # the last interim again
+        clock.advance(1.0)
+        events += engine._map_message(_interim("Por cierto, cuando ustedes reciben la En nodos"))
+
+    assert [(ev.kind, ev.text) for ev in events] == [("source_delta", "En nodos")]
+    assert "dropped a stale interim" in caplog.text and "cut 6 stale words" in caplog.text
+
+
+def test_the_final_of_a_segment_whose_interims_were_cut_is_cut_too(caplog: pytest.LogCaptureFixture) -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    with caplog.at_level(logging.INFO, logger="glosa.engines.transcribe"):
+        events = _map_all(engine, [
+            _interim("Por cierto, cuando ustedes reciben la En nodos"),
+            {"serverContent": {"inputTranscription": {
+                "text": "Por cierto, cuando ustedes reciben la factura. En nodos tenés tantos miles de dólares gastados."
+            }}},
+        ])
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "En nodos"),
+        ("source_final", "En nodos tenés tantos miles de dólares gastados."),
+    ]
+    assert "off a final" in caplog.text
+
+
+def test_a_final_that_only_repeats_the_closed_segment_is_dropped() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    assert engine._map_message(FINAL_1) == []  # nothing of a new segment was shown: a stale repeat
+    [ev] = _map_all(engine, [INTERIM_NEXT])
+    assert (ev.kind, ev.text) == ("source_delta", "En nodos")
+
+
+def test_standalone_punctuation_does_not_hide_the_stale_text() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    events = _map_all(engine, [
+        _interim("Por cierto — cuando ustedes reciben la , En nodos"),
+        _interim("¿ Por cierto, cuando ustedes reciben la En nodos tenés"),
+    ])
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "En nodos"),
+        ("source_delta", "En nodos tenés"),
+    ]
+
+
+def test_after_a_clean_interim_nothing_is_cut_any_more() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    events = _map_all(engine, [INTERIM_NEXT, _interim("Por cierto, cuando ustedes reciben la otra")])
+
+    assert [ev.text for ev in events] == ["En nodos", "Por cierto, cuando ustedes reciben la otra"]
 
 
 def test_a_short_closed_segment_is_not_cut_off_the_next_one() -> None:

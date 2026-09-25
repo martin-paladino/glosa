@@ -34,21 +34,29 @@ Events:
 - a final -> ``source_final``: the segment's final text; it closes the open
   segment. An empty final closes an open segment with ``""`` (the interim
   was not speech after all); with nothing open it is dropped.
-- the closed segment's text is cut off the next interims. In the live runs
+- the closed segment's text is cut off the next segment. In the live runs
   of 2026-09-24 (T10-wiring, 60 s of es_clip.opus through a RoomWorker,
   twice), 0.3-0.5 s after 3 of the 8 finals the next segment's first
   interim was the closed segment's last interim again, alone or with the
   new words after it. Taken as is, it flashed the old text on screen, got
   the whole utterance translated twice, and pushed the translation lane's
   committed prefix (counted in words) past the new segment's own words, so
-  its end went untranslated ("y en Azure."). So within
-  ``STALE_INTERIM_S`` of a final, until an interim comes that does not
-  start with it: an interim that is only (a start of) the closed
-  segment's last interim or final is dropped, and one that starts with all
-  of it (``STALE_MIN_WORDS`` or more words; compared word by word,
-  ignoring case and punctuation) loses that start. A new segment that
-  really starts with the words of the one before shows up with its next
-  interim (~0.5 s) or after the window.
+  its end went untranslated ("y en Azure."). So after a final, until the
+  first clean interim (one that does not start with it) or the next final
+  (no timer: a stale repeat can come late):
+
+  - an interim that is only (a start of) the closed segment's last
+    interim or final is dropped;
+  - one that starts with all of either (``STALE_MIN_WORDS`` or more words)
+    loses that start, and so does the final of that segment if it starts
+    the same way;
+  - a final that only repeats the closed segment (``STALE_MIN_WORDS`` or
+    more words), with nothing of a new segment shown, is dropped.
+
+  Words are compared ignoring case and punctuation; a token that is only
+  punctuation ("—", "¿") is skipped on both sides. Every drop or cut is
+  logged at INFO. A new segment that really starts with the words of the
+  one before shows up with its next interim (~0.5 s).
 - ``go_away`` with ``meta["time_left_s"]``, like LiveTranslateEngine.
 
 Same contract as LiveTranslateEngine for the relay: ``connect()`` never
@@ -84,7 +92,6 @@ log = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-transcribe-live"
 MAX_VOCABULARY = 100  # spec: customVocabulary gets at most 100 terms
-STALE_INTERIM_S = 1.5  # after a final, the closed segment's text in an interim is stale (see above)
 STALE_MIN_WORDS = 3  # shorter closed segments are never cut off an interim: "Sí." then "Sí, claro"
 _BYTES_PER_S = 16000 * 2  # PCM16 mono @ 16 kHz
 
@@ -109,7 +116,9 @@ class TranscribeLiveEngine:
         self._ended = False  # events() is over: the session takes no more audio
         self._audio_since_end = False  # audio sent since the last audio_stream_end
         self._open_text: str | None = None  # last interim of the open segment
-        self._just_closed: tuple[str, str, float] | None = None  # (last interim, final, t) of the closed one
+        # (last interim, final) of the segment just closed, while its text may come back (see above)
+        self._just_closed: tuple[str, str] | None = None
+        self._cut_open = False  # stale words were cut off the open segment's interims
         self.usd_total = 0.0
         self._usd_unreported = 0.0
 
@@ -212,17 +221,19 @@ class TranscribeLiveEngine:
             # interim costs nothing (the next one repeats the whole segment),
             # but a segment left open after its final would linger.
             interim = sc.interim_input_transcription
-            text = self._unstale(interim.text, now) if interim is not None and interim.text else ""
+            text = self._unstale(interim.text) if interim is not None and interim.text else ""
             if text and text != self._open_text:
                 self._open_text = text
                 lang = interim.language_code or self.cfg.source_lang
                 events.append(EngineEvent(kind="source_delta", text=text, lang=lang, t_recv=now, meta={"interim": True}))
             final = sc.input_transcription
-            if final is not None and (final.text or self._open_text is not None):
-                self._just_closed = (self._open_text or "", final.text or "", now)
+            text = self._unstale_final(final.text or "") if final is not None else None
+            if text is not None and (text or self._open_text is not None):
+                self._just_closed = (self._open_text or "", text)
                 self._open_text = None
+                self._cut_open = False
                 lang = final.language_code or self.cfg.source_lang
-                events.append(EngineEvent(kind="source_final", text=final.text or "", lang=lang, t_recv=now))
+                events.append(EngineEvent(kind="source_final", text=text, lang=lang, t_recv=now))
         if msg.go_away is not None:
             time_left_s = duration_s(msg.go_away.time_left)
             events.append(EngineEvent(kind="go_away", t_recv=now, meta={"time_left_s": time_left_s}))
@@ -230,29 +241,41 @@ class TranscribeLiveEngine:
             self._with_usage(events[0])
         return events
 
-    def _unstale(self, text: str, now: float) -> str:
-        """``text`` without the closed segment's text at its start, or ""
+    def _unstale(self, text: str) -> str:
+        """An interim without the closed segment's text at its start, or ""
         if that is all it is (see the module docstring)."""
-        closed = self._just_closed
-        if closed is None:
-            return text
-        if now - closed[2] > STALE_INTERIM_S:
-            self._just_closed = None
+        if self._just_closed is None:
             return text
         words = text.split()
-        key = [_norm(word) for word in words]
-        cut = 0
-        for prev in closed[:2]:
-            old = [_norm(word) for word in prev.split()]
-            if not old:
-                continue
-            if len(key) <= len(old) and key == old[: len(key)]:
-                return ""
-            if len(old) >= STALE_MIN_WORDS and key[: len(old)] == old:
-                cut = max(cut, len(old))
-        if not cut:
+        cut = _stale_cut(words, self._just_closed)
+        if cut is None:
             self._just_closed = None  # a clean interim: the server moved on
             return text
+        if cut >= len(words):
+            log.info("transcribe: dropped a stale interim (the closed segment's text): %r", text)
+            return ""
+        log.info("transcribe: cut %d stale words off an interim: %r", cut, text)
+        self._cut_open = True
+        return " ".join(words[cut:])
+
+    def _unstale_final(self, text: str) -> str | None:
+        """A final without the closed segment's text at its start, if the
+        interims of its segment lost it too; None for a final that only
+        repeats the closed segment."""
+        if self._just_closed is None or not text:
+            return text
+        words = text.split()
+        cut = _stale_cut(words, self._just_closed)
+        if cut is None:
+            return text
+        if cut >= len(words):
+            if self._open_text is None and len([w for w in words if _norm(w)]) >= STALE_MIN_WORDS:
+                log.info("transcribe: dropped a final that repeats the closed segment: %r", text)
+                return None
+            return text
+        if not self._cut_open:
+            return text
+        log.info("transcribe: cut %d stale words off a final: %r", cut, text)
         return " ".join(words[cut:])
 
     def _classify_error(self, exc: BaseException) -> EngineEvent:
@@ -267,5 +290,30 @@ class TranscribeLiveEngine:
 
 
 def _norm(word: str) -> str:
-    """A word for comparing interims: lower case, no punctuation."""
+    """A word for comparing interims: lower case, no punctuation ("" for a
+    token that is only punctuation)."""
     return "".join(ch for ch in word.casefold() if ch.isalnum())
+
+
+def _stale_cut(words: list[str], closed: tuple[str, str]) -> int | None:
+    """How many of ``words`` are the closed segment's text: None if they do
+    not start with it; ``len(words)`` if they are only (a start of) its last
+    interim or final; else the index of the first word after the longest of
+    the two that they start with in full (``STALE_MIN_WORDS`` or more words),
+    past any punctuation-only token."""
+    key = [(i, n) for i, n in ((i, _norm(w)) for i, w in enumerate(words)) if n]
+    norms = [n for _, n in key]
+    best: int | None = None
+    for prev in closed:
+        old = [n for n in map(_norm, prev.split()) if n]
+        if not old:
+            continue
+        if len(norms) <= len(old) and norms == old[: len(norms)]:
+            return len(words)
+        if len(old) >= STALE_MIN_WORDS and norms[: len(old)] == old:
+            best = max(best or 0, key[len(old) - 1][0] + 1)
+    if best is None:
+        return None
+    while best < len(words) and not _norm(words[best]):
+        best += 1
+    return best

@@ -1,20 +1,47 @@
 # Glosa
 
-Live captions and translation for conference talks, room by room, straight from an audio source into your phone.
+*[Leer en español](README.es.md)*
 
-## Prerequisites
+Open-source, event-centric live captioning and translation for conference
+talks. Point Glosa at an audio source — a stream URL, a YouTube link, or a
+mini PC capturing a stage's audio desk — and it captions and translates the
+talk in real time to a phone, a stage screen or an OBS/vMix overlay. Load
+the event's agenda once and an autopilot opens and closes each room's talks
+on schedule, switching language, engine and glossary with it, so nobody has
+to press start/stop per talk. It runs on two interchangeable Gemini engines
+— a fast, fluent one and a glossary-accurate one for technical talks — at
+up to **~30× less than the public list price** of the commercial SaaS
+Nerdearla currently uses for this (see [Costs](#costs) and
+[`docs/costs.md`](docs/costs.md)).
 
-Either **Docker** (with Compose), or, to run it directly: **uv**, **ffmpeg** and **make**.
+## Screenshots
 
-## Quickstart
+| | |
+|---|---|
+| ![Room list](docs/screenshots/index-desktop.png) Room list (`/`) | ![Live captions, desktop](docs/screenshots/room-desktop.png) Live captions (`/s/{room}`), desktop |
+| ![Live captions, mobile](docs/screenshots/room-mobile-live.png) Live captions, mobile | ![Admin, all clear](docs/screenshots/admin-calm.png) Admin ("Sala de control"), all clear |
+| ![Admin, Atención bar](docs/screenshots/admin-attention.png) Admin, Atención bar with an issue | ![Room drawer](docs/screenshots/admin-drawer.png) A room's drawer (mode, reconnect, station, exports) |
+| ![Room station setup](docs/screenshots/station-setup.png) Room station (`/station/{room}`) | ![OBS/vMix overlay](docs/screenshots/overlay-obs.png) OBS/vMix overlay (`/overlay/{room}`) |
+| ![Printable QR page](docs/screenshots/qr-page.png) Printable QR page (`/qr/{room}`) | |
+
+More screenshots (light/dark/high-contrast themes, bilingual view, the
+agenda editor, login): `docs/screenshots/*.png`.
+
+## Quick start
 
 ```bash
 git clone https://github.com/martin-paladino/glosa.git && cd glosa
-cp .env.example .env   # fill in GEMINI_API_KEY and ADMIN_PASSWORD, see Credentials below
+cp .env.example .env   # fill in GEMINI_API_KEY and ADMIN_PASSWORD, see Configuration below
 make demo               # or: docker compose up
 ```
 
-Open **http://localhost:8000**. Two rooms come up captioning the bundled sample clips (`samples/en_clip.opus`, `samples/es_clip.opus`) at real speed, in English and Spanish, each with a live translation into the other language. `make demo` / plain `docker compose up` run Gemini for real (costs about $0.10 for the two ~90s clips); `make demo-fake` / `GLOSA_CONFIG=config.demo-fake.yaml docker compose up` do the same with no API key and no cost, replaying a recorded session instead.
+Open **http://localhost:8000**. Two rooms come up captioning the bundled
+sample clips (`samples/en_clip.opus`, `samples/es_clip.opus`) at real speed,
+in English and Spanish, each with a live translation into the other
+language. `make demo` / plain `docker compose up` run Gemini for real
+(costs about $0.10 for the two ~90s clips); `make demo-fake` /
+`GLOSA_CONFIG=config.demo-fake.yaml docker compose up` do the same with no
+API key and no cost, replaying a recorded session instead.
 
 To run your own event instead of the demo:
 
@@ -23,74 +50,191 @@ cp config.example.yaml config.yaml   # describe your rooms, agenda, branding
 make run                              # or, with Docker: see below
 ```
 
-`config.yaml` is never touched by `make demo`/`make demo-fake` (they use the versioned `config.demo.yaml` / `config.demo-fake.yaml` instead), so you can try the demo and set up your real event side by side.
+`config.yaml` is never touched by `make demo`/`make demo-fake` (they use
+the versioned `config.demo.yaml` / `config.demo-fake.yaml` instead), so you
+can try the demo and set up your real event side by side.
 
-**Running your own event with Docker:** `config.yaml` is deliberately never baked into the image (see `.dockerignore`) or read from the host's environment (see *Secrets* below), so mount it explicitly and point `GLOSA_CONFIG` at it:
+**Running your own event with Docker:** `config.yaml` is deliberately never
+baked into the image (see `.dockerignore`) or read from the host's
+environment (see *Secrets*, below), so mount it explicitly and point
+`GLOSA_CONFIG` at it:
 
 ```bash
 GLOSA_CONFIG=config.yaml docker compose run --rm -p 8000:8000 -v "$PWD/config.yaml:/app/config.yaml:ro" glosa
 ```
 
-or add the same volume line to a local `docker-compose.override.yml` (Compose merges it automatically) so plain `GLOSA_CONFIG=config.yaml docker compose up` picks it up every time.
+or add the same volume line to a local `docker-compose.override.yml`
+(Compose merges it automatically) so plain
+`GLOSA_CONFIG=config.yaml docker compose up` picks it up every time.
 
-## Credentials (`.env`)
+## Configuration
+
+### Secrets (`.env`)
 
 | Variable | Required | What it's for |
 |---|---|---|
-| `GEMINI_API_KEY` | yes | Drives live captioning/translation (Gemini Live). Get one at [Google AI Studio](https://aistudio.google.com/). Billed per minute of audio (see *How it scales* below); `make demo-fake` needs no key at all. |
-| `ADMIN_PASSWORD` | yes | The single password for `/admin` (start/stop rooms). At least 8 characters — Glosa refuses to start otherwise. Use a long random one, e.g. `openssl rand -base64 18`; it's the only thing standing between the internet and your rooms' start/stop controls. |
-| `TYPESAFE_API_KEY` | no | Enables the Jev quality meter. Leave blank to skip it — everything else works without it. |
+| `GEMINI_API_KEY` | yes | Drives live captioning/translation (Gemini Live). Get one at [Google AI Studio](https://aistudio.google.com/). Billed per minute of audio (see [Costs](#costs)); `make demo-fake` needs no key at all. |
+| `ADMIN_PASSWORD` | yes | The single password for `/admin`. At least 8 characters — Glosa refuses to start otherwise. Use a long random one, e.g. `openssl rand -base64 18`; it's the only thing standing between the internet and your rooms' controls and the room stations' capture keys. |
+| `TYPESAFE_API_KEY` | no | Enables the Jev quality meter. Leave blank to skip it — everything else works without it. With a key set, the meter scores one caption pair every 15 s per room, English↔Spanish only; other language pairs, and rooms without a key, keep the "quality" reading as "—". |
 
-With a key set, the meter scores one caption pair every 15 s per room, English↔Spanish only (Jev's question is fixed to that pair); other language pairs, and rooms without a key, keep the "quality" reading as "—".
+Secrets live only in `.env` (gitignored) and are read from that file
+directly, never from the shell/container environment (so a stray exported
+variable, or `docker inspect`, can't leak them — see `docker-compose.yml`'s
+comment). Never put them in `config.yaml` or commit them.
 
-Secrets live only in `.env` (gitignored) and are read from that file directly, never from the shell/container environment (so a stray exported variable, or `docker inspect`, can't leak them — see `docker-compose.yml`'s comment). Never put them in `config.yaml` or commit them.
+### Event (`config.yaml`)
 
-## What's in the box
+Copy `config.example.yaml` to `config.yaml`. Every key is optional; what
+you omit falls back to `glosa/config.py`'s defaults. The essentials:
 
-- **Audience view** (`/`, `/s/{room}`): live captions per room over SSE, phone-first, EN/ES interface, light/dark/high-contrast themes. `/qr/{room}` is a printable or projectable page with that room's QR code. Set `audience_mode: qr_only` in `config.yaml` to hide the room list at `/` entirely and only accept a room's QR link (`/s/{token}`, not `/s/{room}`) — for an event that doesn't want its room list guessable or public. In this mode nothing public reveals a room's slug→token mapping or its captions without the token: `/qr/{room}` itself requires an admin session, `GET /api/rooms` returns an empty list, and `GET /api/stream/{slug}/{lang}` (the SSE endpoint room.js/overlay.js read) only resolves by the token, not the slug.
-- **Overlay for OBS/vMix** (`/overlay/{room}?lang=es&lines=2&size=48`, add `&logo=1` for the event logo): a transparent, chrome-less page a vMix browser input or an OBS browser source reads, burning translated captions into the stream. In `qr_only` mode the slug form 404s like `/s/{room}` does — use `/overlay/s/{token}` instead (same token as the audience link; an admin has it from `/qr/{room}` or the room's drawer).
-- **Admin** (`/admin`): the production panel, "Sala de control" (log in with `ADMIN_PASSWORD`). Every room is a monitor with its live captions, a status light and its time on air; a healthy room shows nothing else. The Atención bar lists only what needs action now (a room down or degraded and why, the budget at 80 %, a silence alarm), each with its suggested key. Also: spend against the budget, the log (alerts first), today's agenda with the next automatic change, and a side drawer per room (click it or press 1–9; Esc closes) with auto/manual, start and end talk, reconnect, "Probar con audio" (play an EN/ES sample clip or an uploaded file through the room, to judge quality without a live talk — `POST /api/admin/rooms/<id>/test-audio`), "Escuchar el audio" (an admin, and only while a room plays a test file, can listen to it synchronized with the captions — `GET /api/admin/listen/<id>`; it also shows up on that room's own public page for a logged-in admin), every metric against its limit and the room's history; for a room station (`source_type: emitter`) it also shows whether the station is connected, its device, level and last audio, its link with a copy key and a QR code (behind a TLS proxy both use the proxy's `X-Forwarded-Proto`/`X-Forwarded-Host`, so they are the public `https://` address), and "Recargar estación". The agenda is imported and edited in the same drawer. Spanish or English, from the browser or `?lang=`. Screenshots in `docs/screenshots/admin-*.png`.
-- **Docker**: `docker-compose.yml` builds the same app, mounts `.env` and persists `data/` (the SQLite database: agenda, captions, cost) across restarts.
+```yaml
+event_name: Nerdearla Vibeathon 2026
+timezone: America/Argentina/Buenos_Aires
+audience_mode: all   # or "qr_only": no public room list, only the QR link works
 
-## Agenda & autopilot
+rooms:
+  - id: main
+    name: Main Stage
+    agenda_names: [gran-sala]     # how the external agenda refers to this room
+    source_type: youtube          # file | url | youtube | emitter (room station)
+    source_url: "https://www.youtube.com/watch?v=..."
+    language: es                  # this room's free-session source language
+    default_targets: [en]
 
-Load the event's agenda once and the rooms follow it. Every endpoint below needs the admin session cookie (log in at `/admin`) and the `X-Glosa-Admin: 1` header.
+engine_mode: live       # "fake" replays a recorded session, no API key needed
+default_engine_en: fast # engine for an English talk that doesn't specify one
+db_path: data/glosa.db
+budget_usd: 10.0
+exports_public: true
 
-**Import** with `POST /api/admin/agenda/import` (multipart form):
-
-- `file`: a CSV or Nerdearla's sessions JSON, **or** `url`: the server fetches it (http/https only), e.g. `https://backstage.nerdearla.com/api/sessions/?event_id=<uuid>`;
-- `format` (optional): `csv` or `nerdearla`, guessed from the name or the content;
-- `room_map` (optional): JSON `{"agenda room name": "room id"}`. By default a talk goes to the room whose `id`, `name` or `agenda_names` (config.yaml) matches its room.
-
-```bash
-curl -b 'glosa_admin=<cookie>' -H 'X-Glosa-Admin: 1' -F file=@agenda.example.csv http://localhost:8000/api/admin/agenda/import
-# {"imported": 5, "skipped": [], "removed": []}
+prices: { lt_per_min: 0.0368, transcribe_per_min: 0.009, flash_lite_in_per_m: 0.30, flash_lite_out_per_m: 2.50 }
+relay: { standby_at: 510, force_at: 570, stall_timeout: 8.0 }   # Live Translate session handoff
+vad: { pause_ms: 400, min_speech_s: 1.5 }
+segmenter: { comma_min_words: 5, max_words: 14, max_wait_s: 3.0 }
 ```
 
-The CSV columns are those of `agenda.example.csv`: `sala, inicio, fin, titulo, speakers, idioma, destinos, motor, abstract, tags, glosario`. Times are local to `timezone` unless they carry an offset; `speakers`, `destinos`, `tags` and `glosario` are `;`-separated; `idioma` is `es` or `en`; a blank `motor` means `glossary` for Spanish and `default_engine_en` for English; a glossary entry is `Term` (kept as is) or `term=translation`. A malformed row rejects the whole file with its row number. Importing again updates the talks that are still scheduled and never touches one that is live or done. It also drops, for each room and day the new file covers, the scheduled talks it no longer lists (cancelled, or re-titled or moved, which changes a CSV talk's id); they come back in `removed`.
+`branding.logo_url`/`primary`/`accent` set the event's look (the bundled
+Nerdearla logo can be swapped for your own). Full key-by-key reference:
+`config.example.yaml`'s comments and `glosa/config.py`'s `Settings`.
 
-**Browse and edit:** `GET /api/admin/talks?room=<id>&day=YYYY-MM-DD` (default: today), `GET /api/admin/talks/<id>`, `PUT /api/admin/talks/<id>` with any of `title, speakers, language, targets, engine, start, end, abstract, tags, glossary` (a live talk only takes `title`, `targets` and `glossary`; new targets apply the next time the talk starts), and `DELETE /api/admin/talks/<id>` (scheduled talks only).
+## How it works
 
-**Autopilot.** Each room is in `auto` (the default) or `manual` mode, stored in the database so it survives a restart. In `auto`, a room with agenda talks today follows the clock: each talk opens a minute before its start and closes at its end (when the next one's minute of lead arrives first, the current one closes then), and between talks the room is idle. If the operator opened the next talk early and then hands the room back to `auto`, that talk keeps going through its slot. A room with no talks today keeps its free session. In `manual`, the autopilot leaves the room alone.
+```mermaid
+flowchart LR
+    subgraph Source
+        FILE["file / url / youtube"]
+        STATION["Room station\n(mini PC, mic capture)"]
+    end
+    AGENDA["Agenda import\n(CSV or Nerdearla JSON)"] --> AUTO["Scheduler + Autopilot\n(open/close talks, engine, targets, glossary)"]
+    AUTO -->|drives| RW
 
-After a restart, an `auto` room reopens the talk the agenda says is on, and a `manual` room resumes the talk it was running when the server died (other manual rooms stay idle, with no free session). Known limitation: which talks already ended inside their slot is remembered only in memory, so after a restart a talk that was ended early (say, the speaker finished ahead of time) reopens if its slot is still on; switch the room to `manual` if that happens.
+    FILE --> RW["RoomWorker"]
+    STATION -- "WebSocket PCM" --> RW
 
-| Endpoint (`POST /api/admin/rooms/<id>/...`) | What it does |
-|---|---|
-| `mode` `{"mode": "auto"\|"manual"}` | Switch modes. Back to `auto`, the room follows the agenda again right away. |
-| `start-talk` `{"talk_id": "..."}` | End the current talk and open this one now. The room goes `manual`. |
-| `end-talk` | End the current talk; the room goes idle and `manual`. |
-| `reconnect` | Open a new engine session for the running talk (the mode stays). |
-| `restart` | Open the room's audio source again for the talk it runs (after "source is down"). The mode stays. |
-| `start` / `stop` | Start (free session or current talk) or stop the room. The room goes `manual`. |
+    RW --> PICK{"Talk's engine"}
+    PICK -->|fast| LT["Gemini Live Translate\n(STT + translation, one target)"]
+    PICK -->|glossary| TRX["Gemini Transcribe Live\n(verbatim + glossary vocabulary)"]
+    TRX --> SEG["Segmenter"]
+    SEG --> FL["Flash-Lite translation\n(glossary in the prompt)"]
+    LT -->|"extra targets, if any"| SEG
 
-`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk. `GET /api/admin/stream` is the panel's live feed (Server-Sent Events): every room's status each second, the event log (resumable with `Last-Event-ID`), agenda changes and each room's latest captions; it needs the session cookie but not the `X-Glosa-Admin` header, which a browser's `EventSource` cannot send.
+    LT --> BUS["CaptionBus\n(pub/sub, per room+lang, replay buffer)"]
+    FL --> BUS
+    TRX -->|source text| BUS
 
-## Room stations (mini PC per stage)
+    BUS -- SSE --> AUD["Audience /s/{room}"]
+    BUS -- SSE --> STAGE["Station stage view"]
+    BUS -- SSE --> OVL["/overlay/{room}\n(OBS/vMix)"]
 
-Configure a room with `source_type: emitter` in `config.yaml` (`source_url` can be any non-empty placeholder — the room's audio comes from a connected station, not a URL) and its mini PC opens `/station/<room>?key=<station_key>` instead of a SaaS tab: it captures the audio desk's feed from the browser, streams it to Glosa, and shows the room's own captions full screen for the stage screens (`docs/field-notes.md` has the story behind this). The URL is stable across a server restart — an unattended station keeps working — and is revoked by changing `ADMIN_PASSWORD`. A remote reload ("F5 remoto", no more RustDesk) is `POST /api/admin/rooms/<id>/station/reload` (same admin auth as the rest of `/api/admin/*`).
+    RW -- "status, log, cost" --> ASTREAM["Admin SSE\n/api/admin/stream"]
+    ASTREAM --> PANEL["Sala de control (/admin)"]
+```
 
-**The key never leaks.** Every page sends `Referrer-Policy: same-origin` (a response header and a `<meta>` tag), so a station's `?key=...` in its own address bar is never sent as a Referer to the Google Fonts request `base.html` makes. Glosa's own logs (uvicorn's) have every `key=<...>` rewritten to `key=REDACTED` before they're written — both the HTTP access log (the station page's own load) and the WebSocket log (every capture connection and reconnect, logged separately by uvicorn on its `uvicorn.error` logger, key check included). A reverse proxy in front of Glosa keeps its **own** log, though, so redact there too — for Caddy:
+- **RoomWorker** (`glosa/room.py`) owns one room's whole life: its audio
+  source, engine session, translation lane and status. One `RoomWorker`
+  runs as its own set of `asyncio` tasks per room, in the same process —
+  see [Scaling](#scaling).
+- **Two engines, chosen per talk** (`engine: fast|glossary` in the agenda
+  CSV or `PUT /api/admin/talks/<id>`; Spanish talks default to `glossary`,
+  English to `default_engine_en`): **fast** is one Gemini Live Translate
+  session doing STT and translation together, fluent but blind to the
+  glossary; **glossary** is Gemini Transcribe Live (verbatim, fed the
+  glossary as `customVocabulary`) followed by a segmenter and a Flash-Lite
+  translation pass with the glossary in its prompt — slower per word but
+  the only one that honors configured terms. See
+  [`docs/alternatives.md`](docs/alternatives.md) for why.
+- **Targets beyond the first** (a talk's `targets` list can hold more than
+  one language) are translated from the already-transcribed source text by
+  the same Flash-Lite lane the glossary engine uses, instead of opening a
+  second live session — see [Costs](#costs).
+- **`CaptionBus`** (`glosa/captions/bus.py`) is an in-process pub/sub with
+  one topic per `(room, language)` and a bounded replay buffer, so a new or
+  resuming SSE client catches up before switching to live delivery — see
+  [Scaling](#scaling) for its fan-out numbers under load.
+- **Agenda & autopilot**: import an agenda once (CSV or Nerdearla's
+  sessions JSON, `POST /api/admin/agenda/import`) and each room in `auto`
+  mode (the default) opens a talk 60 s before its scheduled start and
+  closes it at its end, switching language, engine, targets and glossary
+  with it; `manual` mode hands a room back to the operator. Full endpoint
+  reference: [`docs/operator-guide.md`](docs/operator-guide.md).
+- **Admin SSE** (`GET /api/admin/stream`) is the separate live feed behind
+  `/admin`'s **"Sala de control"** panel: every room's status once a
+  second, the event log, agenda changes and the spend meter — see
+  [`docs/operator-guide.md`](docs/operator-guide.md) for what the panel
+  shows and how to read it.
+
+### What's in the box
+
+- **Audience view** (`/`, `/s/{room}`): live captions per room over SSE,
+  phone-first, EN/ES interface, light/dark/high-contrast themes.
+  `/qr/{room}` is a printable or projectable page with that room's QR
+  code. `audience_mode: qr_only` hides the room list at `/` entirely and
+  only accepts a room's QR link (`/s/{token}`), for an event that doesn't
+  want its room list guessable or public — in this mode nothing public
+  reveals a room's slug↔token mapping or its captions without the token.
+- **Overlay for OBS/vMix** (`/overlay/{room}?lang=es&lines=2&size=48`, add
+  `&logo=1` for the event logo): a transparent, chrome-less page a vMix
+  browser input or an OBS browser source reads, burning translated
+  captions into the stream. In `qr_only` mode use `/overlay/s/{token}`
+  instead of the slug form.
+- **Admin** (`/admin`, "Sala de control"): every room is a monitor with its
+  live captions, a status light and its time on air. The **Atención** bar
+  lists only what needs action now (a room down or degraded and why, the
+  budget at 80%, a silence alarm); a room's row carries a one-click
+  reconnect/reopen-source button. Also: the spend meter, the event log,
+  today's agenda with the next automatic
+  change, and a side drawer per room (click it or press 1–9; Esc closes)
+  with auto/manual, start/end talk, reconnect, **"Probar con audio"**
+  (play a sample or an uploaded clip through the room to judge quality
+  without a live talk), **"Escuchar el audio"** (an admin can listen to
+  that test clip synchronized with the captions), an exports list, every
+  metric against its limit and the room's history, and — for a room
+  station — its connection state, link, QR code and **"Recargar
+  estación"**. See
+  [`docs/operator-guide.md`](docs/operator-guide.md) for the full button
+  reference.
+- **Docker**: `docker-compose.yml` builds the same app, mounts `.env` and
+  persists `data/` (the SQLite database: agenda, captions, events, cost)
+  across restarts.
+
+### Room stations (mini PC per stage)
+
+Configure a room with `source_type: emitter` in `config.yaml` and its mini
+PC opens `/station/<room>?key=<station_key>` instead of a SaaS tab: it
+captures the audio desk's feed from the browser, streams it to Glosa, and
+shows the room's own captions full screen for the stage screens
+(`docs/field-notes.md` has the story behind this — see
+[Operation](#operation)). The URL is stable across a server restart, and is
+revoked by changing `ADMIN_PASSWORD`. A remote reload ("F5 remoto", no more
+RustDesk) is one click in the admin (`POST
+/api/admin/rooms/<id>/station/reload`).
+
+**The key never leaks.** Every page sends `Referrer-Policy: same-origin`,
+so a station's `?key=...` is never sent as a Referer to the Google Fonts
+request `base.html` makes. Glosa's own logs (uvicorn's) have every
+`key=<...>` rewritten to `key=REDACTED` before they're written. A reverse
+proxy in front of Glosa keeps its **own** log, though, so redact there too
+— for Caddy:
 
 ```caddyfile
 log {
@@ -105,11 +249,11 @@ log {
 }
 ```
 
-**HTTPS is required.** Browsers only allow microphone capture (`getUserMedia`) in a secure context (HTTPS or `localhost`); a mini PC opening `http://<server>:8000` on the venue network cannot capture audio, and the station page explains this on screen instead of failing silently. Three ways to get there:
-
-1. **A reverse proxy with automatic HTTPS** (recommended for the venue): `deploy/Caddyfile` is a working example — Caddy gets a Let's Encrypt certificate for a real domain on its own, or issues a private one for a LAN-only hostname with `tls internal`. Point it at Glosa's `:8000` and open the mini PC at `https://<your-domain>/station/<room>?key=...`. `docker-compose.yml` has a commented-out `caddy` service that mounts the same Caddyfile. The Caddyfile sets `flush_interval -1`, so it forwards each chunk immediately instead of buffering — without it, a proxy can sit on the audience captions' SSE stream (and the station's own traffic) for a beat, which live captions can't afford.
-2. **A tunnel** (quickest for a single stage or a rehearsal): any HTTPS tunnel to `localhost:8000` (ngrok, Cloudflare Tunnel, Tailscale Funnel...) works — the browser only cares that the *origin it loaded* is secure, not how it got there.
-3. **Lab only, no real HTTPS:** start Chrome with `--unsafely-treat-insecure-origin-as-secure=http://<server-ip>:8000 --user-data-dir=/tmp/glosa-lab` to test over the plain-HTTP venue network without setting up a proxy first. Never do this for the real event — it turns off a real browser security check.
+**HTTPS is required.** Browsers only allow microphone capture
+(`getUserMedia`) in a secure context; a mini PC opening `http://<server>:
+8000` on the venue network cannot capture audio, and the station page
+explains this on screen instead of failing silently. See
+[Deployment](#deployment).
 
 **Kiosk mode**, for an unattended mini PC:
 
@@ -120,15 +264,137 @@ google-chrome \
   --user-data-dir=/home/glosa/chrome-station-<room>
 ```
 
-- `--kiosk`: full screen, no browser chrome; Chrome exits instead of prompting on close.
-- `--autoplay-policy=no-user-gesture-required`: lets the page start its `AudioContext` on load instead of waiting for a click — combined with the persistent mic permission below, the station starts captioning with nobody touching it.
-- A **persistent `--user-data-dir`** (a real path, not the default ephemeral one) is what makes the microphone permission stick: grant it once — click "Allow" the first time the page asks — and Chrome remembers it for that origin in that profile across every later launch, including after `POST .../station/reload` or a full reboot.
+`--kiosk`: full screen, no browser chrome. `--autoplay-policy=no-user-
+gesture-required`: lets the page start its `AudioContext` on load. A
+**persistent** `--user-data-dir` (a real path) is what makes the
+microphone permission stick across restarts and reboots — grant it once.
 
-## How it scales
+## Results
 
-- **One instance comfortably handles about 10-20 rooms captioned at once.** The bottleneck is the number of concurrent Gemini Live sessions and their network I/O (each room keeps 1-2 sessions open for the session-handoff overlap), not CPU: ffmpeg, voice detection and segmentation are cheap per room.
-- **Beyond that, split rooms across instances** — e.g. one process per building or track, each with its own `config.yaml` subset of rooms and its own `db_path` (SQLite; no shared state between instances). Point each instance's admin panel and audience links at its own host/port.
-- **Gemini's per-tier rate and concurrency limits cap how many rooms one API key can drive at once.** The free tier is only good for a quick trial, not an event: check your current tier's limits in Google AI Studio before the day and move to a paid tier with higher throughput ahead of time, especially if you're running several rooms for several hours. Budget by audio-minutes: Live Translate is about $0.037/min per room (`prices.lt_per_min` in `config.yaml`), so 2 rooms running 8 hours is on the order of $35 — watch `budget_usd` and the running cost as the event gets bigger.
+### Load: caption fan-out
+
+Simulated load test (Task 15a, `bench/load_test.py`; a real server,
+`engine_mode: fake`, zero API spend), Apple M4 / 10 cores / 16 GB:
+
+| Rooms | Clients | Duration | Losses | Fan-out p50 / p95 / p99 (ms) | Server CPU avg / peak | Result |
+|---|---|---|---|---|---|---|
+| 5 | 50 | 20 s | 0 | 0.9 / 3.1 / 4.1 | 5.3% / 59.6% | PASS |
+| 50 | 500 | 60 s | 0 | 0.8 / 1.9 / 4.8 | 17.9% / 62.5% | PASS |
+| 100 | 1000 | 60 s | 0 | 0.6 / 1.6 / 6.3 | 23.6% / 95.4% | FAIL (CPU) |
+
+The plan-scale run (50 rooms / 500 concurrent audience connections / 60 s)
+passes with headroom on every criterion (no losses, no reconnects, CPU
+well under 80%). At 2× scale, fan-out delay stays just as good, but
+opening 1000 SSE connections within about a second spikes server CPU to
+93–95% for a couple of samples — a one-time connection-establishment
+burst, not sustained fan-out cost (steady-state CPU at 1000 clients is
+~23%, barely above the 500-client steady state). Full method, findings and
+reproduction command: [`bench/load-results.md`](bench/load-results.md).
+
+### Engine latency and quality
+
+<!-- BENCH-RESULTS -->
+
+The glossary engine's own latency, measured live during this build (6 runs
+of 60 s of Spanish audio, `.superpowers/sdd/2026-09-24-glosa/progress.md`):
+source (transcription) **p50 ≈ 0.9 s** after end of speech, translation
+**p50 ≈ 0.7 s** after the cut. Full latency/cost table for both engines,
+with sources: [`docs/alternatives.md`](docs/alternatives.md).
+
+## Costs
+
+Per room-hour, one target language (Gemini's list prices, `glosa/config.py`):
+
+| Engine | US$/min | US$/hour | Glossary? |
+|---|---|---|---|
+| **fast** (Live Translate) | 0.0368 | ≈ US$2.21 | No |
+| **glossary** (Transcribe Live + Flash-Lite) | ≈0.012 | ≈ US$0.72 | Yes |
+
+Each extra target language (beyond the first) adds one more Flash-Lite
+translation pass over the same transcribed text, at roughly the glossary
+engine's own translation cost — no new transcription session.
+
+**vs. Maestra** (Nerdearla's current SaaS), public list price surveyed
+2026-09-23: **≈ US$24/h per translated language**. At the same scale, that
+is roughly **11×** the fast-engine cost above and **≈33×** the
+glossary-engine cost — a list-price-to-list-price comparison, not a
+negotiated rate on either side. Full breakdown (event-scale estimates,
+this build's own spend, server cost, the budget cap): see
+[`docs/costs.md`](docs/costs.md).
+
+## Alternatives evaluated
+
+Glosa's two engines were chosen after benchmarking them against each
+other and against Soniox, OpenAI's realtime translation, Whisper, Gemma,
+Gemini Omni, a local NVIDIA Parakeet setup, and TypeSafe Jev (both as a
+segmentation heuristic and as the quality meter Glosa ships). Full tables
+with latency, cost, glossary support and sources:
+[`docs/alternatives.md`](docs/alternatives.md).
+
+## Scaling
+
+- **One Glosa instance runs one event.** Each room is its own set of
+  `asyncio` tasks (audio ingest, engine session, translation lane) inside
+  a single process — no external queue or worker pool. `CaptionBus`'s
+  pub/sub fan-out measured p95 1.9 ms / p99 4.8 ms at 50 rooms / 500
+  concurrent audience connections, with server CPU peaking at 62.5% of one
+  core — see [Results](#results).
+- **One instance comfortably handles about 10–20 rooms captioned at
+  once.** The bottleneck is the number of concurrent Gemini Live sessions
+  and their network I/O (each room keeps 1–2 sessions open for
+  session-handoff overlap), not CPU — ffmpeg, VAD and segmentation are
+  cheap per room. What to size: Gemini's per-tier rate/concurrency limits
+  (check Google AI Studio ahead of time), and, for `file`/`url`/`youtube`
+  rooms, one `ffmpeg` subprocess per room (roughly 115 CPU-percentage-
+  points and ~150 MB RSS at 50 such rooms in the load test) — a
+  deployment using mostly `emitter` room stations (mini PCs push audio in;
+  no local `ffmpeg`) needs much less.
+- **Beyond ~20 rooms, split across instances** — one process per
+  building/track, each with its own `config.yaml` subset of rooms and its
+  own `db_path` (SQLite; no shared state between instances). Point each
+  instance's admin panel and audience links at its own host/port.
+- **Budget by audio-minutes**, not by room count: see [Costs](#costs).
+
+## Deployment
+
+```bash
+docker compose up   # builds the image, mounts .env and data/ (see Quick start)
+```
+
+Room stations need HTTPS (browsers only allow microphone capture in a
+secure context) — three ways, in order of how close to a real venue they
+are: **`deploy/Caddyfile`** (a reverse proxy that gets a real Let's
+Encrypt certificate, or a LAN-only self-signed one via `tls internal`;
+`docker-compose.yml` has a commented-out `caddy` service for it, and it
+sets `flush_interval -1` so live captions aren't buffered); an **HTTPS
+tunnel** (ngrok, Cloudflare Tunnel, Tailscale Funnel...) to
+`localhost:8000` for a quick rehearsal; or, lab-only, Chrome's
+`--unsafely-treat-insecure-origin-as-secure` flag — never for a real
+event. Full setup and kiosk-mode flags: [Room stations](#room-stations-mini-pc-per-stage).
+
+**Where to run it:** a small cloud VM is enough — the FastAPI/uvicorn
+process itself was load-tested at 62.5% peak CPU on one core for 50 rooms'
+caption fan-out (see [Scaling](#scaling)); size mainly for the `ffmpeg`
+fleet if using `file`/`url`/`youtube` rooms. The Gemini Live/Transcribe/
+Flash-Lite calls that actually produce a caption are on the live path, so
+pick a region with low network latency to the Gemini API — added
+round-trip time there adds directly to caption latency. The optional Jev
+quality-meter call (`TYPESAFE_API_KEY`) runs as a fire-and-forget
+background task, at most once every 15 s per room, so its own latency
+does not delay any caption.
+
+## Operation
+
+Full checklist and reference: [`docs/operator-guide.md`](docs/operator-guide.md)
+(credentials, HTTPS, `config.yaml`, agenda import, room stations, reading
+room status, autopilot, exports, backups). Why Glosa's operation model
+looks the way it does: Nerdearla's own staff described their current
+setup as a SaaS tab left running with **RustDesk** open "in case it needs
+an F5 because it froze" — no dedicated operator per room, remote access to
+every mini PC as the only recovery. Glosa's room stations, remote reload
+and autopilot exist specifically to remove that: see
+[`docs/field-notes.md`](docs/field-notes.md) for the full story, in the
+organizers' own words.
 
 ## Development
 
@@ -142,4 +408,6 @@ Sample clips and their provenance: `samples/README.md`.
 
 Apache-2.0. See `LICENSE`.
 
-**Trademarks:** the bundled Nerdearla logos are not covered by that license — see `glosa/web/static/branding/nerdearla/NOTICE.md`.
+**Trademarks:** the bundled Nerdearla logos are not covered by that
+license — see
+[`glosa/web/static/branding/nerdearla/NOTICE.md`](glosa/web/static/branding/nerdearla/NOTICE.md).

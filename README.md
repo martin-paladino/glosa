@@ -98,6 +98,7 @@ you omit falls back to `glosa/config.py`'s defaults. The essentials:
 event_name: Nerdearla Vibeathon 2026
 timezone: America/Argentina/Buenos_Aires
 audience_mode: all   # or "qr_only": no public room list, only the QR link works
+ui_language: es      # "es" | "en" | "auto" (follow the browser's Accept-Language)
 
 rooms:
   - id: main

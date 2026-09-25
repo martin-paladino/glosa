@@ -16,6 +16,7 @@ from glosa.i18n import STRINGS
 
 NODE = shutil.which("node")
 HARNESS = Path(__file__).with_name("room_js_harness.js")
+CLAMP_HARNESS = Path(__file__).with_name("room_clamp_harness.js")
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="needs Node.js to run room.js")
 
@@ -28,8 +29,11 @@ def _draw(
     *,
     fetch: dict | None = None,
     click: str | list[str] | None = None,
-    keys: list[str] | None = None,
+    keys: list | None = None,
     pip: bool = False,
+    drag_stored: dict | None = None,
+    viewport: dict | None = None,
+    resize: dict | None = None,
 ) -> dict:
     numbered = [{"id": i, **m} for i, m in enumerate([TALK, *msgs], start=1)]
     payload = {"lang": lang, "i18n": STRINGS["es"], "msgs": numbered}
@@ -41,8 +45,26 @@ def _draw(
         payload["keys"] = keys
     if pip:
         payload["pip"] = True
+    if drag_stored is not None:
+        payload["dragStored"] = drag_stored
+    if viewport is not None:
+        payload["viewport"] = viewport
+    if resize is not None:
+        payload["resize"] = resize
     done = subprocess.run(
         [NODE, str(HARNESS)], input=json.dumps(payload),
+        capture_output=True, text=True, check=True, timeout=30,
+    )
+    return json.loads(done.stdout)
+
+
+def _clamp(x, y, panel_w, panel_h, viewport_w, viewport_h, margin=8) -> dict:
+    payload = {
+        "x": x, "y": y, "panelW": panel_w, "panelH": panel_h,
+        "viewportW": viewport_w, "viewportH": viewport_h, "margin": margin,
+    }
+    done = subprocess.run(
+        [NODE, str(CLAMP_HARNESS)], input=json.dumps(payload),
         capture_output=True, text=True, check=True, timeout=30,
     )
     return json.loads(done.stdout)
@@ -214,3 +236,92 @@ def test_pip_mirrors_the_reader_theme_onto_the_pop_out_document() -> None:
     out = _draw([], pip=True, click=["theme", "pip"])["pip"]
 
     assert out["theme"] == "light"   # cycleTheme(): system -> light
+
+
+# ---- the draggable "¿Qué me perdí?" panel (user feedback) -------------------------------
+
+
+def test_clamp_keeps_the_panel_fully_inside_the_viewport() -> None:
+    assert _clamp(700, 700, 300, 200, 800, 600) == {"x": 492, "y": 392}  # bottom/right edge
+    assert _clamp(-50, -50, 300, 200, 800, 600) == {"x": 8, "y": 8}      # top/left edge
+    assert _clamp(100, 100, 300, 200, 800, 600) == {"x": 100, "y": 100}  # already inside: untouched
+
+
+def test_clamp_centres_a_panel_bigger_than_the_viewport() -> None:
+    """The margin alone can't be honoured both sides -- max() below the min()
+    keeps the panel on screen rather than pushed off by its own size."""
+    out = _clamp(50, 50, 900, 900, 800, 600, margin=8)
+    assert out == {"x": 8, "y": 8}
+
+
+def test_the_drag_handle_has_the_accessible_name_to_move_the_panel() -> None:
+    out = _draw([])["drag"]
+    assert out["handleLabel"] == "Mover"
+
+
+def test_arrow_keys_on_the_handle_move_the_panel_and_remember_it() -> None:
+    out = _draw(
+        [], keys=[{"key": "ArrowRight", "on": "[data-summary-drag-handle]"},
+                  {"key": "ArrowDown", "on": "[data-summary-drag-handle]"}],
+    )["drag"]
+
+    assert out["left"] == "16px"
+    assert out["top"] == "24px"
+    assert out["stored"] == {"x": 16, "y": 24}   # persisted (localStorage) for next visit
+
+
+def test_home_resets_the_dragged_position_and_forgets_it() -> None:
+    out = _draw(
+        [], keys=[{"key": "ArrowRight", "on": "[data-summary-drag-handle]"},
+                  {"key": "Home", "on": "[data-summary-drag-handle]"}],
+    )["drag"]
+
+    assert out["left"] == ""
+    assert out["top"] == ""
+    assert out["stored"] is None
+
+
+def test_a_remembered_position_from_an_earlier_visit_is_restored_on_load() -> None:
+    out = _draw([], drag_stored={"x": 40, "y": 60})["drag"]
+
+    assert out["left"] == "40px"
+    assert out["top"] == "60px"
+
+
+def test_a_corrupt_stored_position_is_ignored() -> None:
+    """store.get()/JSON.parse() wrapped in try/catch (room.js): a malformed
+    value falls back to the CSS default instead of crashing the page."""
+    out = _draw([], drag_stored="not-json")["drag"]  # the harness JSON.stringifies this as-is
+
+    assert out["left"] == ""
+    assert out["top"] == ""
+
+
+def test_below_600px_only_the_vertical_offset_is_draggable() -> None:
+    """Narrow phones (< 600 px): the panel stays the full-width sheet it
+    always was -- room.js only ever sets its `top`, never `left`."""
+    out = _draw(
+        [], viewport={"width": 400, "height": 800},
+        keys=[{"key": "ArrowRight", "on": "[data-summary-drag-handle]"},
+              {"key": "ArrowDown", "on": "[data-summary-drag-handle]"}],
+    )["drag"]
+
+    assert out["left"] == ""
+    assert out["top"] == "24px"
+
+
+def test_a_dragged_position_is_re_clamped_on_resize() -> None:
+    out = _draw([], drag_stored={"x": 900, "y": 500}, resize={"width": 500, "height": 400})["drag"]
+
+    assert out["stored"] == {"x": 492, "y": 392}
+    assert out["top"] == "392px"
+    assert out["left"] == ""   # the resize also crossed below the 600px sheet threshold
+
+
+def test_arrow_keys_elsewhere_do_not_move_the_panel() -> None:
+    """Only keydown on the handle itself drives the drag (event.target, same
+    way the existing Esc-closes-the-summary and f/+/- shortcuts work)."""
+    out = _draw([], keys=["ArrowRight"])["drag"]
+
+    assert out["left"] == ""
+    assert out["stored"] is None

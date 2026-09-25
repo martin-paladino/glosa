@@ -22,6 +22,21 @@
    are not aligned, so each page flows on its own. Below 40rem the original
    shrinks to a small live line above the translation (CSS only).
 */
+
+// Task ui2 (user feedback): pure position math for the draggable "¿Qué me
+// perdí?" panel, kept outside the closure below on purpose -- no DOM, so
+// tests/web/room_js_harness.js can call it directly (it's attached to the
+// vm context as a global, same as any other top-level function here). x/y
+// are the panel's would-be top-left in viewport px; the result is clamped
+// so the panel stays fully on screen, `margin` px clear of each edge (or
+// centred within the viewport, when the panel itself is bigger than that).
+function glosaClampDragPosition(x, y, panelW, panelH, viewportW, viewportH, margin) {
+  const m = margin || 0;
+  const maxX = Math.max(m, viewportW - panelW - m);
+  const maxY = Math.max(m, viewportH - panelH - m);
+  return { x: Math.min(Math.max(x, m), maxX), y: Math.min(Math.max(y, m), maxY) };
+}
+
 (() => {
   "use strict";
 
@@ -77,6 +92,8 @@
   const summaryScrim = $("[data-summary-scrim]");
   const summaryBullets = $("[data-summary-bullets]");
   const summaryAgo = $("[data-summary-ago]");
+  const summaryHead = $("[data-summary-head]");
+  const summaryDragHandle = $("[data-summary-drag-handle]");
 
   // ---- small helpers ---------------------------------------------------------
 
@@ -599,6 +616,120 @@
   pollSummary();
   setInterval(pollSummary, SUMMARY_POLL_MS);
 
+  // ---- dragging the summary panel (Task ui2, user feedback) ---------------------------
+  // Draggable by its header (pointer events: mouse + touch, touch-action: none on the
+  // handle in the CSS) so it can be moved off the captions; a keyboard alternative on the
+  // grip button (arrow keys move it DRAG_STEP px, Home resets); re-clamped on resize;
+  // remembered per device in localStorage (glosaClampDragPosition, above the closure,
+  // is the pure clamp math). Below NARROW_PX the panel stays the full-width sheet it
+  // always was -- only its vertical offset is draggable.
+
+  const DRAG_MARGIN = 8;
+  const DRAG_STEP = 16;
+  const DRAG_KEY = "glosa.summaryPos";
+  const NARROW_PX = 600;
+
+  let dragPos = null;   // {x, y}: the panel's chosen top-left, or null for the CSS default
+  let dragging = null;  // {pointerId, offsetX, offsetY} while a pointer drag is in progress
+
+  function panelRect() {
+    return summaryPanel.getBoundingClientRect();
+  }
+
+  function currentTopLeft() {
+    const rect = panelRect();
+    return { x: rect.left, y: rect.top };
+  }
+
+  function applyPosition() {
+    const style = summaryPanel.style;
+    if (!dragPos) {
+      style.removeProperty("left");
+      style.removeProperty("right");
+      style.removeProperty("top");
+      style.removeProperty("bottom");
+      return;
+    }
+    style.setProperty("top", `${dragPos.y}px`);
+    style.setProperty("bottom", "auto");
+    if (window.innerWidth < NARROW_PX) {
+      // Full-width sheet: only the vertical offset is ours to set.
+      style.removeProperty("left");
+      style.removeProperty("right");
+    } else {
+      style.setProperty("left", `${dragPos.x}px`);
+      style.setProperty("right", "auto");
+    }
+  }
+
+  function moveTo(x, y) {
+    const rect = panelRect();
+    dragPos = glosaClampDragPosition(x, y, rect.width, rect.height, window.innerWidth, window.innerHeight, DRAG_MARGIN);
+    applyPosition();
+    store.set(DRAG_KEY, JSON.stringify(dragPos));
+  }
+
+  function resetPosition() {
+    dragPos = null;
+    applyPosition();
+    store.set(DRAG_KEY, null);
+  }
+
+  (function restoreDragPosition() {
+    const raw = store.get(DRAG_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.x === "number" && typeof parsed.y === "number") {
+        dragPos = parsed;
+        applyPosition();
+      }
+    } catch { /* a corrupt value: keep the CSS default */ }
+  })();
+
+  function startDrag(event) {
+    if (event.target.closest && event.target.closest("[data-summary-close]")) return;
+    const rect = panelRect();
+    dragging = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+    summaryPanel.classList.add("summary-panel--dragging");
+    if (summaryHead.setPointerCapture) summaryHead.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function duringDrag(event) {
+    if (!dragging || event.pointerId !== dragging.pointerId) return;
+    moveTo(event.clientX - dragging.offsetX, event.clientY - dragging.offsetY);
+  }
+
+  function endDrag(event) {
+    if (!dragging || event.pointerId !== dragging.pointerId) return;
+    dragging = null;
+    summaryPanel.classList.remove("summary-panel--dragging");
+  }
+
+  summaryHead.addEventListener("pointerdown", startDrag);
+  summaryHead.addEventListener("pointermove", duringDrag);
+  summaryHead.addEventListener("pointerup", endDrag);
+  summaryHead.addEventListener("pointercancel", endDrag);
+
+  window.addEventListener("resize", () => {
+    if (dragPos) moveTo(dragPos.x, dragPos.y);   // re-clamp: the panel or viewport may have changed
+  });
+
+  const DRAG_KEYS = { ArrowUp: [0, -DRAG_STEP], ArrowDown: [0, DRAG_STEP], ArrowLeft: [-DRAG_STEP, 0], ArrowRight: [DRAG_STEP, 0] };
+
+  function moveByKey(key) {
+    if (key === "Home") {
+      resetPosition();
+      return true;
+    }
+    const delta = DRAG_KEYS[key];
+    if (!delta) return false;
+    const base = dragPos || currentTopLeft();
+    moveTo(base.x + delta[0], base.y + delta[1]);
+    return true;
+  }
+
   // ---- following the live text --------------------------------------------------------
 
   let scrollQueued = false;
@@ -810,8 +941,12 @@
       closeSummaryPanel();
       return;
     }
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target;
+    if (target.closest && target.closest("[data-summary-drag-handle]") && moveByKey(event.key)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (target.closest && target.closest("input, select, textarea, [contenteditable]")) return;
     if (event.key === "f" || event.key === "F") toggleFullscreen();
     else if (event.key === "+" || event.key === "=") stepScale(1);

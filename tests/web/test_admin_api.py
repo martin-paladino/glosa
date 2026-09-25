@@ -257,8 +257,10 @@ def test_admin_page_has_the_agenda_editing_hooks() -> None:
     assert client.get("/static/js/admin.js").text.count("window.confirm") == 0
 
 
-def test_admin_page_speaks_the_browser_language_or_the_chosen_one() -> None:
-    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+def test_admin_page_with_ui_language_auto_speaks_the_browser_language_or_the_chosen_one() -> None:  # Ruling 63
+    client = _client(
+        _make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}, settings=_settings(ui_language="auto"))
+    )
 
     spanish = client.get("/admin", headers={"Accept-Language": "es-AR,es"}).text
     english = client.get("/admin", headers={"Accept-Language": "en-US,en"}).text
@@ -268,6 +270,37 @@ def test_admin_page_speaks_the_browser_language_or_the_chosen_one() -> None:
     assert '<html lang="en">' in english and "<b>Attention</b>" in english and "Import agenda" in english
     assert '<html lang="es">' in chosen and _config(chosen)["i18n"]["log"] == "Registro"
     assert 'href="?lang=en"' in spanish  # the switch
+
+
+def test_admin_page_defaults_to_spanish_and_ignores_accept_language() -> None:  # Ruling 63
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))  # ui_language defaults to "es"
+
+    english_browser = client.get("/admin", headers={"Accept-Language": "en-US,en"}).text
+
+    assert '<html lang="es">' in english_browser and "<b>Atención</b>" in english_browser
+
+
+def test_admin_page_can_default_to_english() -> None:  # Ruling 63
+    client = _client(
+        _make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}, settings=_settings(ui_language="en"))
+    )
+
+    spanish_browser = client.get("/admin", headers={"Accept-Language": "es-AR,es"}).text
+
+    assert '<html lang="en">' in spanish_browser and "<b>Attention</b>" in spanish_browser
+
+
+def test_admin_lang_choice_sticks_via_a_cookie() -> None:  # Ruling 63
+    client = _client(
+        _make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}, settings=_settings(ui_language="es"))
+    )
+
+    chosen = client.get("/admin?lang=en")
+    assert chosen.cookies.get("glosa_lang") == "en"
+
+    later = client.get("/admin", headers={"Accept-Language": "es"})  # no ?lang=, cookie still set
+
+    assert '<html lang="en">' in later.text
 
 
 def test_admin_page_shows_the_event_logo_next_to_the_mark() -> None:

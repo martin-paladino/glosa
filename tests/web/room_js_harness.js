@@ -63,7 +63,11 @@ class FakeElement extends FakeNode {
     this.scrollHeight = 0;
     this.clientHeight = 0;
     const props = {};
-    this.style = { getPropertyValue: (k) => props[k] || "", setProperty: (k, v) => { props[k] = v; } };
+    this.style = {
+      getPropertyValue: (k) => props[k] || "",
+      setProperty: (k, v) => { props[k] = v; },
+      removeProperty: (k) => { delete props[k]; },
+    };
   }
   setAttribute(k, v) { this.attrs.set(k, String(v)); }
   getAttribute(k) { return this.attrs.has(k) ? this.attrs.get(k) : null; }
@@ -124,6 +128,17 @@ class FakeElement extends FakeNode {
     for (let n = this; n; n = n.parentNode) if (n.nodeType === 1 && matches(n, selector)) return n;
     return null;
   }
+  // Task ui2 (draggable summary panel): a bare-bones rect -- this fake DOM
+  // never lays anything out, so width/height/left/top always read 0 unless
+  // a test sets them on the element first (none currently do: the clamp
+  // math itself is tested directly via glosaClampDragPosition, so an
+  // all-zero panel size against the harness's real viewport is enough to
+  // exercise moveTo()/applyPosition() without needing real layout).
+  getBoundingClientRect() {
+    return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+  }
+  setPointerCapture() {}
+  releasePointerCapture() {}
   querySelectorAll(selector) {
     const out = [];
     const walk = (node) => {
@@ -149,6 +164,11 @@ function h(tag, attrs = {}, ...children) {
 const input = JSON.parse(fs.readFileSync(0, "utf8"));
 const lang = input.lang;
 
+// Task ui2: a pre-existing remembered position (glosa.summaryPos), as if an
+// earlier visit on this device had already dragged the panel.
+const storagePreload = new Map();
+if (input.dragStored) storagePreload.set("glosa.summaryPos", JSON.stringify(input.dragStored));
+
 const config = {
   slug: "r1", streamBase: "/api/stream/r1/", summaryBase: "/api/summary/r1/",
   langs: [lang], defaultLang: lang, forcedLang: lang,
@@ -163,9 +183,12 @@ summaryToggle.hidden = true;
 const summaryScrim = h("div", { "data-action": "summary-close", "data-summary-scrim": "" });
 const summaryBullets = h("ul", { "data-summary-bullets": "" });
 const summaryAgo = h("p", { "data-summary-ago": "" });
+const summaryDragHandle = h("button", { "data-summary-drag-handle": "", "aria-label": input.i18n.move_panel || "Mover" });
+const summaryHead = h("div", { "data-summary-head": "" },
+  summaryDragHandle,
+  h("button", { "data-action": "summary-close", "data-summary-close": "" }, "×"));
 const summaryPanel = h("div", { "data-summary-panel": "" },
-  h("button", { "data-action": "summary-close", "data-summary-close": "" }, "×"),
-  summaryBullets, summaryAgo);
+  summaryHead, summaryBullets, summaryAgo);
 const html = h("html", {},
   h("body", {},
     h("span", { "data-direction": "" }),
@@ -246,7 +269,8 @@ class FakePipWindow {
 }
 const pipWindows = [];
 
-const storage = new Map();
+const storage = storagePreload;
+const windowListeners = {};
 const context = {
   document,
   EventSource,
@@ -259,6 +283,14 @@ const context = {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: (k) => storage.delete(k),
+  },
+  // Task ui2: the drag handle re-clamps on "resize"; width/height default to
+  // a plain desktop viewport (>= NARROW_PX in room.js) unless a test overrides them.
+  innerWidth: (input.viewport && input.viewport.width) || 1024,
+  innerHeight: (input.viewport && input.viewport.height) || 768,
+  addEventListener(type, fn) { (windowListeners[type] ??= []).push(fn); },
+  removeEventListener(type, fn) {
+    if (windowListeners[type]) windowListeners[type] = windowListeners[type].filter((f) => f !== fn);
   },
   navigator: {},
   location: { href: "http://localhost/s/r1" },
@@ -311,8 +343,19 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     document.dispatchEvent("click", { target, preventDefault() {} });
     await flush();   // that click's own re-poll (if any) resolves before the next one
   }
-  for (const key of input.keys || []) {
-    document.dispatchEvent("keydown", { key, target: html, closest: () => null, preventDefault() {} });
+  // input.keys: key names (dispatched on <html>, e.g. "Escape"), or -- Task
+  // ui2 -- {key, on} to dispatch on a specific element instead (e.g. the
+  // drag handle: {"key": "ArrowRight", "on": "[data-summary-drag-handle]"}).
+  for (const entry of input.keys || []) {
+    const key = typeof entry === "string" ? entry : entry.key;
+    const target = typeof entry === "string" ? html : html.querySelector(entry.on);
+    document.dispatchEvent("keydown", { key, target, preventDefault() {} });
+    await flush();
+  }
+  if (input.resize) {
+    context.innerWidth = input.resize.width;
+    context.innerHeight = input.resize.height;
+    for (const fn of windowListeners.resize || []) fn();
     await flush();
   }
 
@@ -340,6 +383,12 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
       scrimOpen: summaryScrim.classList.contains("summary-scrim--open"),
       bullets: summaryBullets.querySelectorAll("li").map((li) => li.textContent),
       ago: summaryAgo.textContent,
+    },
+    drag: {
+      handleLabel: summaryDragHandle.getAttribute("aria-label"),
+      left: summaryPanel.style.getPropertyValue("left"),
+      top: summaryPanel.style.getPropertyValue("top"),
+      stored: storage.has("glosa.summaryPos") ? JSON.parse(storage.get("glosa.summaryPos")) : null,
     },
     pip: {
       hidden: pipButton.hidden,

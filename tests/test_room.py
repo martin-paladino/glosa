@@ -2403,6 +2403,7 @@ async def test_quality_is_still_measured_after_a_break(db, fake_typesafe_sdk) ->
     await worker.start(_talk("t1", language="en", targets=("es",), engine="fast"))
     await run_for(clock, 10.0)
     await worker.stop()  # the break
+    assert worker.status().quality is None  # M6: an idle room shows no (previous talk's) quality
 
     clock.advance(20.0)  # past QUALITY_MIN_INTERVAL_S since t1's last score
     await worker.start(_talk("t2", language="en", targets=("es",), engine="fast"))

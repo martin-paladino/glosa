@@ -608,7 +608,7 @@ class RoomWorker:
         level = run.vad.level_db if run is not None else MIN_LEVEL_DB
         latency = run.latency.p50() if run is not None else None
         talk_id = self.talk.id if self.talk is not None else None
-        quality = self._quality.avg() if self._quality is not None else None
+        quality = self._quality.avg() if self._quality is not None and self.talk is not None else None  # M6
         if quality is not None:
             quality = round(quality, 2)
         if self.talk is None:

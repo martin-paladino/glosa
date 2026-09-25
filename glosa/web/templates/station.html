@@ -25,6 +25,19 @@
     </div>
   </div>
 
+  {#- B-I4: shown instead of everything else once StationHub closes this
+      socket with 4409 (another client took over the room). station.js
+      deliberately does NOT auto-reconnect on that code -- two stations
+      would just keep superseding each other every ~0.5s forever, mixing
+      both microphones -- so this needs a manual way back in. #}
+  <div class="station-block" data-replaced hidden>
+    <div class="station-block__card">
+      <p class="station-block__title">{{ tr("station_replaced_title") }}</p>
+      <p class="station-block__body">{{ tr("station_replaced_body") }}</p>
+      <button class="btn station-setup__start" type="button" data-retake>{{ tr("station_retake") }}</button>
+    </div>
+  </div>
+
   {#- Capture setup: the level meter and the "Start" gesture the browser
       requires for the AudioContext, unless the mic permission is already
       granted and station.js can start on its own. #}

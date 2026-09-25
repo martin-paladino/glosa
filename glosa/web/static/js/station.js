@@ -27,6 +27,7 @@
   const FRAME_MS = 100;
   const RECONNECT_MIN_MS = 500;
   const RECONNECT_MAX_MS = 8000;
+  const REPLACED_CODE = 4409; // StationHub.connect: another client took over this room
   const BUFFER_MAX_FRAMES = 50; // 5 s at 100 ms/frame
   const LEVEL_REPORT_MS = 1000;
   const MIN_DB = -60; // meter floor; EnergyVad's own floor (-96) is quieter than any UI needs
@@ -44,6 +45,8 @@
   const badge = $("[data-badge]");
   const badgeLed = $("[data-badge-led]");
   const badgeText = $("[data-badge-text]");
+  const replacedBlock = $("[data-replaced]");
+  const retakeButton = $("[data-retake]");
 
   if (!station) return;
 
@@ -93,6 +96,20 @@
     badge.hidden = false;
     if (badgeLed) badgeLed.className = `led led--${state}`;
     if (badgeText) badgeText.textContent = text;
+  }
+
+  // ---- replaced by another station (B-I4) ---------------------------------------
+  // Two stations open for the same room supersede each other every reconnect
+  // (~0.5s), mixing both microphones forever, so a 4409 close must NOT go
+  // through the normal reconnect path -- it needs a person to decide.
+
+  function showReplaced() {
+    if (replacedBlock) replacedBlock.hidden = false;
+    setBadge("degraded", T.station_replaced_title || "Replaced by another station");
+  }
+
+  function hideReplaced() {
+    if (replacedBlock) replacedBlock.hidden = true;
   }
 
   // ---- devices ------------------------------------------------------------------
@@ -160,6 +177,7 @@
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
+      hideReplaced();
       reconnectDelay = 0;
       setBadge("live", T.station_audio_ok || "Audio OK");
       send({ type: "hello", device: deviceLabel(), version: 1 });
@@ -172,7 +190,18 @@
       try { msg = JSON.parse(event.data); } catch { return; }
       if (msg && msg.type === "reload") location.reload();
     };
-    ws.onclose = scheduleReconnect;
+    ws.onclose = (event) => {
+      // B-I4: a 4409 means another client just took over this room's
+      // station -- reconnecting here would only supersede it right back,
+      // and the two clients would keep trading places every ~0.5s forever,
+      // each flushing its own buffered audio into the mix. Stop and let a
+      // person decide with the "take over" button instead.
+      if (event && event.code === REPLACED_CODE) {
+        showReplaced();
+        return;
+      }
+      scheduleReconnect();
+    };
     ws.onerror = () => { /* onclose always follows; nothing extra to do here */ };
   }
 
@@ -307,6 +336,14 @@
       hint.textContent = errorText || T.station_permission_hint || "";
       hint.toggleAttribute("data-error", Boolean(errorText));
     }
+  }
+
+  if (retakeButton) {
+    retakeButton.addEventListener("click", () => {
+      hideReplaced();
+      reconnectDelay = 0;
+      connectWs(); // deliberate: closes the other client's socket in turn
+    });
   }
 
   if (startButton) {

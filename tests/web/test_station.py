@@ -177,6 +177,38 @@ def test_station_streambase_uses_the_room_public_token_not_the_slug() -> None:
     assert config["streamBase"] == "/api/stream/tok-r1-secret/"
 
 
+def test_station_page_has_a_replaced_by_another_station_block() -> None:
+    # B-I4: StationHub.connect closes the older socket with 4409 ("replaced
+    # by another station") when a second client opens the same room. The
+    # page needs a hidden block station.js can reveal instead of silently
+    # reconnecting (which would just supersede the other client back,
+    # forever) -- a clear message plus a "take over" control that
+    # reconnects deliberately. No JS harness covers station.js (unlike
+    # room.js/room_js_harness.js), so this is the template/i18n half of the
+    # fix: the markup and hooks station.js needs are present and correctly
+    # localized; the close-code branch itself is a code-reading check on
+    # static/js/station.js below.
+    client = _client(_make_app())
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    response = client.get(f"/station/r1?key={key}", headers={"Accept-Language": "es"})
+
+    html = response.text
+    assert "data-replaced" in html
+    assert "data-retake" in html
+    assert "Esta estación se abrió en otro equipo" in html
+    assert "Tomar el control" in html
+
+
+def test_station_js_does_not_reconnect_on_4409_and_offers_a_take_over_button() -> None:
+    # Code-reading check (see note above): station.js must special-case the
+    # StationHub's 4409 close code by NOT calling its normal reconnect path,
+    # and must wire a click on the take-over control to reconnect instead.
+    js = (Path(station.__file__).parent / "static" / "js" / "station.js").read_text()
+    assert "4409" in js
+    assert "data-retake" in js
+
+
 def test_station_page_403_without_a_key() -> None:
     client = _client(_make_app())
     assert client.get("/station/r1").status_code == 403

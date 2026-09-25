@@ -1312,6 +1312,16 @@
 
   $("[data-toast-close]", toastEl)?.addEventListener("click", () => { toastEl.hidden = true; });
 
+  // Theme (static/js/theme.js, shared with the audience pages; base.html applies it before paint).
+  const themeButton = document.querySelector('[data-action="theme"]');
+  if (themeButton && window.GlosaTheme) {
+    let names = {};
+    try { names = JSON.parse(themeButton.dataset.themeNames || "{}"); } catch { /* keep {} */ }
+    const label = () => window.GlosaTheme.label(themeButton, themeButton.dataset.themeLabel || "", names);
+    themeButton.addEventListener("click", () => { window.GlosaTheme.cycle(); label(); });
+    label();
+  }
+
   document.addEventListener("keydown", (event) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
     const target = event.target instanceof Element ? event.target : null;

@@ -523,6 +523,9 @@ def localize(snap: dict[str, Any], lang: Lang) -> dict[str, Any]:
     order = {room["id"]: n for n, room in enumerate(rooms)}
     attention.sort(key=lambda row: (SEVERITY_ORDER[row["severity"]], order.get(row["room_id"], len(order))))
     counts = {state: sum(room["state"] == state for room in rooms) for state in STATE_ORDER}
+    # "N en vivo" counts every room with a talk running, degraded or down ones
+    # included; those also get their own item ("1 degradada") on top.
+    counts["live"] = sum(room["state"] != "idle" for room in rooms)
     change = snap.get("next_change")
     if change is not None:
         key = "change_open" if change["kind"] == "open" else "change_close"

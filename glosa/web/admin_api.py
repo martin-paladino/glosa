@@ -127,7 +127,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from glosa.agenda import AgendaError, stable_talk_id
 from glosa.agenda.csv_import import VALID_ENGINES, VALID_LANGUAGES, parse_csv
 from glosa.agenda.nerdearla_import import SkippedSession, parse_nerdearla_report
-from glosa.i18n import ADMIN_STRINGS, LANG_COOKIE, LANG_COOKIE_MAX_AGE, SUPPORTED, Lang, admin_t, resolve_ui_lang
+from glosa.i18n import ADMIN_STRINGS, LANG_COOKIE, LANG_COOKIE_MAX_AGE, SUPPORTED, Lang, admin_t, resolve_ui_lang, t
 from glosa.models import GlossaryTerm, Talk
 from glosa.room import RoomWorker, is_free_talk
 from glosa.scheduler import NoTalkToRestart
@@ -328,6 +328,7 @@ def _page_context(request: Request, ui: Lang) -> dict[str, Any]:
     return {
         "ui": ui,
         "at": lambda key: admin_t(key, ui),
+        "tr": lambda key: t(key, ui),  # shared audience strings (the theme button)
         "event_name": branding.get("event_name") or settings.event_name or "Glosa",
         "logo_url": logo,
         "logo_mono": mono,

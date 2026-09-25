@@ -473,7 +473,8 @@ async def test_attention_lists_down_rooms_first_and_says_all_clear_when_nothing_
     rooms = {room["id"]: room for room in view["rooms"]}
     assert rooms["r2"]["text"]["state_line"] == "Fuente caída: ffmpeg exited 5 times."  # not "Caída. Fuente caída"
     assert rooms["r1"]["text"]["state_line"] == "Degradada. Retraso de 6,1 s; el tope es 5 s."
-    assert [(t["state"], t["count"]) for t in view["tally"]] == [("live", 1), ("degraded", 1), ("down", 1)]
+    # "en vivo" counts every room with a talk running (degraded and down included)
+    assert [(t["state"], t["count"]) for t in view["tally"]] == [("live", 3), ("degraded", 1), ("down", 1)]
 
     degraded.state = down.state = fine.state
     calm = localize(await AdminMonitor(p.app).snapshot(), "es")

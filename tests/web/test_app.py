@@ -263,3 +263,34 @@ class _FakeSettings:
 # filter against records shaped exactly like uvicorn's real calls) and the
 # manual, real-server verification already done for this task are the
 # coverage available here.
+
+
+# ---------------------------------------------------- shutdown (final-review-A I1)
+
+
+async def test_shutdown_acloses_every_room_worker(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """RoomWorker.stop() runs between talks and keeps the Jev meter's HTTP
+    client; the lifespan's shutdown calls RoomWorker.aclose(), which also
+    closes it."""
+    from glosa.config import RoomCfg, Settings
+    from glosa.room import RoomWorker
+    from glosa.web.app import create_app
+
+    closed: list[str] = []
+
+    async def fake_aclose(self) -> None:
+        closed.append(self.room.id)
+
+    monkeypatch.setattr(RoomWorker, "aclose", fake_aclose)
+    settings = Settings(
+        gemini_api_key="unused", admin_password="test-password", db_path=str(tmp_path / "glosa.db"),
+        rooms=[
+            RoomCfg(id="r1", name="Uno", source_type="file", source_url=None, default_targets=["es"]),
+            RoomCfg(id="r2", name="Dos", source_type="file", source_url=None, default_targets=["es"]),
+        ],
+    )
+    app = create_app(settings, autopilot_interval_s=3600)
+    async with app.router.lifespan_context(app):
+        assert closed == []
+
+    assert sorted(closed) == ["r1", "r2"]

@@ -438,7 +438,7 @@ def create_app(
             if talk_checker is not None:
                 await talk_checker.aclose()
             rooms = list(workers.values())
-            results = await asyncio.gather(*(w.stop() for w in rooms), return_exceptions=True)
+            results = await asyncio.gather(*(w.aclose() for w in rooms), return_exceptions=True)
             for worker, result in zip(rooms, results, strict=True):
                 if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
                     log.error("room %s: stop failed", worker.room.id, exc_info=result)

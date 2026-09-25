@@ -251,7 +251,9 @@ class FakeQualityMeter:
     async def score(self, src: str, tgt: str) -> float | None:
         self.calls.append((src, tgt))
         await asyncio.sleep(0)
-        return self.result
+        # The real QualityMeter's closed HTTP client raises, which it
+        # swallows into None (final-review-A I1).
+        return None if self.closed else self.result
 
     def add(self, p: float | None) -> None:
         if p is not None:
@@ -2341,7 +2343,31 @@ async def test_quality_feed_scores_fast_track_pairs_and_status_surfaces_the_aver
     assert worker.status().quality == pytest.approx(0.42)
     assert worker.status().state == "yellow"  # below the 0.5 quality threshold; latency/level otherwise green
     await worker.stop()
-    assert meter.closed == 1  # stop() closes the meter's HTTP client after any in-flight score
+    assert meter.closed == 0  # I1: stop() between talks keeps the meter's HTTP client
+    await worker.aclose()
+    assert meter.closed == 1  # only the final shutdown closes it, after any in-flight score
+
+
+async def test_quality_is_still_measured_after_a_break(db, fake_typesafe_sdk) -> None:  # I1
+    """The autopilot stop()s a room between two talks: the next talk's
+    quality must still be measured (the meter's HTTP client stays open)."""
+    clock = DrivenClock()
+    meter = FakeQualityMeter(result=0.8)
+    worker = _worker(_room(), _settings(typesafe_api_key="fake-key"), CaptionBus(clock=clock), db, clock,
+                     Factory(clock, FAKE_LT, FAKE_LT), IngestFactory(), quality_factory=lambda key: meter)
+    await worker.start(_talk("t1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 10.0)
+    await worker.stop()  # the break
+
+    clock.advance(20.0)  # past QUALITY_MIN_INTERVAL_S since t1's last score
+    await worker.start(_talk("t2", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 10.0)
+
+    assert worker.status().quality == pytest.approx(0.8)
+    await worker.aclose()
+    assert meter.closed == 1 and worker.talk is None
+    await worker.aclose()  # idempotent
+    assert meter.closed == 1
 
 
 async def test_quality_feed_scores_glossary_lane_pairs_es_to_en(db, fake_typesafe_sdk) -> None:  # Task 13w

@@ -465,7 +465,9 @@ class RoomWorker:
             await self._start_locked(talk, self.room.source_type, self.room.source_url, self._realtime)
 
     async def stop(self) -> None:
-        """End the talk and stop the pipeline. No task is left running."""
+        """End the talk and stop the pipeline. No task is left running. The
+        room can start again: the Jev meter's HTTP client stays open (I1:
+        the autopilot stops rooms between talks); ``aclose()`` closes it."""
         async with self._lock:
             if self._run is not None:
                 await self._teardown(self._run)
@@ -473,6 +475,11 @@ class RoomWorker:
                 await self._end_talk()
             self._source_down = None
         await self._wait_aux()
+
+    async def aclose(self) -> None:
+        """Final shutdown (the app's lifespan only): ``stop()``, then release
+        the Jev meter's HTTP client. Idempotent."""
+        await self.stop()
         if self._quality is not None:
             await self._quality.aclose()
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -55,6 +55,16 @@ class RoomCfg(BaseModel):
     # slug "gran-sala"). An agenda import maps them, the room's id and its
     # name to this room.
     agenda_names: list[str] = Field(default_factory=list)
+    # The demo loop (config.demo-fake.yaml only: a real engine would spend API
+    # money all day): a free session whose file ends plays it again instead
+    # of ending (glosa/room.py). "file" sources only.
+    loop: bool = False
+
+    @model_validator(mode="after")
+    def _loop_needs_a_file(self) -> "RoomCfg":
+        if self.loop and self.source_type != "file":
+            raise ValueError(f"room {self.id!r}: loop is only for source_type 'file'")
+        return self
 
 
 class Prices(BaseModel):

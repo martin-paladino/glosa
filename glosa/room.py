@@ -166,6 +166,8 @@ Sources
     ("Probar con audio", C1/Ruling 60) replaces the source of a running
     free session until the clip ends (then switches back), or starts a free
     session of its own; it refuses an agenda talk (``SoundCheckRefused``).
+    A room with ``loop: true`` (config.demo-fake.yaml only) plays its file
+    again when it ends during a free session (``_loop_again``).
     When a source ends by itself, the pipeline stops:
       - a clean end (a file that finished) first feeds ``tail_s`` s of
         silence so the engine can finish the last phrase, then ends the
@@ -417,6 +419,7 @@ class RoomWorker:
         self._station_hub = station_hub
         cfg = next((r for r in settings.rooms if r.id == room.id), None)
         self.language = cfg.language if cfg is not None else "en"
+        self._loop = cfg is not None and cfg.loop  # the demo loop (config.demo-fake.yaml)
         try:
             self._tz: timezone | ZoneInfo = ZoneInfo(settings.timezone)
         except (ZoneInfoNotFoundError, ValueError):
@@ -998,6 +1001,9 @@ class RoomWorker:
         async with self._lock:
             if self._run is not run or run.audio is not audio:
                 return  # stopped, restarted or given another source meanwhile
+            if not error and self._loops(run):
+                await self._loop_again(run)
+                return
             if run.test and run.resume is not None:  # C1: the free session goes back to its own source
                 if error:
                     log.warning("room %s: test clip failed: %s", self.room.id, error)
@@ -1014,6 +1020,29 @@ class RoomWorker:
                 await self._log("error", "source_down", error)
             else:
                 await self._end_talk()
+
+    def _loops(self, run: _Run) -> bool:
+        """The demo loop (``RoomCfg.loop``): a free session playing the room's
+        own file (not a test clip) plays it again when it ends."""
+        return (
+            self._loop
+            and not run.test
+            and is_free_talk(run.talk.id)
+            and run.source[:2] == ("file", self.room.source_url)
+        )
+
+    async def _loop_again(self, run: _Run) -> None:
+        """Play the file again on the same run: the audio clock goes on
+        (``_audio_loop`` starts at ``run.t_next``), no tail, no talk end. A
+        fresh engine session starts with it (a FakeEngine replays its
+        recording in step with the audio); that reconnect is housekeeping:
+        neither a fallback incident nor a "recent reconnect"."""
+        run.file_started_at = self._clock.now()
+        run.audio = self._spawn(self._audio_loop(run, *run.source), "audio")
+        run.manual_reconnects += 1
+        await run.relay.reconnect("loop")
+        run.reconnects = run.relay.stats["reconnects"]
+        log.info("room %s: looping %s", self.room.id, run.source[1])
 
     # ------------------------------------------------------------ audio
 
@@ -1036,7 +1065,7 @@ class RoomWorker:
             # source died for good only if it kept failing after its last chunk.
             if getattr(ingest, "restarts", 0) > restarts_seen:
                 error = getattr(ingest, "last_error", None) or "the source stopped"
-            else:  # a clean end: let the engine finish the last phrase
+            elif not self._loops(run):  # a clean end: let the engine finish the last phrase
                 for _ in range(round(self._tail_s / CHUNK_S)):
                     await self._clock.sleep(CHUNK_S)
                     await self._feed(run, AudioChunk(pcm=SILENCE, t=run.t_next))

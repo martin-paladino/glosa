@@ -932,6 +932,51 @@ async def test_a_source_that_recovered_then_ended_ends_the_talk(db) -> None:
     assert "source_down" not in [e.type for e in await db.recent_events(10)]
 
 
+def _loop_settings() -> Settings:
+    return Settings(
+        gemini_api_key="test-key", admin_password="test-password",
+        rooms=[RoomCfg(id="r1", name="Sala r1", source_type="file", source_url="fake://r1", loop=True)],
+    )
+
+
+async def test_a_looping_file_restarts_seamlessly_during_a_free_session(db) -> None:  # the demo loop
+    """``loop: true`` (config.demo-fake.yaml): a free session whose file ends
+    plays it again instead of ending -- on a continuous audio clock, with a
+    fresh engine session (FakeEngine replays in step with the audio), and
+    no "recent reconnect" nor fallback incident for it."""
+    clock = DrivenClock()
+    ingests = IngestFactory(seconds=3.0)
+    factory = Factory(clock, FAKE_LT)
+    worker = _worker(_room(), _loop_settings(), CaptionBus(clock=clock), db, clock, factory, ingests, tail_s=1.0)
+    await worker.start(None)
+    free = worker.talk
+
+    await run_for(clock, 7.5)
+
+    assert worker.talk is free and worker.status().state != "idle"
+    assert [i.args for i in ingests.made] == [("file", "fake://r1", False)] * 3
+    sent = [t for engine in factory.engines for t in engine.sent]
+    assert sent == sorted(sent) and len(set(sent)) == len(sent)  # one continuous audio clock
+    assert max(sent) == pytest.approx(7.4, abs=0.15)  # no tail silence between loops
+    assert len(factory.configs) == 3  # a fresh engine session per loop
+    assert "reconnect" not in worker.status().detail
+    assert (await db.get_talk(free.id)).status == "live"
+    await worker.stop()
+
+
+async def test_a_looping_file_still_ends_an_agenda_talk(db) -> None:
+    clock = DrivenClock()
+    ingests = IngestFactory(seconds=3.0)
+    worker = _worker(_room(), _loop_settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), ingests,
+                     tail_s=0.5)
+    await worker.start(_agenda_talk("a"))
+
+    await run_for(clock, 5.0)
+
+    assert worker.talk is None and len(ingests.made) == 1
+    assert (await db.get_talk("a")).status == "done"
+
+
 async def test_play_file_rejects_a_missing_file(tmp_path: Path, db) -> None:
     clock = DrivenClock()
     worker = _worker(_room(), _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), IngestFactory())

@@ -310,11 +310,11 @@ completo, hallazgos y comando de reproducción:
 | Clip | Motor | Retraso del texto original p50 / p90 | Retraso de la traducción p50 / p90 | Fidelidad | Fluidez | Términos del glosario | US$/h |
 |---|---|---|---|---|---|---|---|
 | Charla EN → ES | fast (Live Translate) | 1,28 / 2,08 s | 1,40 / 3,84 s | 4/5 | 3/5 | 94 % | 2,19 |
-| Charla EN → ES | glossary (Transcribe Live + Flash-Lite) | **0,69 / 1,59 s** | **1,34** / 4,25 s | 3/5 | 2/5 | **100 %** | **0,70** |
+| Charla EN → ES | glossary (Transcribe Live + Flash-Lite) | **0,80 / 1,48 s** | **1,34 / 3,02 s** | 3/5 | 2/5 | **100 %** | **0,75** |
 | Charla ES → EN | fast (Live Translate) | 1,66 / 2,35 s | 2,57 / 3,90 s | 5/5 | 4/5 | 100 % | 2,16 |
-| Charla ES → EN | glossary (Transcribe Live + Flash-Lite) | **0,52 / 1,33 s** | **1,76** / 5,59 s | 3/5 | 2/5 | 94 % | **0,74** |
+| Charla ES → EN | glossary (Transcribe Live + Flash-Lite) | **0,74 / 1,57 s** | 3,22 / 5,17 s | 4/5 | 3/5 | 100 % | **0,75** |
 
-APIs reales de Gemini, a velocidad real, clips de ~93 s de charlas reales de Nerdearla, una corrida por combinación (US$0,16 en total). Retraso = cuánto van los subtítulos detrás de quien habla, medido sobre curvas acumuladas de palabras contra los tiempos por palabra de YouTube; fidelidad y fluidez las puntúa un LLM juez (`gemini-3.8-flash`) contra una traducción de referencia — con una sola corrida son orientativas. Método completo, grabaciones crudas y `make bench`: [`bench/results.md`](bench/results.md). Por defecto: `fast` para charlas en inglés (más fluido) y `glossary` para charlas en español (3× más barato y respeta el glosario).
+APIs reales de Gemini, a velocidad real, clips de ~93 s de charlas reales de Nerdearla, una corrida por combinación (US$0,20 en total; las filas del motor glosario se volvieron a medir el 2026-09-25, después de la mejora de fluidez). Retraso = cuánto van los subtítulos detrás de quien habla, medido sobre curvas acumuladas de palabras contra los tiempos por palabra de YouTube; fidelidad y fluidez las puntúa un LLM juez (`gemini-3.8-flash`) contra una traducción de referencia — con una sola corrida son orientativas. Método completo, grabaciones crudas y `make bench`: [`bench/results.md`](bench/results.md). Por defecto: `fast` para charlas en inglés (más fluido) y `glossary` para charlas en español (3× más barato y respeta el glosario).
 
 
 La propia latencia del motor `glossary`, medida en vivo durante esta

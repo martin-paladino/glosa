@@ -603,11 +603,14 @@ def reconstruct_final_text(events: list[dict], lang: str) -> str:
 # "do NOT re-run the judge"). Each run's one-line justification text was
 # never persisted to disk in the first place (bench.py only ever held it in
 # memory before rendering the table); unavailable, noted in results.md.
+# The glossary rows are from the 2026-09-25 re-run of that engine alone
+# (`--live --only <clip>:glossary`, after Task 16q's translation context
+# and glossary inflection landed); the fast rows from the first run.
 PRIOR_JUDGE_SCORES: dict[tuple[str, str], tuple[int, int]] = {
     ("en_clip", "fast"): (4, 3),
     ("en_clip", "glossary"): (3, 2),
     ("es_clip", "fast"): (5, 4),
-    ("es_clip", "glossary"): (3, 2),
+    ("es_clip", "glossary"): (4, 3),
 }
 JUSTIFICATION_NOT_SAVED = (
     "not saved by the original live run (bench.py held it only in memory); not recoverable without "

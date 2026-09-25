@@ -1,287 +1,272 @@
-{"t": 0.034, "lang": "es", "type": "talk", "data": {"talk_id": "es_clip-glossary", "title": "Bench es_clip (glossary)", "speakers": [], "language": "es"}}
-{"t": 0.034, "lang": "en", "type": "talk", "data": {"talk_id": "es_clip-glossary", "title": "Bench es_clip (glossary)", "speakers": [], "language": "es"}}
-{"t": 0.557, "lang": "es", "type": "status", "data": {"state": "green"}}
-{"t": 0.557, "lang": "en", "type": "status", "data": {"state": "green"}}
-{"t": 1.897, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto,"}
-{"t": 2.573, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes"}
-{"t": 2.839, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la"}
-{"t": 3.091, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de"}
-{"t": 3.899, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a"}
-{"t": 4.413, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo"}
-{"t": 4.632, "lang": "en", "type": "append", "seg": 0, "text": "By the way, when you receive your Cloud bill,"}
-{"t": 4.632, "lang": "en", "type": "close", "seg": 0}
-{"t": 4.839, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como no"}
-{"t": 5.326, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el"}
-{"t": 5.833, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de"}
-{"t": 5.988, "lang": "en", "type": "append", "seg": 1, "text": "it will tell you something like,"}
-{"t": 5.988, "lang": "en", "type": "close", "seg": 1}
-{"t": 6.789, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes, a"}
-{"t": 7.229, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido al"}
-{"t": 7.638, "lang": "en", "type": "append", "seg": 2, "text": "I don't know, the Kubernetes control plane,"}
-{"t": 7.638, "lang": "en", "type": "close", "seg": 2}
-{"t": 7.706, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido el mes pasado"}
-{"t": 8.227, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido el mes pasado tanto."}
-{"t": 8.457, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido el mes pasado tanto."}
-{"t": 8.457, "lang": "es", "type": "close", "seg": 0}
-{"t": 8.789, "lang": "en", "type": "append", "seg": 3, "text": "was released last month."}
-{"t": 8.789, "lang": "en", "type": "close", "seg": 3}
-{"t": 9.368, "lang": "es", "type": "set", "seg": 1, "text": "En nodos"}
-{"t": 9.86, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s"}
-{"t": 10.345, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles"}
-{"t": 10.823, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles de d\u00f3lares"}
-{"t": 11.29, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles de d\u00f3lares gastados"}
-{"t": 11.782, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles de d\u00f3lares gastados."}
-{"t": 11.782, "lang": "es", "type": "close", "seg": 1}
-{"t": 12.506, "lang": "en", "type": "append", "seg": 4, "text": "On nodes you have that many thousands of dollars spent."}
-{"t": 12.506, "lang": "en", "type": "close", "seg": 4}
-{"t": 12.795, "lang": "es", "type": "set", "seg": 2, "text": "Pero"}
-{"t": 13.261, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo"}
-{"t": 13.773, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en"}
-{"t": 14.292, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad,"}
-{"t": 14.818, "lang": "en", "type": "append", "seg": 5, "text": "But if we really think about it,"}
-{"t": 14.818, "lang": "en", "type": "close", "seg": 5}
-{"t": 15.197, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la"}
-{"t": 15.683, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del"}
-{"t": 16.169, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de"}
-{"t": 16.651, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud"}
-{"t": 17.6, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un"}
-{"t": 18.085, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto"}
-{"t": 18.555, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no"}
-{"t": 18.91, "lang": "en", "type": "append", "seg": 6, "text": "the cloud provider bill goes up to a point"}
-{"t": 18.91, "lang": "en", "type": "close", "seg": 6}
-{"t": 19.051, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende"}
-{"t": 19.56, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir un"}
-{"t": 19.997, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una"}
-{"t": 20.493, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no"}
-{"t": 20.959, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende"}
-{"t": 21.208, "lang": "en", "type": "append", "seg": 7, "text": "and it doesn't understand, I'll state the obvious,"}
-{"t": 21.208, "lang": "en", "type": "close", "seg": 7}
-{"t": 22.005, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces,"}
-{"t": 22.416, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende"}
-{"t": 22.881, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende de"}
-{"t": 23.372, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende de teams,"}
-{"t": 23.466, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende de teams."}
-{"t": 23.466, "lang": "es", "type": "close", "seg": 2}
-{"t": 23.915, "lang": "es", "type": "set", "seg": 3, "text": "de"}
-{"t": 24.048, "lang": "en", "type": "append", "seg": 8, "text": "it doesn't understand namespaces, it doesn't understand teams,"}
-{"t": 24.048, "lang": "en", "type": "close", "seg": 8}
-{"t": 24.403, "lang": "es", "type": "set", "seg": 3, "text": "de labels"}
-{"t": 24.912, "lang": "es", "type": "set", "seg": 3, "text": "the labels, the"}
-{"t": 25.411, "lang": "es", "type": "set", "seg": 3, "text": "the labels, the workloads,"}
-{"t": 25.818, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las"}
-{"t": 26.334, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo"}
-{"t": 26.797, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed"}
-{"t": 27.32, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi"}
-{"t": 27.662, "lang": "en", "type": "append", "seg": 9, "text": "of labels, of workloads, which are the things that I do"}
-{"t": 27.662, "lang": "en", "type": "close", "seg": 9}
-{"t": 27.804, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo."}
-{"t": 28.216, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo"}
-{"t": 28.405, "lang": "en", "type": "append", "seg": 10, "text": "I'm talking to my team."}
-{"t": 28.405, "lang": "en", "type": "close", "seg": 10}
-{"t": 28.712, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir"}
-{"t": 29.204, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir ir a"}
-{"t": 29.699, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi"}
-{"t": 30.212, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de"}
-{"t": 31.116, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan"}
-{"t": 31.61, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9"}
-{"t": 31.935, "lang": "en", "type": "append", "seg": 11, "text": "I can go to my team of some"}
-{"t": 31.935, "lang": "en", "type": "close", "seg": 11}
-{"t": 32.095, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que"}
-{"t": 33.035, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en"}
-{"t": 33.558, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana, Loki,"}
-{"t": 34.002, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana, Loki, reci\u00e9n"}
-{"t": 34.191, "lang": "en", "type": "append", "seg": 12, "text": "backend, you know, of the ones we use in Grafana,"}
-{"t": 34.191, "lang": "en", "type": "close", "seg": 12}
-{"t": 34.541, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana, Loki, reci\u00e9n mencionaban Loki,"}
-{"t": 35.02, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El"}
-{"t": 35.438, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de"}
-{"t": 35.529, "lang": "en", "type": "append", "seg": 13, "text": "Loki, they just mentioned Loki."}
-{"t": 35.529, "lang": "en", "type": "close", "seg": 13}
-{"t": 35.905, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki"}
-{"t": 36.417, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki y decir,"}
-{"t": 36.68, "lang": "es", "type": "set", "seg": 3, "text": "the labels, the workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki, el equipo de backend de Loki y decir,"}
-{"t": 36.68, "lang": "es", "type": "close", "seg": 3}
-{"t": 36.924, "lang": "en", "type": "append", "seg": 14, "text": "the Loki backend team and say,"}
-{"t": 36.924, "lang": "en", "type": "close", "seg": 14}
-{"t": 36.97, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9"}
-{"t": 37.357, "lang": "en", "type": "append", "seg": 15, "text": "say,"}
-{"t": 37.357, "lang": "en", "type": "close", "seg": 15}
-{"t": 37.469, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido"}
-{"t": 37.73, "lang": "en", "type": "append", "seg": 16, "text": "of labels, of workloads, which are the things that I do talk about with my"}
-{"t": 37.73, "lang": "en", "type": "close", "seg": 16}
-{"t": 37.731, "lang": "en", "type": "append", "seg": 17, "text": "team."}
-{"t": 37.731, "lang": "en", "type": "close", "seg": 17}
-{"t": 37.944, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con"}
-{"t": 38.364, "lang": "en", "type": "append", "seg": 18, "text": "I can go to some backend team of mine,"}
-{"t": 38.364, "lang": "en", "type": "close", "seg": 18}
-{"t": 38.365, "lang": "en", "type": "append", "seg": 19, "text": "what do I know, the ones we use in Grafana Loki,"}
-{"t": 38.365, "lang": "en", "type": "close", "seg": 19}
-{"t": 38.365, "lang": "en", "type": "append", "seg": 20, "text": "They just mentioned Loki."}
-{"t": 38.365, "lang": "en", "type": "close", "seg": 20}
-{"t": 38.365, "lang": "en", "type": "append", "seg": 21, "text": "The Loki backend team says,"}
-{"t": 38.365, "lang": "en", "type": "close", "seg": 21}
-{"t": 38.893, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este"}
-{"t": 39.862, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de"}
-{"t": 40.352, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos"}
-{"t": 40.613, "lang": "en", "type": "append", "seg": 22, "text": "What has happened with this spike in"}
-{"t": 40.613, "lang": "en", "type": "close", "seg": 22}
-{"t": 40.885, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes"}
-{"t": 41.277, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en"}
-{"t": 41.787, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este"}
-{"t": 42.262, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular"}
-{"t": 42.785, "lang": "es", "type": "set", "seg": 4, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki decir,\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular cluster?"}
-{"t": 42.874, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido esta disparada de costos desde el mes pasado en este particular cluster?"}
-{"t": 42.874, "lang": "es", "type": "close", "seg": 4}
-{"t": 43.215, "lang": "es", "type": "set", "seg": 5, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular cluster?\u00bfO"}
-{"t": 43.324, "lang": "en", "type": "append", "seg": 23, "text": "costs since last month in this particular cluster?"}
-{"t": 43.324, "lang": "en", "type": "close", "seg": 23}
-{"t": 43.705, "lang": "es", "type": "set", "seg": 5, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular cluster?O dentro de este"}
-{"t": 43.88, "lang": "en", "type": "append", "seg": 24, "text": "What has happened with this cost surge since last month"}
-{"t": 43.88, "lang": "en", "type": "close", "seg": 24}
-{"t": 43.88, "lang": "en", "type": "append", "seg": 25, "text": "past in this particular cluster?"}
-{"t": 43.88, "lang": "en", "type": "close", "seg": 25}
-{"t": 44.216, "lang": "es", "type": "set", "seg": 5, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular cluster?o dentro de este cl\u00faster en este"}
-{"t": 44.706, "lang": "es", "type": "set", "seg": 5, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular cluster?o dentro de este cl\u00faster, en este particular"}
-{"t": 45.379, "lang": "en", "type": "append", "seg": 26, "text": "or within this cluster,"}
-{"t": 45.379, "lang": "en", "type": "close", "seg": 26}
-{"t": 45.721, "lang": "es", "type": "set", "seg": 5, "text": "o dentro de este cl\u00faster en este particular namespace."}
-{"t": 45.721, "lang": "es", "type": "close", "seg": 5}
-{"t": 46.586, "lang": "es", "type": "set", "seg": 6, "text": "Esa"}
-{"t": 47.076, "lang": "es", "type": "set", "seg": 6, "text": "Esa visibilidad"}
-{"t": 47.612, "lang": "es", "type": "set", "seg": 6, "text": "Esa visibilidad, esa"}
-{"t": 48.029, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad"}
-{"t": 48.468, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que"}
-{"t": 49.038, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da"}
-{"t": 49.528, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el"}
-{"t": 50.212, "lang": "en", "type": "append", "seg": 27, "text": "that visibility, that granularity is what the"}
-{"t": 50.212, "lang": "en", "type": "close", "seg": 27}
-{"t": 50.401, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud"}
-{"t": 50.923, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider ni"}
-{"t": 51.43, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar"}
-{"t": 51.949, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar en el"}
-{"t": 52.432, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar en el caso de Grafana."}
-{"t": 53.135, "lang": "en", "type": "append", "seg": 28, "text": "cloud provider, let alone in the case of Grafana."}
-{"t": 53.135, "lang": "en", "type": "close", "seg": 28}
-{"t": 53.247, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana, nosotros"}
-{"t": 53.38, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana, nosotros corremos los"}
-{"t": 53.855, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres"}
-{"t": 54.832, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos"}
-{"t": 55.261, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos en"}
-{"t": 55.387, "lang": "en", "type": "append", "seg": 29, "text": "we run the three main cloud providers,"}
-{"t": 55.387, "lang": "en", "type": "close", "seg": 29}
-{"t": 55.74, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud providers, corremos en AWS, en"}
-{"t": 56.674, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud providers, corremos en AWS, en GCP, en"}
-{"t": 56.832, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud providers, corremos en AWS, en GCP, en Azure."}
-{"t": 56.936, "lang": "es", "type": "set", "seg": 6, "text": "Esa visibilidad, esa granularidad es lo que no me da el cloud provider. Ni hablar, en el caso de Grafana, nosotros corremos los tres main cloud providers, corremos en AWS, en GCP y en Azure."}
-{"t": 56.936, "lang": "es", "type": "close", "seg": 6}
-{"t": 57.431, "lang": "en", "type": "append", "seg": 30, "text": "we run on AWS, on GCP,"}
-{"t": 57.431, "lang": "en", "type": "close", "seg": 30}
-{"t": 57.522, "lang": "es", "type": "set", "seg": 7, "text": "Que"}
-{"t": 57.533, "lang": "en", "type": "append", "seg": 31, "text": "on Azure."}
-{"t": 57.533, "lang": "en", "type": "close", "seg": 31}
-{"t": 57.72, "lang": "en", "type": "append", "seg": 32, "text": "Azure."}
-{"t": 57.72, "lang": "en", "type": "close", "seg": 32}
-{"t": 57.967, "lang": "es", "type": "set", "seg": 7, "text": "Que tiene todo"}
-{"t": 58.476, "lang": "es", "type": "set", "seg": 7, "text": "Que tiene todo su"}
-{"t": 58.899, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia"}
-{"t": 59.379, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su"}
-{"t": 59.883, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia"}
-{"t": 60.382, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de"}
-{"t": 61.298, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar"}
-{"t": 61.777, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la"}
-{"t": 62.255, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula"}
-{"t": 62.78, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado"}
-{"t": 63.075, "lang": "en", "type": "append", "seg": 33, "text": "which has all its own its own way of"}
-{"t": 63.075, "lang": "en", "type": "close", "seg": 33}
-{"t": 63.263, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la"}
-{"t": 63.672, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula,"}
-{"t": 64.185, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula, aunque el"}
-{"t": 64.295, "lang": "en", "type": "append", "seg": 34, "text": "presenting the formula, especially the right side of the formula,"}
-{"t": 64.295, "lang": "en", "type": "close", "seg": 34}
-{"t": 64.693, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula, aunque el lado izquierdo tambi\u00e9n."}
-{"t": 65.086, "lang": "es", "type": "set", "seg": 7, "text": "que tiene toda su propia su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula, aunque el lado izquierdo tambi\u00e9n."}
-{"t": 65.086, "lang": "es", "type": "close", "seg": 7}
-{"t": 65.324, "lang": "en", "type": "append", "seg": 35, "text": "although the left side does too."}
-{"t": 65.324, "lang": "en", "type": "close", "seg": 35}
-{"t": 66.079, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo"}
-{"t": 66.624, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese"}
-{"t": 67.007, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de"}
-{"t": 67.494, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos"}
-{"t": 68.002, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el"}
-{"t": 68.485, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si"}
-{"t": 69.034, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar"}
-{"t": 69.444, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki no"}
-{"t": 69.94, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki no diga, ah,"}
-{"t": 69.962, "lang": "en", "type": "append", "seg": 36, "text": "So, how do we create that common data model with which, if I go"}
-{"t": 69.962, "lang": "en", "type": "close", "seg": 36}
-{"t": 70.453, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es"}
-{"t": 71.418, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos"}
-{"t": 71.427, "lang": "en", "type": "append", "seg": 37, "text": "to talk to Loki, it doesn't say,"}
-{"t": 71.427, "lang": "en", "type": "close", "seg": 37}
-{"t": 71.848, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de"}
-{"t": 72.301, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS, la"}
-{"t": 72.858, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n"}
-{"t": 72.977, "lang": "en", "type": "append", "seg": 38, "text": "ah, this is when we talk about AWS,"}
-{"t": 72.977, "lang": "en", "type": "close", "seg": 38}
-{"t": 73.372, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo"}
-{"t": 73.843, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas"}
-{"t": 74.753, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando"}
-{"t": 75.246, "lang": "en", "type": "append", "seg": 39, "text": "the cost dimension has these labels,"}
-{"t": 75.246, "lang": "en", "type": "close", "seg": 39}
-{"t": 75.253, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de"}
-{"t": 76.254, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene"}
-{"t": 76.684, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no."}
-{"t": 77.414, "lang": "en", "type": "append", "seg": 40, "text": "but when we talk about GCP it has others."}
-{"t": 77.414, "lang": "en", "type": "close", "seg": 40}
-{"t": 77.415, "lang": "en", "type": "append", "seg": 41, "text": "No, no, no."}
-{"t": 77.415, "lang": "en", "type": "close", "seg": 41}
-{"t": 77.653, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo"}
-{"t": 78.132, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear"}
-{"t": 78.641, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el"}
-{"t": 79.03, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado"}
-{"t": 79.527, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el"}
-{"t": 80.013, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado"}
-{"t": 80.038, "lang": "en", "type": "append", "seg": 42, "text": "How can I create the end side,"}
-{"t": 80.038, "lang": "en", "type": "close", "seg": 42}
-{"t": 80.498, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga"}
-{"t": 81.42, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un"}
-{"t": 81.91, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de"}
-{"t": 82.417, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos"}
-{"t": 82.907, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos, si"}
-{"t": 83.228, "lang": "en", "type": "append", "seg": 43, "text": "the cost side has a data model"}
-{"t": 83.228, "lang": "en", "type": "close", "seg": 43}
-{"t": 83.395, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han"}
-{"t": 83.82, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto"}
-{"t": 84.329, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL,"}
-{"t": 84.815, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL"}
-{"t": 84.829, "lang": "en", "type": "append", "seg": 44, "text": "If you haven't seen PromQL,"}
-{"t": 84.829, "lang": "en", "type": "close", "seg": 44}
-{"t": 85.342, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto."}
-{"t": 85.844, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si"}
-{"t": 85.913, "lang": "en", "type": "append", "seg": 45, "text": "perfect."}
-{"t": 85.913, "lang": "en", "type": "close", "seg": 45}
-{"t": 86.231, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en"}
-{"t": 86.732, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL,"}
-{"t": 87.713, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las"}
-{"t": 88.637, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que"}
-{"t": 89.188, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que"}
-{"t": 89.385, "lang": "en", "type": "append", "seg": 46, "text": "If you think about SQL, what are the columns that"}
-{"t": 89.385, "lang": "en", "type": "close", "seg": 46}
-{"t": 89.656, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo"}
-{"t": 90.111, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo idioma?"}
-{"t": 90.636, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo idioma, \u00bfno?"}
-{"t": 90.706, "lang": "en", "type": "append", "seg": 47, "text": "make us share the same language?"}
-{"t": 90.706, "lang": "en", "type": "close", "seg": 47}
-{"t": 90.959, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki no diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene estas otras? No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo, tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto, si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo idioma, no?"}
-{"t": 90.959, "lang": "es", "type": "close", "seg": 8}
-{"t": 91.876, "lang": "es", "type": "set", "seg": 9, "text": "Eso es un"}
-{"t": 91.89, "lang": "en", "type": "append", "seg": 48, "text": "right?"}
-{"t": 91.89, "lang": "en", "type": "close", "seg": 48}
-{"t": 91.891, "lang": "en", "type": "append", "seg": 49, "text": "no?"}
-{"t": 91.891, "lang": "en", "type": "close", "seg": 49}
-{"t": 92.411, "lang": "es", "type": "set", "seg": 9, "text": "Eso es un desaf\u00edo."}
-{"t": 93.033, "lang": "en", "type": "append", "seg": 50, "text": "That is a challenge."}
-{"t": 93.033, "lang": "en", "type": "close", "seg": 50}
-{"t": 93.421, "lang": "es", "type": "close", "seg": 9}
-{"t": 97.08, "lang": "es", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}
-{"t": 97.08, "lang": "en", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}
+{"t": 0.024, "lang": "es", "type": "talk", "data": {"talk_id": "es_clip-glossary", "title": "Bench es_clip (glossary)", "speakers": [], "language": "es"}}
+{"t": 0.024, "lang": "en", "type": "talk", "data": {"talk_id": "es_clip-glossary", "title": "Bench es_clip (glossary)", "speakers": [], "language": "es"}}
+{"t": 0.548, "lang": "es", "type": "status", "data": {"state": "green"}}
+{"t": 0.548, "lang": "en", "type": "status", "data": {"state": "green"}}
+{"t": 1.822, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto,"}
+{"t": 2.648, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes"}
+{"t": 2.933, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la"}
+{"t": 3.219, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de"}
+{"t": 3.504, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud"}
+{"t": 3.921, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a"}
+{"t": 4.48, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo"}
+{"t": 4.831, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como no"}
+{"t": 5.304, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el"}
+{"t": 5.397, "lang": "en", "type": "append", "seg": 0, "text": "By the way, when you receive your Cloud bill,"}
+{"t": 5.397, "lang": "en", "type": "close", "seg": 0}
+{"t": 5.849, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de"}
+{"t": 6.829, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes, a"}
+{"t": 6.903, "lang": "en", "type": "append", "seg": 1, "text": "it's going to tell you something like,"}
+{"t": 6.903, "lang": "en", "type": "close", "seg": 1}
+{"t": 7.262, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido al"}
+{"t": 7.456, "lang": "en", "type": "append", "seg": 2, "text": "I don't know, the Kubernetes control plane,"}
+{"t": 7.456, "lang": "en", "type": "close", "seg": 2}
+{"t": 7.719, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido el mes pasado"}
+{"t": 8.244, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de Cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido el mes pasado tanto."}
+{"t": 8.43, "lang": "es", "type": "set", "seg": 0, "text": "Por cierto, cuando ustedes reciben la factura de cloud, les va a decir algo como, no s\u00e9, el control plane de Kubernetes ha salido el mes pasado tanto."}
+{"t": 8.43, "lang": "es", "type": "close", "seg": 0}
+{"t": 8.943, "lang": "en", "type": "append", "seg": 3, "text": "came out last month so much."}
+{"t": 8.943, "lang": "en", "type": "close", "seg": 3}
+{"t": 9.377, "lang": "es", "type": "set", "seg": 1, "text": "En nodos"}
+{"t": 9.877, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s"}
+{"t": 10.373, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles"}
+{"t": 10.8, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles de d\u00f3lares"}
+{"t": 11.305, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles de d\u00f3lares gastados"}
+{"t": 11.775, "lang": "es", "type": "set", "seg": 1, "text": "En nodos ten\u00e9s tantos miles de d\u00f3lares gastados."}
+{"t": 11.775, "lang": "es", "type": "close", "seg": 1}
+{"t": 12.429, "lang": "en", "type": "append", "seg": 4, "text": "On nodes you have so many thousands of dollars spent."}
+{"t": 12.429, "lang": "en", "type": "close", "seg": 4}
+{"t": 12.773, "lang": "es", "type": "set", "seg": 2, "text": "Pero"}
+{"t": 13.226, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo"}
+{"t": 13.769, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en"}
+{"t": 14.25, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad,"}
+{"t": 14.99, "lang": "en", "type": "append", "seg": 5, "text": "But if we really think about it,"}
+{"t": 14.991, "lang": "en", "type": "close", "seg": 5}
+{"t": 15.166, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la"}
+{"t": 15.656, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del"}
+{"t": 16.165, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de"}
+{"t": 16.681, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud"}
+{"t": 17.574, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un"}
+{"t": 18.065, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto"}
+{"t": 18.562, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no"}
+{"t": 18.9, "lang": "en", "type": "append", "seg": 6, "text": "the cloud provider's bill reaches a point"}
+{"t": 18.9, "lang": "en", "type": "close", "seg": 6}
+{"t": 19.05, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende"}
+{"t": 19.58, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir un"}
+{"t": 19.974, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una"}
+{"t": 20.447, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no"}
+{"t": 20.947, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende"}
+{"t": 21.166, "lang": "en", "type": "append", "seg": 7, "text": "and it doesn't understand, I'm going to state the obvious,"}
+{"t": 21.166, "lang": "en", "type": "close", "seg": 7}
+{"t": 21.965, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces,"}
+{"t": 22.394, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende"}
+{"t": 22.871, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende de"}
+{"t": 23.4, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende de teams,"}
+{"t": 23.445, "lang": "es", "type": "set", "seg": 2, "text": "Pero si lo pensamos en realidad, la factura del proveedor de cloud llega hasta un punto y no entiende, voy a decir una obviedad, no entiende namespaces, no entiende de teams."}
+{"t": 23.445, "lang": "es", "type": "close", "seg": 2}
+{"t": 23.856, "lang": "es", "type": "set", "seg": 3, "text": "de"}
+{"t": 24.118, "lang": "en", "type": "append", "seg": 8, "text": "it doesn't understand namespaces, it doesn't understand teams,"}
+{"t": 24.118, "lang": "en", "type": "close", "seg": 8}
+{"t": 24.386, "lang": "es", "type": "set", "seg": 3, "text": "de labels"}
+{"t": 24.883, "lang": "es", "type": "set", "seg": 3, "text": "the labels, the"}
+{"t": 25.465, "lang": "es", "type": "set", "seg": 3, "text": "the labels, the workloads,"}
+{"t": 26.052, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las"}
+{"t": 26.332, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo"}
+{"t": 26.893, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed"}
+{"t": 27.317, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi"}
+{"t": 27.698, "lang": "en", "type": "append", "seg": 9, "text": "labels, workloads, which are the things that I"}
+{"t": 27.699, "lang": "en", "type": "close", "seg": 9}
+{"t": 27.869, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo."}
+{"t": 28.293, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo"}
+{"t": 28.705, "lang": "en", "type": "append", "seg": 10, "text": "yes, I talk to my team."}
+{"t": 28.705, "lang": "en", "type": "close", "seg": 10}
+{"t": 29.093, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir"}
+{"t": 29.269, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir ir a"}
+{"t": 29.81, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi"}
+{"t": 30.206, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de"}
+{"t": 31.168, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan"}
+{"t": 31.652, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9"}
+{"t": 32.233, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que"}
+{"t": 32.387, "lang": "en", "type": "append", "seg": 11, "text": "I can go to my team of some"}
+{"t": 32.387, "lang": "en", "type": "close", "seg": 11}
+{"t": 33.127, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en"}
+{"t": 33.559, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana, Loki,"}
+{"t": 34.131, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana, Loki, reci\u00e9n"}
+{"t": 34.313, "lang": "en", "type": "append", "seg": 12, "text": "backend, or whatever, of the ones we use in Grafana,"}
+{"t": 34.313, "lang": "en", "type": "close", "seg": 12}
+{"t": 34.518, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana, Loki, reci\u00e9n mencionaban Loki,"}
+{"t": 35.001, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El"}
+{"t": 35.551, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de"}
+{"t": 35.617, "lang": "en", "type": "append", "seg": 13, "text": "Loki, they just mentioned Loki."}
+{"t": 35.617, "lang": "en", "type": "close", "seg": 13}
+{"t": 36.421, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki"}
+{"t": 36.622, "lang": "es", "type": "set", "seg": 3, "text": "de labels, de workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki. El equipo de backend de Loki y decir,"}
+{"t": 36.738, "lang": "es", "type": "set", "seg": 3, "text": "the labels, the workloads, que son las cosas que yo s\u00ed hablo con mi equipo. Yo puedo ir ir a mi equipo de alg\u00fan backend, qu\u00e9 s\u00e9 yo, de los que usamos en Grafana Loki, reci\u00e9n mencionaban Loki, el equipo de backend de Loki y decir,"}
+{"t": 36.738, "lang": "es", "type": "close", "seg": 3}
+{"t": 37.378, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9"}
+{"t": 37.552, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido"}
+{"t": 37.854, "lang": "en", "type": "append", "seg": 14, "text": "The Loki backend team and say,"}
+{"t": 37.854, "lang": "en", "type": "close", "seg": 14}
+{"t": 37.856, "lang": "en", "type": "append", "seg": 15, "text": "to say,"}
+{"t": 37.856, "lang": "en", "type": "close", "seg": 15}
+{"t": 38.099, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con"}
+{"t": 38.942, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este"}
+{"t": 40.017, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de"}
+{"t": 40.617, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos"}
+{"t": 41.149, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes"}
+{"t": 41.332, "lang": "en", "type": "append", "seg": 16, "text": "What happened that there has been this spike in"}
+{"t": 41.332, "lang": "en", "type": "close", "seg": 16}
+{"t": 41.724, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en"}
+{"t": 42.104, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este"}
+{"t": 42.56, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular"}
+{"t": 42.741, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular cluster?"}
+{"t": 42.823, "lang": "es", "type": "set", "seg": 4, "text": "\u00bfQu\u00e9 ha ocurrido con que ha habido esta disparada de costos desde el mes pasado en este particular cluster?"}
+{"t": 42.823, "lang": "es", "type": "close", "seg": 4}
+{"t": 43.284, "lang": "es", "type": "set", "seg": 5, "text": "\u00bfO"}
+{"t": 43.541, "lang": "en", "type": "append", "seg": 17, "text": "costs since last month in this particular cluster?"}
+{"t": 43.541, "lang": "en", "type": "close", "seg": 17}
+{"t": 43.813, "lang": "es", "type": "set", "seg": 5, "text": "O dentro de este"}
+{"t": 44.251, "lang": "es", "type": "set", "seg": 5, "text": "o dentro de este cl\u00faster en este"}
+{"t": 44.82, "lang": "es", "type": "set", "seg": 5, "text": "o dentro de este cl\u00faster, en este particular"}
+{"t": 45.572, "lang": "en", "type": "append", "seg": 18, "text": "or inside this cluster,"}
+{"t": 45.572, "lang": "en", "type": "close", "seg": 18}
+{"t": 45.802, "lang": "es", "type": "set", "seg": 5, "text": "o dentro de este cl\u00faster en este particular namespace."}
+{"t": 45.803, "lang": "es", "type": "close", "seg": 5}
+{"t": 46.631, "lang": "es", "type": "set", "seg": 6, "text": "Esa"}
+{"t": 46.639, "lang": "en", "type": "append", "seg": 19, "text": "in this particular namespace."}
+{"t": 46.639, "lang": "en", "type": "close", "seg": 19}
+{"t": 47.273, "lang": "es", "type": "set", "seg": 6, "text": "Esa visibilidad"}
+{"t": 48.093, "lang": "es", "type": "set", "seg": 6, "text": "Esa visibilidad, esa"}
+{"t": 48.147, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad"}
+{"t": 48.672, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que"}
+{"t": 49.317, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da"}
+{"t": 49.611, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el"}
+{"t": 50.344, "lang": "en", "type": "append", "seg": 20, "text": "that visibility, that granularity is what doesn't give me the"}
+{"t": 50.344, "lang": "en", "type": "close", "seg": 20}
+{"t": 50.382, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud"}
+{"t": 50.973, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider ni"}
+{"t": 51.411, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar"}
+{"t": 51.885, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar en el"}
+{"t": 52.39, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar en el caso de Grafana."}
+{"t": 52.8, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana, nosotros"}
+{"t": 53.134, "lang": "en", "type": "append", "seg": 21, "text": "cloud provider, not to mention in the case of Grafana."}
+{"t": 53.134, "lang": "en", "type": "close", "seg": 21}
+{"t": 53.335, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana, nosotros corremos los"}
+{"t": 53.805, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres"}
+{"t": 54.942, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos"}
+{"t": 55.224, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos en"}
+{"t": 55.743, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos en AWS, en"}
+{"t": 55.806, "lang": "en", "type": "append", "seg": 22, "text": "we run the three main cloud providers,"}
+{"t": 55.806, "lang": "en", "type": "close", "seg": 22}
+{"t": 56.217, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos en AWS, en GCP, en"}
+{"t": 56.69, "lang": "es", "type": "set", "seg": 6, "text": "esa visibilidad, esa granularidad es lo que no me da el cloud provider, ni hablar, en el caso de Grafana nosotros corremos los tres main cloud provider, corremos en AWS, en GCP, en Azure."}
+{"t": 56.858, "lang": "es", "type": "set", "seg": 6, "text": "Esa visibilidad, esa granularidad es lo que no me da el cloud provider. Ni hablar, en el caso de Grafana, nosotros corremos los tres main cloud providers, corremos en AWS, en GCP y en Azure."}
+{"t": 56.858, "lang": "es", "type": "close", "seg": 6}
+{"t": 56.954, "lang": "en", "type": "append", "seg": 23, "text": "we run on AWS, on GCP,"}
+{"t": 56.954, "lang": "en", "type": "close", "seg": 23}
+{"t": 57.356, "lang": "en", "type": "append", "seg": 24, "text": "on Azure."}
+{"t": 57.356, "lang": "en", "type": "close", "seg": 24}
+{"t": 57.449, "lang": "es", "type": "set", "seg": 7, "text": "\u00bfQu\u00e9"}
+{"t": 57.876, "lang": "es", "type": "set", "seg": 7, "text": "Que tiene"}
+{"t": 58.316, "lang": "en", "type": "append", "seg": 25, "text": "Azure."}
+{"t": 58.316, "lang": "en", "type": "close", "seg": 25}
+{"t": 58.589, "lang": "es", "type": "set", "seg": 7, "text": "Que tiene todo su"}
+{"t": 58.808, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia"}
+{"t": 59.267, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su"}
+{"t": 59.833, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia"}
+{"t": 60.243, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de"}
+{"t": 61.177, "lang": "en", "type": "append", "seg": 26, "text": "which has all its own its its own way of"}
+{"t": 61.177, "lang": "en", "type": "close", "seg": 26}
+{"t": 61.178, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar"}
+{"t": 61.655, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la"}
+{"t": 62.211, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula"}
+{"t": 62.67, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado"}
+{"t": 63.705, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la"}
+{"t": 63.901, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula,"}
+{"t": 64.212, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula, aunque el"}
+{"t": 64.603, "lang": "en", "type": "append", "seg": 27, "text": "presenting the formula, especially the right side of the formula,"}
+{"t": 64.603, "lang": "en", "type": "close", "seg": 27}
+{"t": 64.913, "lang": "es", "type": "set", "seg": 7, "text": "que tiene todo su propia su su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula, aunque el lado izquierdo tambi\u00e9n."}
+{"t": 65.112, "lang": "es", "type": "set", "seg": 7, "text": "que tiene toda su propia su propia manera de presentar la f\u00f3rmula, especialmente el lado derecho de la f\u00f3rmula, aunque el lado izquierdo tambi\u00e9n."}
+{"t": 65.112, "lang": "es", "type": "close", "seg": 7}
+{"t": 65.682, "lang": "en", "type": "append", "seg": 28, "text": "although the left side does too."}
+{"t": 65.682, "lang": "en", "type": "close", "seg": 28}
+{"t": 66.09, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo"}
+{"t": 66.688, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese"}
+{"t": 67.152, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de"}
+{"t": 67.567, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos"}
+{"t": 68.054, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el"}
+{"t": 68.544, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si"}
+{"t": 69.042, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar"}
+{"t": 69.495, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki no"}
+{"t": 69.686, "lang": "en", "type": "append", "seg": 29, "text": "So, how to create that common data model with which if I go"}
+{"t": 69.686, "lang": "en", "type": "close", "seg": 29}
+{"t": 69.925, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki y le diga,"}
+{"t": 70.464, "lang": "en", "type": "append", "seg": 30, "text": "to talk to Loki and tell it,"}
+{"t": 70.464, "lang": "en", "type": "close", "seg": 30}
+{"t": 70.476, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es"}
+{"t": 71.486, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos"}
+{"t": 71.84, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de"}
+{"t": 72.385, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la"}
+{"t": 72.818, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n"}
+{"t": 73.288, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo"}
+{"t": 73.823, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas"}
+{"t": 74.221, "lang": "en", "type": "append", "seg": 31, "text": "this is when we talk about AWS the cost dimension"}
+{"t": 74.221, "lang": "en", "type": "close", "seg": 31}
+{"t": 74.719, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando"}
+{"t": 75.206, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de"}
+{"t": 76.222, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene"}
+{"t": 76.643, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no."}
+{"t": 77.245, "lang": "en", "type": "append", "seg": 32, "text": "it has these labels, but when we talk about GCP it has others."}
+{"t": 77.245, "lang": "en", "type": "close", "seg": 32}
+{"t": 77.245, "lang": "en", "type": "append", "seg": 33, "text": "No, no, no."}
+{"t": 77.245, "lang": "en", "type": "close", "seg": 33}
+{"t": 77.627, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo"}
+{"t": 78.155, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear"}
+{"t": 78.681, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el"}
+{"t": 79.04, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado"}
+{"t": 79.561, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el"}
+{"t": 80.039, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado"}
+{"t": 80.338, "lang": "en", "type": "append", "seg": 34, "text": "How can I make the final side,"}
+{"t": 80.338, "lang": "en", "type": "close", "seg": 34}
+{"t": 80.798, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga"}
+{"t": 81.486, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un"}
+{"t": 81.92, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de"}
+{"t": 82.983, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos, si"}
+{"t": 83.347, "lang": "en", "type": "append", "seg": 35, "text": "the cost side have a data model"}
+{"t": 83.347, "lang": "en", "type": "close", "seg": 35}
+{"t": 83.435, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han"}
+{"t": 83.86, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto"}
+{"t": 84.125, "lang": "en", "type": "append", "seg": 36, "text": "data model?"}
+{"t": 84.125, "lang": "en", "type": "close", "seg": 36}
+{"t": 84.333, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL"}
+{"t": 85.318, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto."}
+{"t": 85.832, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si"}
+{"t": 85.998, "lang": "en", "type": "append", "seg": 37, "text": "If you haven't seen PromQL,"}
+{"t": 85.998, "lang": "en", "type": "close", "seg": 37}
+{"t": 86.242, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en"}
+{"t": 86.718, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL,"}
+{"t": 86.729, "lang": "en", "type": "append", "seg": 38, "text": "perfect."}
+{"t": 86.729, "lang": "en", "type": "close", "seg": 38}
+{"t": 87.726, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las"}
+{"t": 88.616, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que"}
+{"t": 89.071, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que"}
+{"t": 89.514, "lang": "en", "type": "append", "seg": 39, "text": "If you think about SQL, what are the columns that"}
+{"t": 89.514, "lang": "en", "type": "close", "seg": 39}
+{"t": 89.63, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo"}
+{"t": 90.117, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo idioma?"}
+{"t": 90.615, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki me diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene otras. No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto. Si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo idioma, \u00bfno?"}
+{"t": 90.9, "lang": "es", "type": "set", "seg": 8, "text": "Entonces, \u00bfc\u00f3mo crear ese modelo de datos com\u00fan con el cual si yo voy a hablar con Loki no diga, ah, esto es cuando hablamos de AWS la dimensi\u00f3n costo tiene estas etiquetas, pero cuando hablamos de GCP tiene estas otras? No, no, no. \u00bfC\u00f3mo puedo crear que el lado final, el lado costo, tenga un modelo de datos? Si ustedes no han visto PromQL, perfecto, si piensan en SQL, \u00bfcu\u00e1les son las columnas que hacen que tengamos un mismo idioma, no?"}
+{"t": 90.9, "lang": "es", "type": "close", "seg": 8}
+{"t": 90.906, "lang": "en", "type": "append", "seg": 40, "text": "make us have the same language?"}
+{"t": 90.906, "lang": "en", "type": "close", "seg": 40}
+{"t": 91.319, "lang": "en", "type": "append", "seg": 41, "text": "right?"}
+{"t": 91.319, "lang": "en", "type": "close", "seg": 41}
+{"t": 91.861, "lang": "es", "type": "set", "seg": 9, "text": "Eso es un"}
+{"t": 92.171, "lang": "en", "type": "append", "seg": 42, "text": "right?"}
+{"t": 92.171, "lang": "en", "type": "close", "seg": 42}
+{"t": 92.377, "lang": "es", "type": "set", "seg": 9, "text": "Eso es un desaf\u00edo."}
+{"t": 93.111, "lang": "en", "type": "append", "seg": 43, "text": "That is a challenge."}
+{"t": 93.111, "lang": "en", "type": "close", "seg": 43}
+{"t": 93.522, "lang": "es", "type": "close", "seg": 9}
+{"t": 97.111, "lang": "es", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}
+{"t": 97.111, "lang": "en", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}

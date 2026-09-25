@@ -297,11 +297,11 @@ reproduction command: [`bench/load-results.md`](bench/load-results.md).
 | Clip | Engine | Source text lag p50 / p90 | Translation lag p50 / p90 | Fidelity | Fluency | Glossary terms | US$/h |
 |---|---|---|---|---|---|---|---|
 | EN talk → ES | fast (Live Translate) | 1.28 / 2.08 s | 1.40 / 3.84 s | 4/5 | 3/5 | 94 % | 2.19 |
-| EN talk → ES | glossary (Transcribe Live + Flash-Lite) | **0.69 / 1.59 s** | **1.34** / 4.25 s | 3/5 | 2/5 | **100 %** | **0.70** |
+| EN talk → ES | glossary (Transcribe Live + Flash-Lite) | **0.80 / 1.48 s** | **1.34 / 3.02 s** | 3/5 | 2/5 | **100 %** | **0.75** |
 | ES talk → EN | fast (Live Translate) | 1.66 / 2.35 s | 2.57 / 3.90 s | 5/5 | 4/5 | 100 % | 2.16 |
-| ES talk → EN | glossary (Transcribe Live + Flash-Lite) | **0.52 / 1.33 s** | **1.76** / 5.59 s | 3/5 | 2/5 | 94 % | **0.74** |
+| ES talk → EN | glossary (Transcribe Live + Flash-Lite) | **0.74 / 1.57 s** | 3.22 / 5.17 s | 4/5 | 3/5 | 100 % | **0.75** |
 
-Real Gemini APIs, real-time pace, ~93 s clips of real Nerdearla talks, one run each (US$0.16 in total). Lag = how far the captions trail the speaker, measured on cumulative word curves against YouTube word timings; fidelity/fluency by an LLM judge (`gemini-3.8-flash`) against a reference translation — noisy at n=1, read them as directional. Full method, raw recordings and `make bench`: [`bench/results.md`](bench/results.md). Default: `fast` for English talks (more fluent), `glossary` for Spanish talks (3× cheaper, honours the glossary).
+Real Gemini APIs, real-time pace, ~93 s clips of real Nerdearla talks, one run each (US$0.20 in total, glossary rows re-run on 2026-09-25 after the fluency fix). Lag = how far the captions trail the speaker, measured on cumulative word curves against YouTube word timings; fidelity/fluency by an LLM judge (`gemini-3.8-flash`) against a reference translation — noisy at n=1, read them as directional. Full method, raw recordings and `make bench`: [`bench/results.md`](bench/results.md). Default: `fast` for English talks (more fluent), `glossary` for Spanish talks (3× cheaper, honours the glossary).
 
 
 The glossary engine's own latency, measured live during this build (6 runs

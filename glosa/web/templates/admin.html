@@ -50,6 +50,7 @@
 {% block title %}{{ at("admin_title") }} | {{ event_name }}{% endblock %}
 
 {% block head %}
+  <script src="/static/js/listen.js" defer></script>
   <script src="/static/js/admin.js" defer></script>
 {%- endblock %}
 
@@ -165,9 +166,30 @@
       <button class="btn" type="button" data-d-start aria-expanded="false">{{ at("start_talk") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
       <button class="btn" type="button" data-d-end>{{ at("end_talk") }}</button>
       <button class="btn" type="button" data-d-reconnect>{{ at("reconnect") }}</button>
-      {#- Task 14a: an emitter room's station, reloaded remotely. Task 14b fills the test clip's slot. #}
+      {#- Task 14a: an emitter room's station, reloaded remotely. #}
       <button class="btn" type="button" data-slot="station-reload" hidden>{{ at("reload_station") }}</button>
-      <button class="btn" type="button" data-slot="test-audio" hidden>{{ at("test_audio") }}</button>
+      {#- Task 14b: "Probar con audio" -- a repo sample or an uploaded clip, played through the room's pipeline. #}
+      <button class="btn" type="button" data-slot="test-audio" aria-expanded="false">{{ at("test_audio") }}<svg class="btn__caret" viewBox="0 0 10 6" aria-hidden="true"><path d="M0 0h10L5 6z" fill="currentColor"/></svg></button>
+    </div>
+    <form class="drawer__pick" data-d-test-audio hidden>
+      <fieldset>
+        <legend class="field__label">{{ at("test_audio") }}</legend>
+        <div class="form__actions">
+          <button class="btn" type="button" data-test-sample="en">{{ at("test_audio_sample_en") }}</button>
+          <button class="btn" type="button" data-test-sample="es">{{ at("test_audio_sample_es") }}</button>
+        </div>
+      </fieldset>
+      <label class="field">
+        <span class="field__label">{{ at("test_audio_upload") }}</span>
+        <input type="file" data-test-file accept="audio/*,video/*,.opus">
+      </label>
+    </form>
+    {#- Task 14b, Ruling 5: admin-only, and only while the room plays a test
+        file (this container's own poll decides -- glosa/web/static/js/listen.js). #}
+    <div class="drawer__listen" data-listen data-listen-preparing="{{ at('listen_preparing') }}" hidden>
+      <button class="btn" type="button" data-listen-button>{{ at("listen_audio") }}</button>
+      <audio data-listen-audio preload="none" controls hidden></audio>
+      <span class="drawer__hint" data-listen-status hidden></span>
     </div>
     <form class="drawer__pick" data-d-pick hidden>
       <fieldset>

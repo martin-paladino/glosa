@@ -215,6 +215,7 @@
   let logFilter = "alerts";
   let drawer = null;               // {kind: "room"|"talk"|"import", id, opener}
   let expired = false;
+  let listenPlayer = null;         // Task 14b, Ruling 5: the open room drawer's "Escuchar el audio"
 
   class ApiError extends Error {
     constructor(message, status) {
@@ -730,6 +731,8 @@
   }
 
   function openDrawer(kind, id, opener, fill) {
+    listenPlayer?.destroy();       // the old drawer's content (and any playing <audio>) is about to go
+    listenPlayer = null;
     const template = document.querySelector(`template[data-tpl="${kind}"]`);
     drawerEl.replaceChildren(template.content.cloneNode(true));
     const previous = drawer?.opener;
@@ -744,6 +747,8 @@
 
   function closeDrawer() {
     if (!drawer) return;
+    listenPlayer?.destroy();
+    listenPlayer = null;
     const { opener } = drawer;
     drawer = null;
     drawerEl.classList.remove("drawer--open");
@@ -829,6 +834,47 @@
       }
       toast(copied ? T.copied : T.copy_failed);
     });
+
+    // Task 14b, case 14.3: "Probar con audio" -- a repo sample or an
+    // uploaded clip, played through the room's pipeline via
+    // RoomWorker.play_file() (glosa/web/test_audio.py).
+    const testAudioButton = $('[data-slot="test-audio"]', drawerEl);
+    const testAudioForm = $("[data-d-test-audio]", drawerEl);
+    testAudioButton.addEventListener("click", () => {
+      const open = testAudioForm.hidden;
+      testAudioForm.hidden = !open;
+      testAudioButton.setAttribute("aria-expanded", String(open));
+    });
+    async function playTestAudio(button, body) {
+      if (await roomPost("test-audio", button, body, T.working)) {
+        toast(T.test_audio_started);
+        testAudioForm.hidden = true;
+        testAudioButton.setAttribute("aria-expanded", "false");
+      }
+    }
+    for (const button of $$("[data-test-sample]", drawerEl)) {
+      button.addEventListener("click", () => {
+        const form = new FormData();
+        form.append("sample", button.dataset.testSample);
+        playTestAudio(button, form);
+      });
+    }
+    $("[data-test-file]", drawerEl).addEventListener("change", (event) => {
+      const input = event.currentTarget;
+      const file = input.files[0];
+      input.value = "";
+      if (!file) return;
+      const form = new FormData();
+      form.append("file", file);
+      playTestAudio(testAudioButton, form);
+    });
+
+    // Task 14b, Ruling 5: "Escuchar el audio" -- the widget's own poll
+    // decides whether it shows at all (the room must be playing a test
+    // file); this just gives it the room to poll.
+    const listenEl = $("[data-listen]", drawerEl);
+    if (listenEl) listenPlayer = new window.GlosaListen.ListenPlayer(listenEl, drawer.id);
+
     $("[data-d-pick-cancel]", drawerEl).addEventListener("click", () => togglePick(false));
     $("[data-d-pick]", drawerEl).addEventListener("submit", async (event) => {
       event.preventDefault();

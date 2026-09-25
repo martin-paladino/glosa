@@ -1501,8 +1501,7 @@
   .drawer__raw > span { margin-inline-end: 4px; font-weight: 600; color: var(--ink-2); }
   .drawer__raw code { font: inherit; }
   .drawer__keys .btn:disabled { border-color: var(--line); }
-  .drawer__keys + .drawer__pick { margin-block-start: 12px; }
-  .drawer__pick { display: grid; gap: 12px; }
+  .drawer__pick { display: grid; gap: 12px; margin-block-start: 12px; }
   .drawer__pick fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
   .drawer .notice { margin-block-start: 10px; }
   .pick {
@@ -1536,6 +1535,11 @@
   .station-link__qr { font-size: 12.5px; color: var(--ink-2); }
   .station-link__qr summary { cursor: pointer; }
   .station-link__qr img { margin-block-start: 8px; inline-size: 148px; block-size: 148px; image-rendering: pixelated; }
+
+  /* "Escuchar el audio" (Tarea 14b, Ruling 5): admin y solo en modo prueba;
+     el propio widget decide si se muestra (glosa/web/static/js/listen.js). */
+  .drawer__listen { display: grid; gap: 8px; margin-block-start: 12px; }
+  .drawer__listen audio { inline-size: 100%; block-size: 32px; }
 
   .form { display: grid; gap: 14px; }
   .field { display: grid; gap: 6px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }

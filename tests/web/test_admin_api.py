@@ -229,8 +229,14 @@ def test_admin_page_has_the_hooks_admin_js_needs() -> None:
                  "data-toast", 'data-tpl="room"', "data-d-start", "data-d-pick", "data-d-end", "data-d-reconnect",
                  "data-mode=\"auto\"", "data-d-level", "data-d-raw", "data-d-log"):
         assert hook in html, hook
-    # Task 14's keys: a hole in the drawer, not wired yet.
-    assert 'data-slot="station-reload" hidden' in html and 'data-slot="test-audio" hidden' in html
+    # Task 14a's station-reload key stays hidden until a room turns out to be
+    # an emitter station (admin.js's renderStation()); Task 14b's "Probar con
+    # audio" and "Escuchar el audio" are wired in (the latter is its own
+    # widget, gated by its own poll -- glosa/web/static/js/listen.js).
+    assert 'data-slot="station-reload" hidden' in html
+    for hook in ('data-slot="test-audio"', "data-d-test-audio", 'data-test-sample="en"', 'data-test-sample="es"',
+                 "data-test-file", "data-listen", "data-listen-button", "data-listen-audio", "data-listen-status"):
+        assert hook in html, hook
     config = _config(html)
     assert config["streamUrl"].startswith("/api/admin/stream?lang=")
     assert config["limits"] == {"latency": 5.0, "quality": 0.5, "level": -50.0}

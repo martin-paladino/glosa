@@ -625,14 +625,16 @@ async def import_agenda(
         raise HTTPException(status_code=422, detail={"row": exc.row, "reason": exc.reason}) from exc
 
     unique: dict[str, Talk] = {}
+    invalid_schedule_ids: set[str] = set()
     for talk in talks:
         talk.start, talk.end = talk.start.astimezone(zone), talk.end.astimezone(zone)  # the event's day
         if talk.end <= talk.start:
             skipped.append(SkippedSession(talk.id, talk.title, "end is not after start"))
+            invalid_schedule_ids.add(talk.id)  # Ruling 6B: never reported/deleted as "removed" below
         else:
             unique[talk.id] = talk  # the same id twice: the last one wins
     db = request.app.state.db
-    written = await db.upsert_agenda(list(unique.values()))
+    written = await db.upsert_agenda(list(unique.values()), keep=invalid_schedule_ids)
     skipped += [
         SkippedSession(talk_id, unique[talk_id].title, f"talk is {status}: left unchanged")
         for talk_id, status in written.held.items()

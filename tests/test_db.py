@@ -253,6 +253,40 @@ async def test_upsert_agenda_removes_the_scheduled_talks_a_covered_day_no_longer
     assert await db.get_talk("other-day") is not None and await db.get_talk("other-room") is not None
 
 
+async def test_upsert_agenda_keep_protects_a_row_from_removal_without_upserting_it(db) -> None:
+    """task-11r-brief.md Ruling 6B: a row the admin API skipped this import
+    (e.g. an invalid schedule) must not come back as ``removed`` just
+    because it isn't in this call's talks -- the caller passes its id via
+    ``keep`` instead."""
+    kept, protected = _talk("kept", start_h=10), _talk("protected", start_h=12)
+    await db.insert_talks([kept, protected])
+
+    result = await db.upsert_agenda([_talk("kept", start_h=10)], keep={"protected"})
+
+    assert result.removed == []
+    assert (await db.get_talk("protected")).status == "scheduled"  # untouched, not deleted
+
+
+async def test_upsert_agenda_removes_across_the_whole_imports_date_range_per_room(db) -> None:
+    """task-11r-brief.md Ruling 6D: the scheduled talks an import drops are
+    the ones in the date range the WHOLE import spans (min day to max day
+    across every row, not just the exact days a given room's new rows fall
+    on), for every room the import mentions. Otherwise a room's only talk of
+    a day, moved to another day the import also covers (via a different
+    room's row), never gets cleaned up."""
+    old = _talk("old", room_id="r1", start_h=10, day=24)  # r1's only talk of the 24th
+    await db.insert_talks([old])
+
+    # A re-import moves r1's talk to the 25th; some other room (r2) still has
+    # a row on the 24th, so the whole import's date range is 24..25 and r1's
+    # stale "old" (day 24) falls inside it even though r1 has no new row there.
+    result = await db.upsert_agenda(
+        [_talk("moved", room_id="r1", start_h=10, day=25), _talk("anchor", room_id="r2", start_h=9, day=24)]
+    )
+
+    assert result.removed == [("old", old.title)]
+
+
 async def test_delete_scheduled_talk_only_deletes_scheduled_talks(db) -> None:
     await db.insert_talks([_talk("s"), _talk("l", start_h=10)])
     await db.update_talk("l", status="live")
@@ -274,6 +308,29 @@ async def test_live_talks_and_the_last_started_talk_of_a_room(db) -> None:
     assert sorted(t.id for t in await db.get_live_talks()) == ["a", "x"]
     assert (await db.get_last_started_talk("r1")).id == "b"  # c never started
     assert await db.get_last_started_talk("r9") is None
+
+
+async def test_get_live_talk_of_a_room_ignores_a_done_talk_started_later(db) -> None:
+    """task-11r-brief.md Ruling 6A (Ruling 46 fix): the reviewer's scenario
+    -- A is reopened after B, so B's actual_start is the room's latest, but
+    B is done and A is the one actually live. get_last_started_talk (above)
+    would wrongly return B; get_live_talk is what _resume_manual_room
+    (glosa/web/app.py) must use instead: WHERE status='live' ORDER BY
+    actual_start DESC LIMIT 1, not "the last one started"."""
+    a, b = _talk("a", start_h=9), _talk("b", start_h=11)
+    await db.insert_talks([a, b])
+    await db.update_talk("b", status="live", actual_start=datetime(2026, 9, 25, 10, 0, tzinfo=timezone.utc))
+    await db.update_talk("b", status="done", actual_end=datetime(2026, 9, 25, 10, 30, tzinfo=timezone.utc))
+    await db.update_talk("a", status="live", actual_start=datetime(2026, 9, 25, 10, 45, tzinfo=timezone.utc))
+    # b's actual_start (10:00) predates a's (10:45), so on its own this
+    # fixture wouldn't distinguish the two methods; reopen b once more with a
+    # LATER actual_start than a's, while a stays live -- the exact ordering
+    # bug the ruling calls out.
+    await db.update_talk("b", status="done", actual_start=datetime(2026, 9, 25, 11, 0, tzinfo=timezone.utc))
+
+    assert (await db.get_last_started_talk("r1")).id == "b"  # latest actual_start, but done
+    assert (await db.get_live_talk("r1")).id == "a"  # the room's actually-live talk
+    assert await db.get_live_talk("r9") is None
 
 
 async def test_set_room_mode_persists_only_the_mode(db) -> None:

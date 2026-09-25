@@ -6,6 +6,11 @@ build_corrected (Task 11-rest) saves the result with version="corrected" and
 the SAME timings as the live segments -- which only works if this module
 returns exactly one entry per input segment, in order.
 
+The glossary line format (`_build_system_instruction`) matches
+glosa/text/translator.py's (task-11r-brief.md's closing note, 223df70): the
+Translator no longer emits the old "term → keep" line, and this module must
+not either, or a stray "keep" could leak into the corrected export text.
+
 Blocks are `block_size` sentences (default 20, per task-11a-brief.md). Each
 block after the first carries the last 1-2 ORIGINAL sentences of the
 previous block as read-only context (mirrors Translator's `context` in
@@ -74,10 +79,23 @@ def _build_system_instruction(
         lines.append(f"Talk abstract (context only): {abstract}")
     if glossary:
         lines.append("")
-        lines.append("Glossary (apply exactly; do not deviate):")
+        # Same wording as glosa/text/translator.py's _build_system_instruction
+        # (223df70): the Translator moved off the old "term → keep" format,
+        # and this module must match it -- otherwise "keep" (a literal English
+        # word meaning "leave untranslated") could get echoed into the
+        # corrected export whenever the model treats the glossary line as
+        # part of the text, instead of being understood as an instruction.
+        lines.append(
+            "Glossary. Use an entry only when its term, or an obvious inflection of it, appears in the "
+            "sentences you are translating; then apply it exactly. Never add a glossary term that is not "
+            "in the sentences, and never use one to replace a different word (e.g. do not turn a plain "
+            "noun into a glossary term):"
+        )
         for term in glossary:
-            rhs = "keep" if term.keep_in_english else (term.translation or "")
-            lines.append(f"{term.term} → {rhs}")
+            if term.keep_in_english or not term.translation:
+                lines.append(f'- "{term.term}": leave it as is, untranslated')
+            else:
+                lines.append(f'- "{term.term}": translate it as "{term.translation}"')
     if context:
         lines.append("")
         lines.append(

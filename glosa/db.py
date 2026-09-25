@@ -26,7 +26,7 @@ import threading
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Iterable, TypeVar
 
 from glosa.models import GlossaryTerm, Room, Talk
 
@@ -233,18 +233,26 @@ class Database:
 
         await self._run(write)
 
-    async def upsert_agenda(self, talks: list[Talk]) -> AgendaWrite:
+    async def upsert_agenda(self, talks: list[Talk], *, keep: Iterable[str] = ()) -> AgendaWrite:
         """An agenda import (Ruling 45), in one transaction:
 
           - insert new talks and refresh the agenda fields of stored talks
             that are still ``scheduled``; a ``live`` or ``done`` talk is left
             exactly as it is (fields and ``actual_*``): ``held``;
-          - for every (room, day) the import covers (``day`` as stored, the
-            date part of ``start``: the admin API stores it in the event's
-            timezone), delete the ``scheduled`` talks it no longer lists (a
-            talk cancelled upstream, or one whose id changed because its
-            title or time was fixed): ``removed``. Live, done and free
-            session rows are never deleted.
+          - for every room the import mentions, delete the ``scheduled``
+            talks it no longer lists that fall within the date range the
+            WHOLE import spans (``day`` as stored, the date part of
+            ``start``: the admin API stores it in the event's timezone; the
+            range is the min and max day across every row of this call, not
+            just the days a given room's own rows happen to fall on --
+            task-11r-brief.md Ruling 6D: a room's only talk of a day, moved
+            by the same re-import to another day the import also covers via
+            some other room's row, must not survive as a stale duplicate):
+            ``removed``. Live, done and free session rows are never deleted.
+          - ``keep``: ids to protect from ``removed`` without upserting them
+            (task-11r-brief.md Ruling 6B: a row the caller skipped this
+            import for its own reasons, e.g. an invalid schedule, must not
+            look "no longer listed" and be reported/deleted as removed).
         """
         if not talks:
             return AgendaWrite(held={}, removed=[])
@@ -258,9 +266,11 @@ class Database:
         rows = [_talk_row(t) for t in talks]
         values = [[row[c] for c in _TALK_COLUMNS] for row in rows]
         ids = [t.id for t in talks]
-        covered = sorted({(row["room_id"], row["start"][:10]) for row in rows})
-        scheduled_of_day = (
-            'SELECT id, title FROM talks WHERE room_id = ? AND substr("start", 1, 10) = ? '
+        rooms_in_import = sorted({row["room_id"] for row in rows})
+        days = [row["start"][:10] for row in rows]
+        day_min, day_max = min(days), max(days)
+        scheduled_in_range = (
+            'SELECT id, title FROM talks WHERE room_id = ? AND substr("start", 1, 10) BETWEEN ? AND ? '
             "AND status = 'scheduled' ORDER BY \"start\", id"
         )
 
@@ -273,11 +283,11 @@ class Database:
                     marks = ", ".join("?" * len(chunk))
                     query = f"SELECT id, status FROM talks WHERE status != 'scheduled' AND id IN ({marks})"
                     held |= {row["id"]: row["status"] for row in con.execute(query, chunk)}
-                listed = set(ids)
+                listed = set(ids) | set(keep)
                 removed = [
                     (row["id"], row["title"])
-                    for room_id, day in covered
-                    for row in con.execute(scheduled_of_day, (room_id, day)).fetchall()
+                    for room_id in rooms_in_import
+                    for row in con.execute(scheduled_in_range, (room_id, day_min, day_max)).fetchall()
                     if row["id"] not in listed and not row["id"].startswith(FREE_TALK_PREFIX)
                 ]
                 con.executemany("DELETE FROM talks WHERE id = ? AND status = 'scheduled'", [(r[0],) for r in removed])
@@ -307,6 +317,17 @@ class Database:
         """The room's talk (free sessions included) with the latest
         ``actual_start``, or None if none ever started."""
         sql = "SELECT * FROM talks WHERE room_id = ? AND actual_start IS NOT NULL ORDER BY actual_start DESC LIMIT 1"
+        row = await self._run(lambda con: con.execute(sql, (room_id,)).fetchone())
+        return _talk_from_row(row) if row is not None else None
+
+    async def get_live_talk(self, room_id: str) -> Talk | None:
+        """The room's ``live`` talk (free sessions included), or None if none
+        is live. Task-11r-brief.md Ruling 6A (Ruling 46): unlike
+        ``get_last_started_talk``, this is what a boot resume must use -- a
+        talk reopened after a later one (A after B) can have an EARLIER
+        ``actual_start`` than a since-``done`` talk, so "the last one
+        started" is not the same question as "the one that is live now"."""
+        sql = "SELECT * FROM talks WHERE room_id = ? AND status = 'live' ORDER BY actual_start DESC LIMIT 1"
         row = await self._run(lambda con: con.execute(sql, (room_id,)).fetchone())
         return _talk_from_row(row) if row is not None else None
 

@@ -916,9 +916,10 @@ async def test_live_glossary_room(tmp_path: Path, caplog: pytest.LogCaptureFixtu
     end_utterance() on the VAD pause, minus the VAD's 400 ms). Translation
     latency: from the cut to the answer (the lane's own measure).
 
-    Also counts the stale-text symptoms of the first two runs: a "set" that
-    starts with the text of the segment closed before it (old text flashing
-    back), and a translated source that repeats text already translated."""
+    Also counts the stale-text symptoms of the first runs: a "set" that
+    starts with any version of the segment closed before it (old text
+    flashing back), and a translated source that repeats text already
+    translated."""
     from glosa.engines.transcribe import TranscribeLiveEngine
 
     key = _live_key()
@@ -987,17 +988,20 @@ async def test_live_glossary_room(tmp_path: Path, caplog: pytest.LogCaptureFixtu
     def words(text: str) -> list[str]:
         return [w for w in ("".join(ch for ch in t.casefold() if ch.isalnum()) for t in text.split()) if w]
 
-    flashbacks = []  # a set that starts with the whole text of the segment closed before it
-    closed_text, last_text = None, {}
+    flashbacks = []  # a set that starts with any whole version of the segment closed before it
+    closed_versions: list[str] = []
+    versions: dict[int | None, list[str]] = {}
     for kind, seg, text in source_msgs:
         if kind == "set":
-            if closed_text and len(words(closed_text)) >= 3 and words(text or "")[: len(words(closed_text))] == words(
-                closed_text
-            ):
-                flashbacks.append(text)
-            last_text[seg] = text or ""
+            for version in closed_versions:
+                if len(words(version)) >= 3 and (
+                    (text or "").startswith(version) or words(text or "")[: len(words(version))] == words(version)
+                ):
+                    flashbacks.append(text)
+                    break
+            versions.setdefault(seg, []).append(text or "")
         else:
-            closed_text = last_text.get(seg)
+            closed_versions = versions.get(seg, [])
     repeats = []  # a translated source (4+ words) that is already in the ones before it
     for n, source in enumerate(translated):
         if len(words(source)) >= 4 and " ".join(words(source)) in " ".join(words(" ".join(translated[:n]))):

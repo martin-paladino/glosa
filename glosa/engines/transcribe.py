@@ -68,6 +68,10 @@ Events:
   glues the old text to the new words ("…de teams,the labels",
   "cluster?O dentro", "Azure.que tienen"), so the cut reads the raw text:
   the closed segment's words may end at punctuation followed by a letter.
+  The fifth showed it glued with nothing in between ("…en este
+  particularEs", "…particularesa visibilidad"): an exact prefix of 6+
+  words that is the closed segment's last interim or final is cut
+  wherever it ends.
   Every drop or cut is logged at INFO. A new segment that really starts
   with the words of the one before shows up with its next interim (~0.5 s).
 - ``go_away`` with ``meta["time_left_s"]``, like LiveTranslateEngine.
@@ -326,7 +330,11 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
     ``STALE_MIN_WORDS`` words: a stale text can be an interim between the
     last one the engine sent and the final. The match reads the raw text,
     since the server glues the old text to the new words ("…de
-    teams,the labels", "cluster?O")."""
+    teams,the labels", "cluster?O"); an exact prefix of either of
+    ``FINAL_STALE_MIN_WORDS`` or more words counts even with no space or
+    punctuation before the new words ("…en este particularEs",
+    "…particularesa visibilidad"), while a shorter one never cuts into a
+    word ("cluster" is not the start of "clustering")."""
     norms = [n for n in map(_norm, text.split()) if n]
     if not norms:
         return len(text)  # only punctuation
@@ -337,8 +345,15 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
     for old in refs:
         if k <= len(old) and norms[: k - 1] == old[: k - 1] and old[k - 1].startswith(norms[-1]):
             return len(text)
+    # The server's own text, glued as is: an exact prefix, even with no
+    # space or punctuation before the new words ("…particularEs").
+    end = None
+    for prev in closed:
+        prev = prev.rstrip()
+        if _count_words(prev) >= FINAL_STALE_MIN_WORDS and len(text) > len(prev) and text.startswith(prev):
+            end = max(end or 0, len(prev))
     full = max(min(len(ref) for ref in refs), STALE_MIN_WORDS)
-    i, matched, end = 0, 0, None
+    i, matched = 0, 0
     while True:
         nxt = None
         for word in dict.fromkeys(ref[matched] for ref in refs if matched < len(ref)):
@@ -349,7 +364,7 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
             break
         i, matched = nxt, matched + 1
         if matched >= full:
-            end = i
+            end = max(end or 0, i)
     if end is None:
         return None
     while end < len(text) and not text[end].isalnum() and text[end] not in _OPENING:

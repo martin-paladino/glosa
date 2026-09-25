@@ -339,35 +339,59 @@ def test_the_server_repeats_seen_live_are_long_enough_to_cut_finals() -> None:
     assert STALE_MIN_WORDS == 3 and FINAL_STALE_MIN_WORDS == 6
 
 
-GLUED = ROOT / "tests" / "fixtures" / "tr_es_glued.jsonl"
+FIXTURES = ROOT / "tests" / "fixtures"
 
 
-def test_replay_of_live_run_4_server_strings() -> None:
-    """Live run 4 (2026-09-24), the server's interims and finals verbatim:
-    after 3 of 8 finals every interim of the next segment came with the
-    closed segment's text glued in front. Replayed through the engine: no
-    shown text starts with the segment closed before it, the new segments
-    start with their own words ("de", "¿Qué", "Que"), the finals pass
+def _versions(rows: list[dict], upto: int) -> list[str]:
+    """Every text the segment closed at row ``upto`` had: its interims and final."""
+    out = [rows[upto]["final"]]
+    for row in reversed(rows[:upto]):
+        if "final" in row:
+            break
+        out.append(row["interim"])
+    return out
+
+
+@pytest.mark.parametrize(
+    ("fixture", "firsts"),
+    [
+        ("tr_es_glued_run4.jsonl", ["En nodos", "Pero", "de", "¿Qué", "O", "Esa", "Que"]),
+        ("tr_es_glued_run5.jsonl", ["En nodos", "Pero", "de", "¿Qué", "O", "Es", "Que"]),
+    ],
+    ids=["run4", "run5"],
+)
+def test_replay_of_live_server_strings(fixture: str, firsts: list[str]) -> None:
+    """Live runs 4 and 5 (2026-09-24), the server's interims and finals
+    verbatim. After some finals every interim of the next segment came with
+    the closed segment's text glued in front, after punctuation
+    ("…teams,the labels", "…Azure.Que") or with none at all ("…en este
+    particularEs", "…particularesa visibilidad", run 5). Replayed through
+    the engine: no shown text starts with any version of the segment closed
+    before it, the new segments start with their own words, the finals pass
     unchanged."""
-    rows = [json.loads(line) for line in GLUED.read_text(encoding="utf-8").splitlines()]
+    rows = [json.loads(line) for line in (FIXTURES / fixture).read_text(encoding="utf-8").splitlines()]
     engine = _engine()
-    closed: str | None = None
-    firsts: list[str] = []
+    closed: list[str] | None = None
+    shown_firsts: list[str] = []
     finals: list[str] = []
-    for row in rows:
+    for n, row in enumerate(rows):
         raw = _interim(row["interim"]) if "interim" in row else _final(row["final"])
         for ev in engine._map_message(raw):
             if ev.kind == "source_final":
                 finals.append(ev.text)
-                closed = ev.text
+                closed = _versions(rows, n)
             elif closed is not None:
-                firsts.append(ev.text)
-                closed_words = [w for w in closed.lower().split()][:3]
-                assert ev.text.lower().split()[:3] != closed_words, ev.text
+                shown_firsts.append(ev.text)
                 closed = None
+            if ev.kind == "source_delta":
+                for version in _versions(rows, max(i for i, r in enumerate(rows[:n]) if "final" in r)) if any(
+                    "final" in r for r in rows[:n]
+                ) else []:
+                    stale = version.split()[:4]
+                    assert len(stale) < 4 or ev.text.split()[:4] != stale, (ev.text, version)
 
     assert finals == [row["final"] for row in rows if "final" in row]
-    assert firsts == ["En nodos", "Pero", "de", "¿Qué", "O", "Esa", "Que"]
+    assert shown_firsts == firsts
 
 
 def test_after_a_clean_interim_nothing_is_cut_any_more() -> None:

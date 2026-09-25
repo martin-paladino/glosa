@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from pathlib import Path
+
 import pytest
 from google.genai.errors import ClientError, ServerError
 
@@ -24,7 +26,7 @@ from glosa.config import Settings
 from glosa.models import GlossaryTerm
 from glosa.text.translator import Translation, Translator, _build_system_instruction
 
-ENV_PATH = "/Users/mpaladino/repos/glosa/.env"
+ENV_PATH = str(Path(__file__).resolve().parents[2] / ".env")
 
 GLOSSARY = [
     GlossaryTerm(term="Kubernetes", keep_in_english=True),

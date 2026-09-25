@@ -1,7 +1,7 @@
 """QualityMeter: window-based source/target pairing (13.1), the no-key path
 (13.2), and the mocked-client rolling average (13.3). 13.4 is a single,
 timeout-bounded call to the real Jev API and is skipped unless
-TYPESAFE_API_KEY is set in /Users/mpaladino/repos/glosa/.env.
+TYPESAFE_API_KEY is set in the repo's .env.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from typesafe_sdk import TypeSafeAPIConnectionError  # noqa: E402
 import glosa.quality as quality  # noqa: E402
 from glosa.quality import FIDELITY_QUESTION, ClosedSegment, QualityMeter, find_matching_source
 
-MAIN_REPO_ENV = Path("/Users/mpaladino/repos/glosa/.env")
+MAIN_REPO_ENV = Path(__file__).resolve().parents[1] / ".env"
 
 
 def _mock_client(prob: float) -> AsyncMock:
@@ -276,7 +276,7 @@ async def test_live_good_and_corrupted_pairs_separate() -> None:
     env = dotenv_values(MAIN_REPO_ENV) if MAIN_REPO_ENV.exists() else {}
     api_key = env.get("TYPESAFE_API_KEY")
     if not api_key:
-        pytest.skip("TYPESAFE_API_KEY not set in /Users/mpaladino/repos/glosa/.env")
+        pytest.skip("TYPESAFE_API_KEY not set in the repo's .env")
 
     good = [
         ("We deploy our Kubernetes operator with Helm.", "Desplegamos nuestro operador de Kubernetes con Helm."),

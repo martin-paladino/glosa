@@ -1,6 +1,9 @@
 # Same 2 rooms as config.demo.yaml, but engine_mode: fake (FakeEngine
 # replays a recorded session): `make demo-fake` runs this for free, e.g. to
-# try Glosa without a Gemini key or to smoke-test Docker.
+# try Glosa without a Gemini key or to smoke-test Docker. Also has a 3rd
+# room, source_type "emitter" (Task 14a), for trying/verifying the room
+# station without a Gemini key either: open /station/station-demo?key=...
+# (glosa.web.station.station_url) with a real or fake microphone.
 #
 # Limitation: each engine replays ONE recording, whatever the talk's
 # language or audio: the fast engine an English Live Translate session
@@ -12,6 +15,11 @@
 
 event_name: Glosa demo
 timezone: UTC
+
+branding:
+  logo_url: /static/branding/nerdearla/nerdearla-logo.svg
+  primary: "#FFBA00"
+  accent: "#00ACA8"
 
 rooms:
   - id: demo-en
@@ -26,6 +34,15 @@ rooms:
     source_url: samples/es_clip.opus
     language: es
     default_targets: [en]
+  - id: station-demo
+    name: "Demo: room station"
+    source_type: emitter
+    # For "emitter", source_url isn't a URL -- the audio comes from a
+    # connected station (glosa/web/station.py), not from ffmpeg. Any
+    # non-empty placeholder works; the room's own id is a reasonable one.
+    source_url: station-demo
+    language: en
+    default_targets: [es]
 
 engine_mode: fake
 db_path: data/demo-fake.db

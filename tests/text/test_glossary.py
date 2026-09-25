@@ -21,13 +21,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from pathlib import Path
+
 import pytest
 
 from glosa.config import Settings
 from glosa.models import Talk
 from glosa.text.glossary import GlossarySuggester, suggest_glossary
 
-ENV_PATH = "/Users/mpaladino/repos/glosa/.env"
+ENV_PATH = str(Path(__file__).resolve().parents[2] / ".env")
 
 
 def _talk(**overrides: Any) -> Talk:

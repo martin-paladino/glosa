@@ -1,0 +1,162 @@
+/* The room station (Task 14a). Tokens and components come from glosa.css
+   ("Sala de control" v2 -- docs/design/README.md); nothing here invents a
+   new color, radius or type family. Loaded unlayered (no @layer), so it
+   always wins over glosa.css's layers regardless of source order -- the
+   station only ever narrows or repositions what glosa.css already draws.
+
+   Three screens, at most one visible at a time:
+     1. .station-block   -- insecure context: getUserMedia can't run here.
+     2. .station-setup    -- before capture starts: level meter + a big
+                              "Start" button (the browser needs a gesture).
+     3. the room itself (unmodified room.js/glosa.css), capped to a
+        readable measure and enlarged for a screen read from across a room,
+        with a quiet corner mark (.station-badge) for the station's own
+        WebSocket/audio state -- separate from the room's own caption
+        status in its header. */
+
+.station {
+  min-block-size: 100dvh;
+  background: var(--room);
+  color: var(--ink);
+}
+
+/* ---- the stage: same room.js/CSS, framed and enlarged ---------------------- */
+
+.station-stage-wrap {
+  /* A named container the same name as body's ("glosa"): glosa.css's
+     @container glosa (...) rules then match THIS box's width, not the
+     viewport's, so a wide stage monitor still gets the calm single-column
+     phone layout (docs/design/README.md's "2-3 líneas") instead of the
+     two-column reading layout built for browsing between rooms. */
+  container: glosa / inline-size;
+  max-inline-size: 46rem;
+  margin-inline: auto;
+  block-size: 100dvh;
+}
+.station-stage-wrap .room {
+  /* Bigger than the phone default (1.375rem): read from across a room, not
+     held in a hand. Still capped, and still the same clamp shape as the
+     desktop rule it replaces. */
+  --caption-base: clamp(1.75rem, 1rem + 3cqi, 2.75rem);
+}
+
+.station-idle {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+}
+.station-idle__logo {
+  block-size: 2.5rem;
+  inline-size: auto;
+}
+
+/* ---- corner mark: the station's own connection state ----------------------- */
+
+.station-badge {
+  position: fixed;
+  inset-block-end: var(--space-3);
+  inset-inline-end: var(--space-3);
+  z-index: 15;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px 5px 8px;
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius-key);
+  font: 600 var(--step--2)/1 var(--font-label);
+  font-stretch: 90%;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+/* ---- setup: pick the input, watch the level, start -------------------------- */
+
+.station-setup {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) var(--gutter);
+  background: var(--room);
+}
+.station-setup__card {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-5);
+  max-inline-size: 26rem;
+  text-align: center;
+}
+.station-setup__room {
+  font: 700 var(--step-3)/1.15 var(--font-label);
+  font-stretch: var(--narrow-2);
+  color: var(--ink);
+}
+.station-setup__vu {
+  inline-size: min(80vw, 22rem);
+  block-size: 16px;
+}
+.station-setup__db {
+  font-size: var(--step-3);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.station-setup__device {
+  display: grid;
+  gap: var(--space-2);
+  inline-size: 100%;
+  text-align: start;
+  font: 600 var(--step-0)/1.2 var(--font-label);
+  color: var(--ink-2);
+}
+.station-setup__device select {
+  min-block-size: var(--tap);
+  padding: 0 12px;
+  border: var(--border-w) solid var(--line-2);
+  border-radius: var(--radius-key);
+  background: var(--key);
+  color: var(--ink);
+  font: inherit;
+}
+.station-setup__start {
+  min-inline-size: 14rem;
+  min-block-size: 52px;
+  font-size: var(--step-1);
+}
+.station-setup__hint {
+  max-inline-size: 26em;
+  font-size: var(--step--1);
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+.station-setup__hint[data-error] { color: var(--fault); font-weight: 600; }
+
+/* ---- blocked: no secure context --------------------------------------------- */
+
+.station-block {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) var(--gutter);
+  background: var(--room);
+}
+.station-block__card {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: 30rem;
+}
+.station-block__title {
+  font: 700 var(--step-4)/1.15 var(--font-label);
+  font-stretch: var(--narrow-2);
+  color: var(--warn);
+}
+.station-block__body {
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.station-block__body.tc { color: var(--ink-3); font-size: var(--step--1); }
+
+[hidden] { display: none !important; }

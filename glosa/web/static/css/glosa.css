@@ -1,16 +1,21 @@
 /* ==========================================================================
-   Glosa: sistema visual
-   Subtítulos y traducción en vivo para cada sala.
+   Glosa: sistema visual "Sala de control" v2
+   Gestión por excepción. El gris es la sala; el color es solo el estado:
+   verde en vivo, ámbar degradada, rojo caída, contorno gris inactiva.
+   Una sala sana es su nombre, una luz y su texto.
 
-   CSS puro, sin build. Las fuentes se cargan con <link> en el HTML:
-   https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400..800;1,400..800&family=Atkinson+Hyperlegible+Next:wght@400..800&display=swap
+   CSS puro, sin build. Las fuentes se cargan con <link> en el HTML (base.html):
+   https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..800&family=B612:wght@400;700&family=Martian+Mono:wdth,wght@75,400&display=swap
 
-   Reglas, escala y razones: docs/design/README.md
+   Reglas, tokens y clases: docs/design/README.md
+   Maquetas de referencia:  docs/design/admin.html, docs/design/room-mobile.html
 
-   Capas: las páginas pueden sumar su CSS sin capa y siempre le gana a esto.
+   Capas, de menor a mayor prioridad. El CSS de una página que no esté en
+   una capa le gana siempre, sin pelear por especificidad.
    ========================================================================== */
 
-@layer glosa.reset, glosa.tokens, glosa.base, glosa.components, glosa.views;
+@layer glosa.reset, glosa.tokens, glosa.base, glosa.components, glosa.captions,
+       glosa.audience, glosa.admin, glosa.views;
 
 
 /* --------------------------------------------------------------------------
@@ -25,84 +30,92 @@
   img { display: block; max-inline-size: 100%; }
   table { border-collapse: collapse; }
   cite { font-style: inherit; }
+  /* `hidden` gana también en componentes que fijan display (teclas, "Volver al vivo"). */
+  [hidden] { display: none !important; }
 }
 
 
 /* --------------------------------------------------------------------------
    Tokens
-   Colores base con nombre de pigmento; roles que se resuelven por tema
-   con light-dark(). El alto contraste pisa los roles uno por uno.
+   Cada color es un rol que se resuelve por tema con light-dark():
+   oscuro es el diseño base; claro ("día") cuando el sistema lo pide o con
+   data-theme="light"; alto contraste pisa los roles uno por uno.
    -------------------------------------------------------------------------- */
 @layer glosa.tokens {
   :root {
-    color-scheme: light dark;
+    color-scheme: dark light;
 
-    /* Marca del evento: la configuración pisa estas cuatro. */
-    --brand-primary: #3445D6;      /* lapislázuli: franja superior, botones, links */
-    --brand-accent: #F0B429;       /* oropimente: la pluma y la barra del vivo */
-    --brand-on-primary: #FFFFFF;   /* texto sobre --brand-primary */
-    --brand-on-accent: #1C1400;    /* texto sobre --brand-accent */
+    /* Superficies */
+    --room:      light-dark(#DDE2E6, #0D1115);   /* la sala: fondo de página */
+    --panel:     light-dark(#EDF0F2, #141A1F);   /* monitor, franjas, barras */
+    --panel-2:   light-dark(#E3E7EA, #191F25);   /* pie de alerta, teclas del panel */
+    --drawer:    light-dark(#F3F5F6, #12171C);   /* cajón lateral */
+    --well:      light-dark(#F7F8F9, #0F1418);   /* hueco de subtítulos dentro del cajón */
+    --glass:     light-dark(#FFFFFF, #000000);   /* el vidrio: donde se leen los subtítulos */
+    --key:       light-dark(#FFFFFF, #1B2127);   /* teclas de lectura */
+    --key-hover: light-dark(#F4F6F7, #222930);
+    --sel:       light-dark(#D3D9DE, #29313A);   /* lo actual: charla en curso, sala abierta */
+    --line:      light-dark(#C6CDD3, #232A31);
+    --line-2:    light-dark(#A9B2BA, #323B44);
+    --edge:      light-dark(#B7C0C7, #000000);   /* borde duro bajo la franja maestra */
 
-    /* Pigmentos */
-    --tinta: #121335;              /* tinta ferrogálica: fondo oscuro */
-    --tinta-2: #1A1C47;
-    --tinta-3: #262A61;
-    --papel: #F6F7FB;              /* papel: fondo claro, frío, nunca crema */
-    --papel-2: #EAECF5;
-    --luz: #F2F0E9;                /* texto sobre tinta, apenas cálido */
+    /* Tinta */
+    --ink:       light-dark(#0D1114, #E9ECEE);   /* 14,8:1 sobre el monitor */
+    --ink-2:     light-dark(#3F4952, #A3ACB4);   /* 7,6:1 */
+    --ink-3:     light-dark(#5A656F, #7E8993);   /* 4,9:1: lo que se lee de reojo */
 
-    /* Roles */
-    --bg:          light-dark(var(--papel), var(--tinta));
-    --surface:     light-dark(#FFFFFF, var(--tinta-2));
-    --surface-2:   light-dark(var(--papel-2), var(--tinta-3));
-    --text:        light-dark(#15173D, var(--luz));
-    --text-2:      light-dark(#464970, #B9BBD8);
-    --text-open:   light-dark(#6A6D95, #9396C2);   /* frase en curso */
-    --rule:        light-dark(#D5D8E8, #30346B);
-    --rule-strong: light-dark(#8387AC, #6B71BA);
-    --primary:     light-dark(var(--brand-primary), color-mix(in oklab, var(--brand-primary) 48%, white));
-    --accent:      light-dark(color-mix(in oklab, var(--brand-accent) 68%, #3A2400), var(--brand-accent));
-    --live-mark:   var(--accent);
-    --focus:       light-dark(var(--brand-primary), var(--brand-accent));
+    /* Subtítulos */
+    --cap:       light-dark(#0A0D10, #F4F6F7);   /* frase cerrada */
+    --cap-live:  light-dark(#56616B, #8E99A2);   /* frase en curso: 7,2:1 sobre el vidrio */
 
-    /* Estados (siempre con forma y palabra, nunca solo color) */
-    --ok:   light-dark(#1D8249, #4FD08F);   /* en vivo */
-    --warn: light-dark(#B25400, #FF9446);   /* degradado */
-    --fail: light-dark(#C22A36, #FF6F78);   /* caído */
-    --idle: light-dark(#737798, #8C90B8);   /* inactiva */
-    --meter: light-dark(#4D5BD0, #8F9AF0);  /* relleno neutro de medidores */
+    /* Estado: el único color de la interfaz. El rojo nunca significa otra cosa. */
+    --on:        light-dark(#0F8A4A, #35D07F);   /* en vivo */
+    --warn:      light-dark(#8A5300, #F5A524);   /* degradada */
+    --fault:     light-dark(#B42318, #F0443A);   /* caída */
+    --on-warn:   light-dark(#FFFFFF, #1B1100);   /* texto sobre una tecla ámbar */
+    --on-fault:  light-dark(#FFFFFF, #1A0302);   /* texto sobre una tecla roja */
 
-    /* Overlay de TV: no depende del tema, va sobre video. */
-    --overlay-bg: color-mix(in srgb, var(--tinta) 86%, transparent);
-    --overlay-text: #FFFFFF;
-    --overlay-open: #C3C6EC;
+    --scrim:     light-dark(rgb(13 17 20 / 0.35), rgb(5 7 9 / 0.55));
+    --mark-bg:   light-dark(#0D1114, #FFFFFF);   /* la marca de Glosa es blanca en la sala */
+    --mark-fg:   light-dark(#FFFFFF, #000000);
+    --focus:     var(--ink);
+    --shadow-float: 0 12px 28px -12px rgb(0 0 0 / 0.65), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+
+    /* Marca del evento: la configuración pisa estas cuatro (pages._brand_css).
+       La v2 no las usa en la interfaz en vivo: el color está reservado para el
+       estado. La identidad del evento va por el logo (.event-logo) y el nombre. */
+    --brand-primary: #3445D6;
+    --brand-accent: #F0B429;
+    --brand-on-primary: #FFFFFF;
+    --brand-on-accent: #1C1400;
 
     /* Tipografía */
-    --font-text: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
-    --font-gloss: "Alegreya", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-label:   "Archivo", "Arial Narrow", system-ui, sans-serif;   /* nombres, rótulos, teclas */
+    --font-caption: "B612", Verdana, system-ui, sans-serif;             /* todos los subtítulos */
+    --font-tc:      "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;   /* solo tiempos */
 
-    /* Escala clásica (Bringhurst): 12 14 16 18 21 24 36 48 60 72 */
-    --step--2: 0.75rem;
-    --step--1: 0.875rem;
-    --step-0: 1rem;
-    --step-1: 1.125rem;
-    --step-2: 1.3125rem;
-    --step-3: 1.5rem;
-    --step-4: 2.25rem;
-    --step-5: 3rem;
-    --step-6: 3.75rem;
-    --step-7: 4.5rem;
+    /* Escala de la interfaz (px de la maqueta: 11 · 12,5 · 13,5 · 15 · 17 · 19 · 25 · 32 · 44) */
+    --step--2: 0.6875rem;
+    --step--1: 0.78125rem;
+    --step-0:  0.84375rem;
+    --step-1:  0.9375rem;
+    --step-2:  1.0625rem;
+    --step-3:  1.1875rem;
+    --step-4:  1.5625rem;
+    --step-5:  2rem;
+    --step-6:  2.75rem;
 
-    --leading-tight: 1.12;
-    --leading-ui: 1.35;
-    --leading-body: 1.5;
-    --leading-caption: 1.42;
+    /* Ancho de Archivo: más angosta cuanto más grande */
+    --narrow-1: 90%;   /* texto de interfaz */
+    --narrow-2: 86%;   /* títulos de charla */
+    --narrow-3: 80%;   /* nombres de sala */
 
-    /* Subtítulos: eje propio, fuera de la escala. A−/A+ cambian --caption-scale. */
-    --caption-scale: 1;              /* 0.8 · 0.9 · 1 · 1.15 · 1.3 · 1.5 · 1.75 */
-    --caption-base: 1.625rem;        /* 26 px en celular: ~26 caracteres por línea */
-    --history-base: 1.125rem;        /* 18 px */
-    --caption-weight: 500;
+    /* Subtítulos: eje propio. A−/A+ cambian --caption-scale (0.8 a 1.75). */
+    --caption-scale: 1;
+    --caption-base: 1.375rem;        /* 22 px en celular: ~27 caracteres por renglón a 390 px */
+    --caption-leading: 1.45;
+    --caption-weight: 400;
+    --caption-measure: 30em;         /* ~56 caracteres de B612 (0,535em cada uno) */
 
     /* Espacio (base 4 px) */
     --space-1: 0.25rem;
@@ -114,82 +127,68 @@
     --space-7: 3rem;
     --space-8: 4rem;
 
-    --gutter: 1rem;                  /* 16 px de costado en celular */
-    --margin-w: 3rem;                /* el margen de la glosa */
-    --margin-gap: 0.875rem;          /* del filete al texto */
-    --rule-w: 1px;
-    --live-bar-w: 4px;
+    --gutter: 1.125rem;              /* 18 px de costado en celular */
+    --tap: 46px;                     /* teclas de lectura */
     --border-w: 1px;
-    --tap: 44px;
+    --bar-w: 3px;                    /* barra de la frase en curso y de las filas de Atención */
+    --radius-key: 3px;               /* teclas de lectura */
+    --radius-btn: 2px;               /* teclas del panel */
 
-    /* Radios por jerarquía, no uno para todo */
-    --radius-s: 4px;                 /* chips, campos */
-    --radius-m: 10px;                /* teclas de control, flotantes */
-    --radius-pill: 999px;            /* "volver al vivo" */
-
-    --shadow-float:
-      0 12px 28px -14px color-mix(in srgb, #05061A 70%, transparent),
-      0 2px 6px -2px color-mix(in srgb, #05061A 35%, transparent);
-
-    /* Movimiento */
+    /* Movimiento: el cursor es lo único que se mueve solo. */
     --dur-ui: 140ms;
-    --dur-settle: 480ms;             /* frase en curso → cerrada */
-    --ease-settle: cubic-bezier(0.2, 0.7, 0.1, 1);
+    --dur-settle: 400ms;             /* frase en curso → cerrada: solo cambia el color */
+    --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+    /* Alias de v1 para el admin mínimo de la Tarea 7 (se borran con la Tarea 12).
+       Su markup v1 tiene además un bloque propio en glosa.views ("Interim admin of Task 7"). */
+    --bg: var(--room);
+    --surface: var(--panel);
+    --surface-2: var(--panel-2);
+    --text: var(--ink);
+    --text-2: var(--ink-2);
+    --rule: var(--line);
+    --rule-strong: var(--line-2);
+    --ok: var(--on);
+    --fail: var(--fault);
+    --idle: var(--ink-3);
+    --radius-s: var(--radius-btn);
+    --radius-m: var(--radius-key);
   }
 
   [data-theme="light"] { color-scheme: light; }
   [data-theme="dark"]  { color-scheme: dark; }
 
-  /* Alto contraste real: negro, blanco y amarillo. Sin transparencias. */
+  /* Alto contraste: negro, blanco y los tres estados más vivos. Sin transparencias,
+     filetes de 2 px, subtítulos en B612 Bold. La frase en curso no se apaga (13,4:1).
+     Este bloque está duplicado abajo para prefers-contrast: mantenelos iguales. */
   [data-theme="contrast"] {
     color-scheme: dark;
-    --bg: #000000;
-    --surface: #000000;
-    --surface-2: #000000;
-    --text: #FFFFFF;
-    --text-2: #FFFFFF;
-    --text-open: #FFE14A;            /* la frase en curso cambia de tono, no se apaga */
-    --rule: #FFFFFF;
-    --rule-strong: #FFFFFF;
-    --primary: #FFFFFF;
-    --accent: #FFE14A;
-    --live-mark: #FFE14A;
-    --focus: #FFE14A;
-    --ok: #4DFF9A;
-    --warn: #FFB547;
-    --fail: #FF7A7A;
-    --idle: #FFFFFF;
-    --meter: #FFFFFF;
-    --rule-w: 2px;
-    --live-bar-w: 6px;
+    --room: #000000; --panel: #000000; --panel-2: #000000; --drawer: #000000; --well: #000000;
+    --glass: #000000; --key: #000000; --key-hover: #1F1F1F; --sel: #2B2B2B;
+    --line: #FFFFFF; --line-2: #FFFFFF; --edge: #FFFFFF;
+    --ink: #FFFFFF; --ink-2: #E3E7EA; --ink-3: #C9CFD4;
+    --cap: #FFFFFF; --cap-live: #C9CFD4;
+    --on: #3DF08F; --warn: #FFB23F; --fault: #FF6B61; --on-warn: #000000; --on-fault: #000000;
+    --scrim: rgb(0 0 0 / 0.8);
+    --mark-bg: #FFFFFF; --mark-fg: #000000;
     --border-w: 2px;
-    --caption-weight: 600;
+    --bar-w: 5px;
+    --caption-weight: 700;
   }
-
   @media (prefers-contrast: more) {
-    :root:not([data-theme]) {
+    :root:not([data-theme]) {        /* copia de [data-theme="contrast"]: mantenelos iguales */
       color-scheme: dark;
-      --bg: #000000;
-      --surface: #000000;
-      --surface-2: #000000;
-      --text: #FFFFFF;
-      --text-2: #FFFFFF;
-      --text-open: #FFE14A;
-      --rule: #FFFFFF;
-      --rule-strong: #FFFFFF;
-      --primary: #FFFFFF;
-      --accent: #FFE14A;
-      --live-mark: #FFE14A;
-      --focus: #FFE14A;
-      --ok: #4DFF9A;
-      --warn: #FFB547;
-      --fail: #FF7A7A;
-      --idle: #FFFFFF;
-      --meter: #FFFFFF;
-      --rule-w: 2px;
-      --live-bar-w: 6px;
+      --room: #000000; --panel: #000000; --panel-2: #000000; --drawer: #000000; --well: #000000;
+      --glass: #000000; --key: #000000; --key-hover: #1F1F1F; --sel: #2B2B2B;
+      --line: #FFFFFF; --line-2: #FFFFFF; --edge: #FFFFFF;
+      --ink: #FFFFFF; --ink-2: #E3E7EA; --ink-3: #C9CFD4;
+      --cap: #FFFFFF; --cap-live: #C9CFD4;
+      --on: #3DF08F; --warn: #FFB23F; --fault: #FF6B61; --on-warn: #000000; --on-fault: #000000;
+      --scrim: rgb(0 0 0 / 0.8);
+      --mark-bg: #FFFFFF; --mark-fg: #000000;
       --border-w: 2px;
-      --caption-weight: 600;
+      --bar-w: 5px;
+      --caption-weight: 700;
     }
   }
 }
@@ -200,58 +199,58 @@
    -------------------------------------------------------------------------- */
 @layer glosa.base {
   html {
-    font-family: var(--font-text);
+    font-family: var(--font-label);
     font-size: 100%;
-    line-height: var(--leading-body);
-    color: var(--text);
-    background: var(--bg);
+    line-height: 1.3;
+    color: var(--ink);
+    background: var(--room);
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Las vistas se acomodan al ancho de su contenedor "glosa", no de la ventana:
      así una sala se puede mostrar dentro de un marco (maquetas, vista previa en el panel). */
   body {
     min-block-size: 100dvh;
-    background: var(--bg);
-    color: var(--text);
+    background: var(--room);
+    color: var(--ink);
     container: glosa / inline-size;
   }
 
-  /* Un tema se puede aplicar a una parte de la página (útil en maquetas y en el panel). */
-  [data-theme] { background-color: var(--bg); color: var(--text); }
+  /* Un tema se puede aplicar a una parte de la página (maquetas, panel). */
+  [data-theme] { background-color: var(--room); color: var(--ink); }
 
-  h1, h2, h3 {
-    font-family: var(--font-gloss);
-    font-weight: 700;
-    line-height: var(--leading-tight);
-    text-wrap: balance;
+  h1, h2, h3 { font-weight: 700; line-height: 1.1; text-wrap: balance; }
+
+  a {
+    color: inherit;
+    text-decoration-line: underline;
+    text-decoration-color: var(--line-2);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  a:hover { text-decoration-color: var(--ink-2); }
+
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  [data-theme="contrast"] :focus-visible { outline-width: 3px; outline-offset: 3px; }
+  @media (prefers-contrast: more) {
+    :root:not([data-theme]) :focus-visible { outline-width: 3px; outline-offset: 3px; }
   }
 
-  a { color: var(--primary); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
-  a:hover { text-decoration-thickness: 0.14em; }
+  ::selection { background: color-mix(in srgb, var(--ink) 28%, transparent); }
 
-  :focus-visible {
-    outline: 3px solid var(--focus);
-    outline-offset: 2px;
-  }
-  [data-theme="contrast"] :focus-visible { outline-width: 4px; outline-offset: 3px; }
-
-  ::selection { background: color-mix(in oklab, var(--brand-accent) 50%, transparent); }
-
-  kbd, .kbd {
-    font-family: var(--font-text);
-    font-size: 0.85em;
-    font-weight: 700;
-    display: inline-block;
-    min-inline-size: 1.7em;
-    padding: 0.05em 0.4em;
-    text-align: center;
-    border: var(--border-w) solid var(--rule-strong);
-    border-block-end-width: calc(var(--border-w) + 2px);
-    border-radius: var(--radius-s);
-    background: var(--surface);
-    color: var(--text);
+  kbd {
+    display: inline-grid;
+    place-items: center;
+    min-inline-size: 19px;
+    block-size: 19px;
+    padding: 0 4px;
+    font: 400 10.5px/1 var(--font-tc);
+    font-stretch: 75%;
+    color: var(--ink-3);
+    border: var(--border-w) solid var(--line-2);
   }
 
   .visually-hidden {
@@ -263,6 +262,14 @@
     white-space: nowrap;
   }
 
+  /* Tiempos: reloj, timecode, cuenta regresiva, horas del registro. Solo tiempos. */
+  .tc {
+    font-family: var(--font-tc);
+    font-stretch: 75%;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
   .num { font-variant-numeric: tabular-nums lining-nums; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -276,917 +283,1117 @@
 
 
 /* --------------------------------------------------------------------------
-   Componentes
+   Componentes compartidos (audiencia y panel)
    -------------------------------------------------------------------------- */
 @layer glosa.components {
 
-  /* ---- Marca ---------------------------------------------------------- */
-
-  /* La pluma: la marca de Glosa y el cursor del texto que se está escribiendo. */
-  .nib,
-  .phrase--open::after {
-    content: "";
+  /* ---- Luz de estado --------------------------------------------------- */
+  /* Un cuadrado de 9 px. Lleno: en vivo, degradada, caída. Contorno: inactiva. */
+  .led {
     display: inline-block;
-    inline-size: 0.22em;
-    block-size: 0.64em;
-    margin-inline-start: 0.12em;
-    vertical-align: 0;
-    background: var(--live-mark);
-    border-radius: 1px 1px 0 0;
-    transform: skewX(-10deg);
+    flex: none;
+    inline-size: 9px;
+    block-size: 9px;
+    background: var(--led, transparent);
   }
+  .led--live     { --led: var(--on); }
+  .led--degraded { --led: var(--warn); }
+  .led--down     { --led: var(--fault); }
+  .led--idle     { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+  .led--info     { box-shadow: inset 0 0 0 1.5px var(--line-2); }   /* registro: informativo */
 
-  .wordmark {
-    display: inline-flex;
-    align-items: baseline;
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-weight: 800;
-    font-size: var(--step-2);
-    line-height: 1;
-    letter-spacing: -0.01em;
-    color: var(--text);
-    text-decoration: none;
-  }
-  .wordmark .nib { background: var(--accent); }
-
-  .event-logo { block-size: 1.75rem; inline-size: auto; }
-
-  .event-name {
-    font-family: var(--font-gloss);
-    font-weight: 700;
-    font-size: var(--step-1);
-    line-height: 1;
-    color: var(--text);
-  }
-
-  /* Títulos de charla: van en cursiva, como todo título de obra. */
-  .talk-title {
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-weight: 600;
-    line-height: 1.2;
-    color: var(--text);
-  }
-
-  .talk-meta {
-    font-size: var(--step--1);
-    line-height: var(--leading-ui);
-    color: var(--text-2);
-  }
-
-  /* ---- Dirección de traducción: EN → ES ------------------------------- */
-  .direction {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3em;
-    padding: 0.15em 0.5em;
-    border-radius: var(--radius-s);
-    background: var(--surface-2);
-    border: var(--border-w) solid transparent;
-    font-size: var(--step--1);
-    font-weight: 700;
-    line-height: 1.2;
-    letter-spacing: 0.02em;
-    color: var(--text);
-    white-space: nowrap;
-  }
-  .direction abbr { text-decoration: none; }
-  .direction svg { inline-size: 0.95em; block-size: 0.95em; flex: none; }
-  [data-theme="contrast"] .direction { border-color: var(--rule); }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
-    padding: 0.1em 0.5em;
-    border: var(--border-w) solid var(--rule-strong);
-    border-radius: var(--radius-s);
-    font-size: var(--step--2);
-    font-weight: 600;
-    line-height: 1.4;
-    color: var(--text-2);
-    white-space: nowrap;
-  }
-
-  /* ---- Estado: lámpara con forma + palabra ---------------------------- */
-  /* En vivo ●  Degradado ▲  Caído ■  Inactiva ○ */
+  /* ---- Estado: luz + palabra ------------------------------------------- */
+  /* Sana, la palabra va en gris. Solo la excepción se pinta. */
   .status {
-    --status-color: var(--idle);
+    --led: transparent;
     display: inline-flex;
     align-items: center;
-    gap: 0.45em;
-    font-size: var(--step--1);
-    font-weight: 700;
-    line-height: 1.2;
-    color: var(--text);
+    gap: 6px;
+    font: 500 var(--step--1)/1.2 var(--font-label);
+    color: var(--ink-2);
     white-space: nowrap;
   }
   .status::before {
     content: "";
     flex: none;
-    inline-size: 0.72em;
-    block-size: 0.72em;
-    background: var(--status-color);
+    inline-size: 8px;
+    block-size: 8px;
+    background: var(--led);
   }
-  .status--live     { --status-color: var(--ok); }
-  .status--live::before { border-radius: 50%; }
-  .status--degraded { --status-color: var(--warn); }
-  .status--degraded::before {
-    inline-size: 0.82em; block-size: 0.74em;
-    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  .status--live     { --led: var(--on); }
+  .status--degraded { --led: var(--warn); color: var(--warn); font-weight: 600; }
+  .status--down     { --led: var(--fault); color: var(--fault); font-weight: 600; }
+  .status--idle::before { box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+
+  /* ---- Marca ----------------------------------------------------------- */
+  .wordmark {
+    display: inline-block;
+    flex: none;
+    padding: 4px 7px;
+    background: var(--mark-bg);
+    color: var(--mark-fg);
+    font: 700 15px/1 var(--font-caption);
+    text-decoration: none;
   }
-  .status--down     { --status-color: var(--fail); }
-  .status--down::before { border-radius: 1px; }
-  .status--idle     { --status-color: var(--idle); color: var(--text-2); }
-  .status--idle::before {
-    background: transparent;
-    border-radius: 50%;
-    box-shadow: inset 0 0 0 2px var(--status-color);
+  .event-logo { block-size: 1.5rem; inline-size: auto; }
+  .event-name {
+    font: 650 var(--step-1)/1.1 var(--font-label);
+    font-stretch: var(--narrow-1);
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* ---- Encabezado de sala --------------------------------------------- */
+  /* ---- Reloj de la casa --------------------------------------------------- */
+  .clock {
+    font-family: var(--font-tc);
+    font-stretch: 75%;
+    font-variant-numeric: tabular-nums;
+    font-size: var(--step-0);
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .clock--big { font-size: var(--step-2); color: var(--ink); letter-spacing: 0.01em; }
+
+  /* ---- Charla ------------------------------------------------------------ */
+  .talk-title {
+    font-family: var(--font-label);
+    font-weight: 650;
+    font-stretch: var(--narrow-2);
+    line-height: 1.2;
+    color: var(--ink);
+  }
+  .talk-meta {
+    font-size: var(--step--1);
+    line-height: 1.35;
+    color: var(--ink-3);
+  }
+
+  /* Dirección de la traducción: EN → ES, en gris, sin caja. */
+  .direction {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    font: 650 var(--step--1)/1 var(--font-label);
+    letter-spacing: 0.03em;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .direction abbr { text-decoration: none; }
+  .direction svg { inline-size: 0.95em; block-size: 0.95em; flex: none; color: var(--ink-3); }
+
+  /* ---- Teclas del panel ------------------------------------------------ */
+  /* Grises. Solo la acción sugerida para una sala con problemas va con el color del estado. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    min-block-size: 38px;
+    padding: 0 12px;
+    border: var(--border-w) solid var(--line-2);
+    border-radius: var(--radius-btn);
+    background: var(--panel-2);
+    color: var(--ink);
+    font: 600 var(--step-0)/1 var(--font-label);
+    font-stretch: 84%;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color var(--dur-ui);
+  }
+  .btn:hover { background: var(--key-hover); }
+  .btn:disabled,
+  .btn[aria-disabled="true"] { color: var(--ink-3); background: none; cursor: default; }
+  .btn--compact { min-block-size: 32px; padding: 0 16px; letter-spacing: 0.01em; font-stretch: 88%; }
+  .btn--degraded { background: var(--warn); border-color: var(--warn); color: var(--on-warn); font-weight: 700; }
+  .btn--down     { background: var(--fault); border-color: var(--fault); color: var(--on-fault); font-weight: 700; }
+  .btn--degraded:hover { background: var(--warn); filter: brightness(1.08); }
+  .btn--down:hover     { background: var(--fault); filter: brightness(1.08); }
+  .btn--link {
+    min-block-size: 0;
+    padding: 4px 0;
+    border: 0;
+    background: none;
+    font-weight: 500;
+    font-stretch: 100%;
+    color: var(--ink-2);
+    text-decoration: underline;
+    text-decoration-color: var(--line-2);
+    text-underline-offset: 3px;
+  }
+  .btn--link:hover { background: none; text-decoration-color: var(--ink-2); }
+
+  /* Selector segmentado (Auto / Manual, Alertas / Todo): aria-pressed marca el elegido. */
+  .segmented { display: inline-flex; border: var(--border-w) solid var(--line-2); }
+  .segmented button {
+    border: 0;
+    background: none;
+    padding: 5px 9px;
+    font: 600 12px/1 var(--font-label);
+    font-stretch: 88%;
+    color: var(--ink-2);
+  }
+  .segmented button[aria-pressed="true"] { background: var(--ink); color: var(--room); }
+
+  /* ---- Panel: una superficie con encabezado de 46 px ----------------------- */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+    min-inline-size: 0;
+    background: var(--panel);
+    border: var(--border-w) solid var(--line);
+  }
+  .panel--sunk { background: var(--room); }
+  .panel__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-block-size: 46px;
+    padding: 0 10px 0 16px;
+    flex: none;
+  }
+  .panel__title {
+    font: 700 var(--step-2)/1 var(--font-label);
+    font-stretch: 82%;
+  }
+  .panel__head > .segmented { margin-inline-start: auto; }
+
+  /* ---- Alto contraste del sistema (Windows) ------------------------------ */
+  @media (forced-colors: active) {
+    .led, .status::before, .budget__bar::before, .vu::before, .phrase--open::after {
+      forced-color-adjust: none;
+      background: CanvasText;
+    }
+    .led--idle, .led--info, .status--idle::before { background: transparent; box-shadow: inset 0 0 0 2px CanvasText; }
+    .phrase--open { color: GrayText; }
+  }
+}
+
+
+/* --------------------------------------------------------------------------
+   Subtítulos: el vivo de la audiencia, el monitor del panel y el overlay
+   -------------------------------------------------------------------------- */
+@layer glosa.captions {
+
+  /* ---- Transcripción (vista de sala) ------------------------------------ */
+  /* Todo el texto va al mismo tamaño y con el mismo borde izquierdo: cuando un
+     párrafo pasa del vivo al historial, no se mueve ni una letra. */
+  .transcript {
+    /* Se calcula acá y no en :root, para que tome el --caption-base de la vista. */
+    --caption-size: calc(var(--caption-base) * var(--caption-scale));
+    --caption-gap: calc(var(--caption-size) * 0.7);
+    display: flex;
+    flex-direction: column;
+    gap: var(--caption-gap);
+  }
+  .page { display: flex; flex-direction: column; gap: var(--caption-gap); min-inline-size: 0; }
+  .page > .history { margin-block-start: auto; }
+  .history { display: flex; flex-direction: column; gap: var(--caption-gap); }
+
+  .line { position: relative; min-inline-size: 0; }
+
+  /* La hora es una regla de timecode por minuto ("15:16 ────"): room.js pone
+     <time> solo en el primer párrafo de cada minuto. El texto usa todo el ancho. */
+  .line__time {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-block: 0.35em 0.6em;
+    font: 400 var(--step--2)/1 var(--font-tc);
+    font-stretch: 75%;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .line__time::after {
+    content: "";
+    flex: 1;
+    block-size: 1px;
+    background: var(--line);
+  }
+
+  .line__text {
+    max-inline-size: var(--caption-measure);
+    font-family: var(--font-caption);
+    font-size: var(--caption-size);
+    font-weight: var(--caption-weight);
+    line-height: var(--caption-leading);
+    color: var(--cap);
+    overflow-wrap: break-word;
+    hyphens: manual;
+    text-wrap: wrap;              /* nunca balance ni pretty: re-acomodan lo que ya se leyó */
+  }
+
+  /* El bloque en vivo: una barra gris a la izquierda, fuera de la columna de texto. */
+  .line--live .line__time { display: none; }   /* la regla aparece cuando el párrafo pasa al historial */
+  .line--live .line__text { position: relative; }
+  .line--live .line__text::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: -12px;
+    inset-block: 0.3em;
+    inline-size: var(--bar-w);
+    background: var(--ink-2);
+  }
+  .line--live:has(> .line__text:empty) { display: none; }   /* sin barra de vivo vacía */
+
+  /* ---- Frases: en curso (gris, con cursor) y cerrada ---------------------- */
+  /* Cerrar una frase cambia solo el color: el ancho de las letras no cambia. */
+  .phrase { color: inherit; transition: color var(--dur-settle) var(--ease-out); }
+  .phrase--open { color: var(--cap-live); }
+  /* El cursor es un inline vacío con relleno, no un inline-block: un inline-block
+     abre una oportunidad de corte y el cursor podía quedar solo en un renglón nuevo.
+     El bloque de 0,95em se dibuja sobre el área de B612 (ascendente 0,96em). */
+  .phrase--open::after {
+    content: "";
+    padding-inline-start: 0.42em;
+    margin-inline-start: 0.12em;
+    background: linear-gradient(var(--ink-2), var(--ink-2)) 0 0.13em / 100% 0.95em no-repeat;
+    animation: glosa-cursor 1.1s steps(1) infinite;
+  }
+  @keyframes glosa-cursor { 50% { opacity: 0; } }
+
+  /* ---- Bilingüe: páginas enfrentadas, original a la izquierda -------------- */
+  .transcript--facing {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 0;
+  }
+  .transcript--facing > :not(.page) { grid-column: 1 / -1; }
+  .transcript--facing > .page { padding-inline: 0 var(--space-6); }
+  .transcript--facing > .page + .page {
+    padding-inline: var(--space-6) 0;
+    border-inline-start: var(--border-w) solid var(--line);
+  }
+
+  /* Rótulo de cada página: pegado arriba, tapa también el relleno del escenario. */
+  .line--head {
+    position: sticky;
+    z-index: 1;
+    inset-block-start: calc(-1 * var(--stage-pad-top, 0px));
+    margin-block-start: calc(-1 * var(--stage-pad-top, 0px));
+    padding-block: var(--stage-pad-top, 0px) 10px;
+    background: var(--glass);
+    border-block-end: var(--border-w) solid var(--line);
+  }
+  .line--head::after {                             /* lo que pasa por debajo se desvanece */
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 100%;
+    block-size: 1.25rem;
+    background: linear-gradient(var(--glass), transparent);
+    pointer-events: none;
+  }
+  .line--head > span:empty { display: none; }
+  .line__label {
+    font: 500 var(--step--1)/1.2 var(--font-label);
+    color: var(--ink-3);
+  }
+  .line__label b { font-weight: 650; color: var(--ink-2); }
+
+  /* Angosto: el original queda como un renglón chico en vivo, arriba de la traducción. */
+  @container glosa (max-width: 40rem) {
+    .transcript--facing { display: flex; flex-direction: column; }
+    .transcript--facing > .page { display: contents; }
+    .transcript--facing .line--head,
+    .transcript--facing > .page:first-of-type > .history { display: none; }
+    .transcript--facing > .page:last-of-type > .history { order: 1; }
+    .transcript--facing > .page:first-of-type > .line--live { order: 2; margin-block-end: calc(-0.5 * var(--caption-gap)); }
+    .transcript--facing > .page:last-of-type > .line--live { order: 3; }
+    .transcript--facing > .page:first-of-type > .line--live .line__text {
+      font-size: calc(var(--caption-size) * 0.66);
+      font-weight: 400;
+      color: var(--ink-2);
+    }
+    .transcript--facing > .page:first-of-type > .line--live .line__text::before,
+    .transcript--facing > .page:first-of-type .phrase--open::after { display: none; }
+    .transcript--facing > .page:first-of-type .phrase--open { color: var(--ink-3); }
+  }
+
+  /* ---- Monitor del panel: roll-up de 4 renglones ---------------------------- */
+  /* Anclado abajo; lo viejo se desvanece arriba, como el roll-up de la tele. */
+  .monitor__cc {
+    --cc-size: 17px;
+    flex: none;
+    margin-block-start: auto;
+    block-size: calc(var(--cc-size) * 1.55 * 4 + 20px);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+    padding: 0 22px 20px 35px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 34%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 34%);
+  }
+  .monitor__cc p {
+    max-inline-size: 38em;
+    font: 400 var(--cc-size)/1.55 var(--font-caption);
+    color: var(--cap);
+  }
+  .monitor__cc--frozen { block-size: auto; -webkit-mask-image: none; mask-image: none; }
+  .monitor__cc--frozen p { color: var(--ink-3); }
+  .monitor__cc--frozen small { display: block; margin-block-start: 8px; font-size: 11.5px; color: var(--ink-3); }
+
+  /* ---- Overlay de TV (OBS / vMix) ------------------------------------------ */
+  /* Sin cromo: 2 renglones de B612 en una caja semitransparente de tamaño fijo.
+     El texto entra por abajo y lo viejo sale por arriba. Colores fijos: va sobre video. */
+  .overlay {
+    --overlay-size: 48px;
+    --overlay-lines: 2;
+    --overlay-measure: 22.5em;                     /* ≈ 42 caracteres de B612 (0,535em cada uno) */
+    inline-size: min(calc(var(--overlay-measure) + 1.1em), 100%);
+    padding: 0.28em 0.55em 0.34em;
+    background: rgb(0 0 0 / 0.78);                 /* blanco 11,7:1 aun sobre video blanco */
+    color: #F4F6F7;
+    font-family: var(--font-caption);
+    font-size: var(--overlay-size);
+    font-weight: 400;
+    line-height: 1.35;
+  }
+  .overlay__window {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    block-size: calc(var(--overlay-lines) * 1.35em);
+    overflow: hidden;
+  }
+  .overlay__text { overflow-wrap: break-word; text-wrap: wrap; }
+  .overlay .phrase--open { color: #C4CBD1; }       /* 7,1:1 sobre la caja con video blanco */
+  .overlay .phrase--open::after { display: none; } /* en la tele no hay cursor */
+}
+
+
+/* --------------------------------------------------------------------------
+   Audiencia: lista de salas y vista de sala
+   -------------------------------------------------------------------------- */
+@layer glosa.audience {
+
+  /* ---- Encabezado de sala -------------------------------------------------- */
+  /* Arriba: marca, evento y "Cambiar de sala", en gris. Debajo: la sala, una luz,
+     el reloj; y la charla en una línea tranquila. */
   .room-head {
     display: grid;
-    gap: var(--space-1);
-    padding: var(--space-3) var(--gutter) var(--space-4);
-    background: var(--surface);
-    border-block-start: 4px solid var(--brand-primary);
-    border-block-end: var(--rule-w) solid var(--rule);
+    padding: 0 var(--gutter) 14px;
+    background: var(--panel);
+    border-block-end: var(--border-w) solid var(--line);
   }
   .room-head__bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    margin-block-end: var(--space-3);
+    gap: 10px;
+    min-block-size: 44px;
+    margin-inline: calc(-1 * var(--gutter));
+    margin-block-end: 12px;
+    padding-inline: var(--gutter);
+    border-block-end: var(--border-w) solid var(--line);
   }
   .room-head__brand {
     display: flex;
-    align-items: baseline;
-    gap: var(--space-3);
+    align-items: center;
+    gap: 10px;
+    min-inline-size: 0;
+    flex: 1;
+  }
+  .room-head__event { min-inline-size: 0; }
+  .room-head__event.event-name { font-size: var(--step--1); font-weight: 500; color: var(--ink-3); }
+  .room-head__rooms {
+    margin-inline-start: auto;
+    font-size: var(--step--1);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .room-head__umd {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     min-inline-size: 0;
   }
-  .room-head__rooms {
-    font-size: var(--step--1);
-    font-weight: 600;
-  }
-  .room-head__event { display: none; }
   .room-head__name {
-    font-family: var(--font-gloss);
-    font-weight: 800;
-    font-size: var(--step-3);
-    line-height: var(--leading-tight);
-    letter-spacing: -0.005em;
+    min-inline-size: 0;
+    font: 750 var(--step-3)/1 var(--font-label);
+    font-stretch: var(--narrow-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
+  .room-head__umd > .clock { margin-inline-start: auto; }
   .room-head__talk {
-    font-size: var(--step-1);
+    margin-block-start: 12px;
+    font-size: var(--step-2);
   }
   .room-head__meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-1) var(--space-3);
-    margin-block-start: var(--space-1);
+    gap: 3px 12px;
+    margin-block-start: 4px;
   }
 
-  /* ---- Transcripción: margen de glosa + texto ------------------------- */
-  /* Cada renglón es una grilla: [margen con la hora][columna(s) de texto].
-     El filete de la izquierda es continuo en el historial y se engrosa en el vivo. */
-  .transcript {
-    --text-cols: 1;
-    display: flex;
-    flex-direction: column;
-  }
-  .transcript--bilingual { --text-cols: 2; }
-
-  .history { display: flex; flex-direction: column; }
-
-  .line {
-    display: grid;
-    grid-template-columns: var(--margin-w) repeat(var(--text-cols), minmax(0, 1fr));
-    align-items: first baseline;
-  }
-
-  .line__time {
-    grid-column: 1;
-    padding-inline-end: var(--space-3);
-    text-align: end;
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-size: var(--step--1);
-    line-height: 1.2;
-    font-variant-numeric: lining-nums tabular-nums;
-    color: var(--text-2);
-    white-space: nowrap;
-  }
-
-  .line__text:first-child { grid-column-start: 2; }   /* renglón sin hora */
-  .line__text {
-    padding-block: 0.3em;
-    padding-inline: calc(var(--margin-gap) - var(--rule-w)) var(--space-3);
-    border-inline-start: var(--rule-w) solid var(--rule);
-    font-size: calc(var(--history-base) * var(--caption-scale));
-    line-height: var(--leading-caption);
-    color: var(--text-2);
-    overflow-wrap: break-word;
-    hyphens: manual;
-    text-wrap: pretty;               /* solo en historial: ya no cambia */
-  }
-
-  /* Bloque en vivo: letra grande, barra de oropimente, texto que solo crece al final. */
-  .line--live .line__time { color: var(--text); }
-  .line--live .line__text {
-    padding-block: 0.55em 0.25em;
-    padding-inline-start: calc(var(--margin-gap) - var(--live-bar-w));
-    border-inline-start: var(--live-bar-w) solid var(--live-mark);
-    font-size: calc(var(--caption-base) * var(--caption-scale));
-    font-weight: var(--caption-weight);
-    line-height: var(--leading-caption);
-    letter-spacing: 0.003em;
-    color: var(--text);
-    text-wrap: wrap;                 /* nunca balance ni pretty: re-acomodan lo ya leído */
-  }
-
-  /* Encabezado de columnas en bilingüe */
-  .line--head {
-    position: sticky;
-    inset-block-start: 0;
-    z-index: 1;
-    background: var(--bg);
-    border-block-end: var(--rule-w) solid var(--rule);
-  }
-  .line__label {
-    padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--margin-gap) - var(--rule-w));
-    border-inline-start: var(--rule-w) solid var(--rule);
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-size: var(--step-0);
-    color: var(--text-2);
-  }
-  .line__label b { font-style: normal; font-weight: 700; color: var(--text); }
-
-  /* Bilingüe en pantallas angostas: interlineal, como las glosas.
-     El original va arriba, chico y en segundo plano; la traducción, abajo, a tamaño completo. */
-  @container glosa (max-width: 40rem) {
-    .transcript--bilingual { --text-cols: 1; }
-    .transcript--bilingual .line--head { display: none; }
-    .transcript--bilingual .line__text { grid-column: 2; }
-    .transcript--bilingual .line__text:not(:last-child) {
-      padding-block-end: 0;
-      font-size: calc(var(--history-base) * var(--caption-scale) * 0.85);
-      font-weight: 400;
-      color: var(--text-2);
-    }
-    .transcript--bilingual .line--live .line__text:not(:last-child) {
-      font-size: calc(var(--caption-base) * var(--caption-scale) * 0.62);
-    }
-  }
-
-  /* ---- Frases: en curso (tenue) y cerrada (sólida) -------------------- */
-  /* El cambio es solo de color: el ancho de las letras no cambia, nada se mueve. */
-  .phrase {
-    color: inherit;
-    transition: color var(--dur-settle) var(--ease-settle);
-  }
-  .phrase--open { color: var(--text-open); }
-  .phrase--open::after {
-    animation: glosa-nib 1.6s ease-in-out infinite alternate;
-  }
-  @keyframes glosa-nib {
-    from { opacity: 1; }
-    to   { opacity: 0.3; }
-  }
-
-  /* ---- Volver al vivo ------------------------------------------------- */
-  .to-live {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5em;
-    min-block-size: var(--tap);
-    padding: 0.55em 1.1em 0.55em 0.9em;
-    border: var(--border-w) solid transparent;
-    border-radius: var(--radius-pill);
-    background: var(--brand-accent);
-    color: var(--brand-on-accent);
-    font-size: var(--step-0);
-    font-weight: 700;
-    line-height: 1.1;
-    box-shadow: var(--shadow-float);
-    white-space: nowrap;
-  }
-  .to-live svg { inline-size: 1.1em; block-size: 1.1em; flex: none; }
-  .to-live[hidden] { display: none; }
-  [data-theme="contrast"] .to-live { background: #FFE14A; color: #000; border-color: #000; box-shadow: 0 0 0 2px #FFE14A; }
-
-  /* ---- Barra de controles -------------------------------------------- */
+  /* ---- Teclas de lectura --------------------------------------------------- */
+  /* Tranquilas hasta que las necesitás: gris sobre gris, 46 px de alto. */
   .controls {
-    position: relative;
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--gutter) calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
-    background: var(--surface);
-    border-block-start: var(--rule-w) solid var(--rule);
+    gap: 6px;
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+    background: var(--panel);
+    border-block-start: var(--border-w) solid var(--line);
   }
-  .controls__to-live {
-    position: absolute;
-    inset-block-end: calc(100% + var(--space-3));
-    inset-inline-start: 50%;
-    translate: -50% 0;
-  }
-
   .control {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.35em;
-    min-inline-size: var(--tap);
+    gap: 7px;
+    flex: none;
+    min-inline-size: 48px;
     block-size: var(--tap);
-    padding-inline: var(--space-3);
-    border: var(--border-w) solid transparent;
-    border-radius: var(--radius-m);
-    background: var(--surface-2);
-    color: var(--text);
-    font-size: var(--step-0);
-    font-weight: 700;
-    line-height: 1;
+    padding: 0 11px;
+    border: var(--border-w) solid var(--line);
+    border-radius: var(--radius-key);
+    background: var(--key);
+    color: var(--ink);
+    font: 650 var(--step-0)/1 var(--font-label);
+    font-stretch: 82%;
+    white-space: nowrap;
     text-decoration: none;
-    transition: background-color var(--dur-ui);
+    transition: background-color var(--dur-ui), border-color var(--dur-ui);
   }
-  .control:hover { background: color-mix(in oklab, var(--surface-2) 82%, var(--text)); }
-  .control[aria-pressed="true"] { background: var(--text); color: var(--bg); }
-  .control svg { inline-size: 1.25em; block-size: 1.25em; flex: none; }
-  .control--push { margin-inline-start: auto; }
-  [data-theme="contrast"] .control { border-color: var(--rule); }
+  .control:hover { background: var(--key-hover); border-color: var(--line-2); }
+  .control[aria-pressed="true"] { border-color: var(--ink-2); }
+  .control svg { inline-size: 15px; block-size: 15px; flex: none; }
+  .control-group { display: inline-flex; gap: 6px; }
 
-  /* A− / A+: la A cambia de tamaño, el signo aclara. */
-  .control__a { font-family: var(--font-gloss); font-weight: 700; }
-  .control__a--small { font-size: 0.85em; }
-  .control__a--big { font-size: 1.2em; }
-
-  .control-group { display: inline-flex; gap: 2px; }
-  .control-group > .control { gap: 0.1em; }
-  .control-group > .control:not(:first-child) { border-start-start-radius: 0; border-end-start-radius: 0; }
-  .control-group > .control:not(:last-child)  { border-start-end-radius: 0; border-end-end-radius: 0; }
-
-  /* Selector de idioma: un <select> nativo vestido como tecla. */
+  /* Selector de idioma: un <select> nativo vestido de tecla. */
   .control--select {
     position: relative;
-    justify-content: flex-start;
-    padding: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-inline-size: 0;
-    max-inline-size: 13rem;
+    max-inline-size: 11.5rem;
+    padding: 0;
   }
   .control--select select {
     appearance: none;
     inline-size: 100%;
     block-size: 100%;
-    padding-inline: var(--space-3) var(--space-6);
+    min-inline-size: 0;
+    padding: 0 28px 0 12px;
     border: 0;
     border-radius: inherit;
     background: transparent;
-    font-weight: 700;
+    font: inherit;
     color: inherit;
+    text-overflow: ellipsis;
     cursor: pointer;
   }
   .control--select::after {
     content: "";
     position: absolute;
-    inset-inline-end: var(--space-4);
+    inset-inline-end: 12px;
     inset-block-start: 50%;
-    inline-size: 0.45em;
-    block-size: 0.45em;
-    border-inline-end: 2px solid currentColor;
-    border-block-end: 2px solid currentColor;
-    translate: 0 -70%;
-    rotate: 45deg;
+    border-inline: 4px solid transparent;
+    border-block-start: 5px solid var(--ink-3);
+    translate: 0 -40%;
     pointer-events: none;
   }
-  .control--select option { background: var(--surface); color: var(--text); }
+  .control--select option { background: var(--panel); color: var(--ink); }
+  .control--fullscreen { display: none; }
 
-  /* ---- Lista de salas en el costado (escritorio) ---------------------- */
+  /* Muy angosto: la tecla de tema queda solo con el ícono. */
+  @container glosa (max-width: 23.5rem) {
+    .control__word { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  }
+
+  /* "Volver al vivo": aparece solo cuando te fuiste para atrás. Gris, no de color. */
+  .to-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    block-size: var(--tap);
+    padding: 0 16px 0 13px;
+    border: var(--border-w) solid var(--ink-2);
+    border-radius: var(--radius-key);
+    background: var(--key);
+    color: var(--ink);
+    font: 650 var(--step-0)/1 var(--font-label);
+    font-stretch: 82%;
+    white-space: nowrap;
+    box-shadow: var(--shadow-float);
+  }
+  .to-live svg { inline-size: 15px; block-size: 15px; flex: none; }
+
+  /* ---- Nota del escenario vacío ------------------------------------------- */
+  .stage-note {
+    max-inline-size: 30em;
+    font: 500 var(--step-1)/1.45 var(--font-label);
+    color: var(--ink-3);
+  }
+
+  /* ---- "Ahora" y "Próxima" --------------------------------------------------- */
+  /* El rótulo arriba y la charla debajo, a todo el ancho: los títulos son largos. */
+  .agenda { display: grid; gap: 14px; }
+  .slot { display: grid; row-gap: 4px; }
+  .slot__when {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4em;
+    font: 500 var(--step--1)/1.3 var(--font-label);
+    color: var(--ink-3);
+  }
+  .slot__when time {
+    font-family: var(--font-tc);
+    font-stretch: 75%;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    color: var(--ink-2);
+  }
+  .slot__what { display: grid; gap: 3px; min-inline-size: 0; }
+  .slot__what .talk-title { font-size: var(--step-1); color: var(--ink-2); }
+  .slot--now .slot__what .talk-title { color: var(--ink); }
+  .slot__empty { font-size: var(--step-0); color: var(--ink-3); }
+  .slot, .slot__what { align-content: start; }   /* si un título ocupa dos renglones, la fila no se desalinea */
+
+  /* Sala sin charla: la próxima, abajo en el vidrio, como el monitor inactivo del panel. */
+  .stage-agenda { gap: 18px; }
+  .stage-agenda .slot { row-gap: 6px; }
+  .stage-agenda .slot__what .talk-title { font-size: var(--step-3); }
+  .stage-agenda .slot__what .talk-meta { font-size: var(--step-0); }
+
+  /* ---- Salas al costado (escritorio) ---------------------------------------- */
+  /* Las otras salas como filas de agenda: luz, nombre, lo que pasa ahí. */
   .room-nav {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    padding-block: var(--space-5);
-    background: var(--surface);
-    border-inline-end: var(--rule-w) solid var(--rule);
+    background: var(--room);
+    border-inline-end: var(--border-w) solid var(--line);
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
   }
   .room-nav__title {
-    padding-inline: var(--gutter);
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-weight: 500;
-    font-size: var(--step-1);
-    color: var(--text-2);
+    padding: 16px 16px 8px;
+    font: 700 var(--step-0)/1 var(--font-label);
+    font-stretch: 86%;
+    color: var(--ink-2);
   }
-  .room-nav__list { display: flex; flex-direction: column; }
   .room-nav__item {
     display: grid;
-    gap: 0.2rem;
-    padding: var(--space-3) var(--gutter) var(--space-3) calc(var(--gutter) - 4px);
-    border-inline-start: 4px solid transparent;
-    color: var(--text);
+    gap: 4px;
+    padding: 10px 16px 11px;
+    color: var(--ink);
     text-decoration: none;
   }
-  .room-nav__item:hover { background: var(--surface-2); }
-  .room-nav__item[aria-current="page"] {
-    border-inline-start-color: var(--primary);
-    background: var(--surface-2);
-  }
-  .room-nav__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+  .room-nav__item:hover { background: var(--panel); }
+  .room-nav__item:focus-visible { outline-offset: -2px; }   /* adentro: la lista tiene scroll y lo recortaría */
+  .room-nav__item[aria-current="page"] { background: var(--sel); }
+  .room-nav__row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .room-nav__name {
-    font-family: var(--font-gloss);
-    font-weight: 700;
-    font-size: var(--step-2);
-    line-height: 1.15;
+    min-inline-size: 0;
+    font: 650 var(--step-1)/1.1 var(--font-label);
+    font-stretch: 84%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .room-nav__talk { font-size: var(--step-0); }
+  .room-nav__row > .status { font-size: var(--step--2); }
+  .room-nav__talk {
+    font-size: var(--step-0);
+    font-weight: 500;
+    color: var(--ink-2);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .room-nav__item[aria-current="page"] .room-nav__talk { color: var(--ink); }
+  .room-nav__item[aria-current="page"] .talk-meta { color: var(--ink-2); }   /* --ink-3 no llega a 4,5:1 sobre --sel */
+  .room-nav__item .talk-meta { font-size: var(--step--2); }
   .room-nav__foot {
+    display: grid;
+    gap: 8px;
     margin-block-start: auto;
-    padding: var(--space-4) var(--gutter) 0;
-    display: grid;
-    gap: var(--space-2);
+    padding: 16px;
+    border-block-start: var(--border-w) solid var(--line);
     font-size: var(--step--1);
-    color: var(--text-2);
+    color: var(--ink-3);
   }
+  .room-nav__foot kbd { margin-inline-end: 2px; }
 
-  /* ---- Tarjeta de sala (lista pública) -------------------------------- */
+  /* ---- Lista pública de salas ----------------------------------------------- */
+  /* Una fila por sala, como la agenda del panel: luz, nombre, "Ahora" y "Próxima". */
   .room-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
-    column-gap: var(--space-7);
+    background: var(--panel);
+    border: var(--border-w) solid var(--line);
   }
   .room-card {
-    --margin-w: 5.5rem;
     position: relative;
     display: grid;
-    gap: var(--space-4);
-    padding-block: var(--space-5) var(--space-6);
-    border-block-start: var(--rule-w) solid var(--rule-strong);
+    gap: 12px;
+    padding: 14px 16px 16px;
   }
+  .room-card + .room-card { border-block-start: var(--border-w) solid var(--line); }
+  .room-card:hover { background: var(--panel-2); }
   .room-card__head {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
+    align-items: center;
+    gap: 4px 10px;
   }
   .room-card__name {
-    font-family: var(--font-gloss);
-    font-weight: 800;
-    font-size: var(--step-4);
-    line-height: 1;
-    letter-spacing: -0.01em;
+    font: 700 var(--step-3)/1.1 var(--font-label);
+    font-stretch: var(--narrow-3);
   }
-  .room-card__link { color: var(--text); text-decoration: none; }
-  .room-card__link::after { content: ""; position: absolute; inset: 0; }   /* toda la tarjeta es el link */
+  .room-card__link { color: inherit; text-decoration: none; }
+  .room-card__link::after { content: ""; position: absolute; inset: 0; }   /* toda la fila es el link */
   .room-card__link:focus-visible { outline: none; }
-  .room-card:has(.room-card__link:focus-visible) { outline: 3px solid var(--focus); outline-offset: 4px; }
-  .room-card:hover .room-card__name { text-decoration: underline; text-decoration-thickness: 0.06em; text-underline-offset: 0.12em; }
+  .room-card:has(.room-card__link:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
 
-  .agenda { display: grid; gap: var(--space-3); }
-  .slot {
-    display: grid;
-    grid-template-columns: var(--margin-w) minmax(0, 1fr);
-    align-items: first baseline;
-  }
-  .slot__when {
-    padding-inline-end: var(--space-3);
-    text-align: end;
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-size: var(--step-0);
-    line-height: 1.25;
-    color: var(--text-2);
-  }
-  .slot__when time { display: block; font-size: var(--step--1); font-variant-numeric: lining-nums tabular-nums; }
-  .slot__what {
-    display: grid;
-    gap: var(--space-1);
-    padding-block: 0.15em 0.2em;
-    padding-inline-start: calc(var(--margin-gap) - var(--rule-w));
-    border-inline-start: var(--rule-w) solid var(--rule);
-  }
-  .slot__what .talk-title { font-size: var(--step-2); }
-  .slot--now .slot__when { color: var(--text); }
-  .room-card--live .slot--now .slot__what {
-    padding-inline-start: calc(var(--margin-gap) - var(--live-bar-w));
-    border-inline-start: var(--live-bar-w) solid var(--live-mark);
-  }
-  .slot__empty { font-size: var(--step-0); color: var(--text-2); }
+  /* ---- Pie: la definición ----------------------------------------------------- */
+  .colophon { color: var(--ink-3); }
+  .colophon b { font: 700 1em/1 var(--font-caption); color: var(--ink-2); }
+}
 
-  /* ---- Botones -------------------------------------------------------- */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45em;
-    min-block-size: 2.5rem;
-    padding: 0.45em 0.9em;
-    border: var(--border-w) solid var(--rule-strong);
-    border-radius: var(--radius-s);
-    background: var(--surface);
-    color: var(--text);
-    font-size: var(--step--1);
-    font-weight: 700;
-    line-height: 1.15;
-    text-decoration: none;
-    white-space: nowrap;
-    transition: background-color var(--dur-ui), border-color var(--dur-ui);
-  }
-  .btn:hover { background: var(--surface-2); }
-  .btn svg { inline-size: 1.1em; block-size: 1.1em; flex: none; }
-  .btn--primary {
-    background: var(--brand-primary);
-    color: var(--brand-on-primary);
-    border-color: color-mix(in oklab, var(--brand-primary) 70%, white);
-  }
-  .btn--primary:hover { background: color-mix(in oklab, var(--brand-primary) 88%, black); }
-  .btn--danger { color: var(--fail); border-color: color-mix(in oklab, var(--fail) 55%, transparent); }
-  .btn--danger:hover { background: color-mix(in oklab, var(--fail) 10%, var(--surface)); }
-  .btn--quiet { border-color: transparent; background: transparent; }
-  .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
-  [data-theme="contrast"] .btn--primary { background: #FFFFFF; color: #000000; border-color: #FFFFFF; }
 
-  /* Selector segmentado (Automático / Manual) */
-  .segmented {
-    display: inline-flex;
-    padding: 2px;
-    gap: 2px;
-    border: var(--border-w) solid var(--rule-strong);
-    border-radius: var(--radius-s);
-    background: var(--surface);
-  }
-  .segmented button {
-    padding: 0.2em 0.6em;
-    border: 0;
-    border-radius: 2px;
-    background: transparent;
-    font-size: var(--step--2);
-    font-weight: 700;
-    line-height: 1.5;
-    color: var(--text-2);
-  }
-  .segmented button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+/* --------------------------------------------------------------------------
+   Panel de producción (Tarea 12): clases listas, sin template todavía.
+   Maqueta: docs/design/admin.html. Estados con las mismas palabras que .status:
+   --live, --degraded, --down, --idle.
+   -------------------------------------------------------------------------- */
+@layer glosa.admin {
 
-  /* ---- Panel de producción: consola de salas -------------------------- */
-  /* Cada sala es un canal, como en una consola de sonido: franjas pegadas,
-     separadas por filetes, con la luz de estado arriba de todo. */
-  .console {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
-    gap: var(--rule-w);
-    background: var(--rule);
-    border: var(--rule-w) solid var(--rule);
-  }
-
-  .strip {
-    --status-color: var(--idle);
-    --strip-bg: var(--surface);
+  /* ---- Franja maestra (52 px) --------------------------------------------- */
+  .masthead {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: 0 var(--space-4) var(--space-4);
-    background: var(--strip-bg);
+    align-items: center;
     min-inline-size: 0;
-  }
-  .strip::before {                              /* luz de estado */
-    content: "";
-    display: block;
-    block-size: 6px;
-    margin-inline: calc(-1 * var(--space-4));
-    background: var(--status-color);
-  }
-  .strip--live     { --status-color: var(--ok); }
-  .strip--degraded { --status-color: var(--warn); --strip-bg: color-mix(in oklab, var(--warn) 7%, var(--surface)); }
-  .strip--down     { --status-color: var(--fail); --strip-bg: color-mix(in oklab, var(--fail) 9%, var(--surface)); }
-  .strip--idle     { --status-color: var(--idle); }
-  .strip--idle::before {
-    background: repeating-linear-gradient(-45deg, var(--idle) 0 5px, transparent 5px 10px);
-  }
-
-  /* Nombre arriba; debajo, estado a la izquierda y modo a la derecha; debajo, el motivo. */
-  .strip__head {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2);
-    padding-block-start: var(--space-1);
-  }
-  .strip__name,
-  .strip__reason { grid-column: 1 / -1; }
-  .strip__name {
-    font-family: var(--font-gloss);
-    font-weight: 800;
-    font-size: var(--step-3);
-    line-height: 1.05;
-  }
-  .strip__reason { font-size: var(--step--1); line-height: var(--leading-ui); color: var(--text); text-wrap: pretty; }
-  .strip__talk { display: grid; gap: var(--space-1); min-block-size: 5.25rem; }
-  .strip__talk .talk-title { font-size: var(--step-1); }
-  .strip__tags { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
-  .strip__actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-block-start: auto;
-    padding-block-start: var(--space-2);
-  }
-  .strip__actions .btn { flex: 1 1 auto; }
-
-  /* Métricas: etiqueta a la izquierda, número tabular a la derecha. */
-  .metrics { display: grid; }
-  .metric {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding-block: var(--space-2);
-    border-block-start: var(--rule-w) solid var(--rule);
-  }
-  .metric dt { font-size: var(--step--1); color: var(--text-2); }
-  .metric dt small { font-size: inherit; opacity: 0.85; }
-  .metric dd {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4em;
-    font-size: var(--step-1);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums lining-nums;
-    line-height: 1.1;
-  }
-  .metric--warn dd::before,
-  .metric--fail dd::before {
-    content: "";
-    inline-size: 0.62em; block-size: 0.56em;
-    background: var(--warn);
-    clip-path: polygon(50% 0, 100% 100%, 0 100%);
-  }
-  .metric--fail dd::before { background: var(--fail); clip-path: none; inline-size: 0.56em; border-radius: 1px; }
-
-  /* ---- Medidor de audio (VU) ----------------------------------------- */
-  /* --level y --peak van de 0 a 1 (0 = −60 dBFS, 1 = 0 dBFS). */
-  .vu {
-    --level: 0;
-    --peak: 0;
-    --hot: 0.9;                                 /* desde −6 dBFS */
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .vu__label { font-size: var(--step--1); color: var(--text-2); }
-  .vu__track {
-    position: relative;
-    block-size: 12px;
-    background: var(--surface-2);
-    border-radius: 2px;
+    block-size: 52px;
+    padding: 0 16px;
     overflow: hidden;
+    background: var(--panel);
+    border-block-end: var(--border-w) solid var(--edge);
   }
-  .vu__track::before {                          /* relleno */
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    inline-size: calc(var(--level) * 100%);
-    background:
-      linear-gradient(to right, var(--meter) 0 calc(var(--hot) * 100%), var(--warn) 0)
-      0 0 / calc(100% / max(var(--level), 0.01)) 100% no-repeat;
-  }
-  .vu__track::after {                           /* segmentos tipo LED */
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(to right, transparent 0 6px, var(--strip-bg, var(--surface)) 6px 8px);
-  }
-  .vu__peak {
-    position: absolute;
-    z-index: 1;
-    inset-block: 0;
-    inset-inline-start: calc(var(--peak) * 100% - 1px);
-    inline-size: 2px;
-    background: var(--text);
-  }
-  .vu__value {
-    min-inline-size: 5ch;
-    text-align: end;
-    font-size: var(--step--1);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums lining-nums;
-  }
-  .vu__alarm {
-    grid-column: 1 / -1;
-    font-size: var(--step--1);
-    font-weight: 700;
-  }
-
-  /* ---- Chip de calidad (Jev) ----------------------------------------- */
-  /* --q de 0 a 1. La marca vertical es el umbral de alarma (0,5). */
-  .quality {
-    --q: 0;
-    --quality-color: var(--idle);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5em;
-    padding: 0.2em 0.5em;
-    border-radius: var(--radius-s);
-    background: var(--surface-2);
-    border: var(--border-w) solid transparent;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums lining-nums;
-    line-height: 1.2;
-  }
-  .quality__bar {
-    position: relative;
-    inline-size: 2.75rem;
-    block-size: 6px;
-    border-radius: 3px;
-    background: color-mix(in oklab, var(--text) 16%, transparent);
-    overflow: hidden;
-  }
-  .quality__bar::before {
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    inline-size: calc(var(--q) * 100%);
-    background: var(--quality-color);
-  }
-  .quality__bar::after {
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    inset-inline-start: calc(50% - 1px);
-    inline-size: 2px;
-    background: var(--strip-bg, var(--surface));
-  }
-  .quality--good { --quality-color: var(--ok); }
-  .quality--fair { --quality-color: var(--warn); }
-  .quality--low  { --quality-color: var(--fail); }
-  .quality--none { color: var(--text-2); font-weight: 600; }
-  [data-theme="contrast"] .quality { border-color: var(--rule); }
-
-  /* ---- Costo contra presupuesto -------------------------------------- */
-  .budget {
-    --spent: 0;                                   /* 0 a 1 */
-    --warn-at: 0.8;
-    --budget-color: var(--meter);
-    display: grid;
-    gap: var(--space-3);
-  }
-  .budget--warn { --budget-color: var(--warn); }
-  .budget--over { --budget-color: var(--fail); }
-  .budget__figure {
+  .masthead__cell {
     display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0 var(--space-2);
-    font-variant-numeric: tabular-nums lining-nums;
+    align-items: center;
+    gap: 12px;
+    block-size: 30px;
+    padding: 0 22px;
+    border-inline-start: var(--border-w) solid var(--line);
+    white-space: nowrap;
   }
-  .budget__spent { font-size: var(--step-4); font-weight: 700; line-height: 1; letter-spacing: -0.01em; }
-  .budget__of { font-size: var(--step-0); color: var(--text-2); }
-  .budget__bar {
-    position: relative;
-    block-size: 14px;
-    border-radius: 3px;
-    background: var(--surface-2);
-  }
+  .masthead__cell:first-child { padding-inline-start: 0; border-inline-start: 0; }
+  .masthead__push { margin-inline-start: auto; }
+  .masthead__event b { display: block; font: 750 16px/1 var(--font-label); font-stretch: var(--narrow-1); }
+  .masthead__event span { display: block; margin-block-start: 3px; font-size: 11.5px; color: var(--ink-3); }
+
+  /* Cuántas salas hay en cada estado. */
+  .tally { gap: 18px; }
+  .tally__item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
+  .tally__item strong { font: 700 16px/1 var(--font-label); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* Gasto contra presupuesto: gris; ámbar recién desde el 80 %, rojo al agotarse.
+     --spent y --warn-at van de 0 a 1. */
+  .budget { --spent: 0; --warn-at: 0.8; --fill: var(--ink-2); }
+  .budget--warn { --fill: var(--warn); }
+  .budget--over { --fill: var(--fault); }
+  .budget__label { font-size: 12.5px; color: var(--ink-2); }
+  .budget__value { font: 700 15px/1 var(--font-label); font-variant-numeric: tabular-nums; }
+  .budget--warn .budget__value { color: var(--warn); }
+  .budget--over .budget__value { color: var(--fault); }
+  .budget__of { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .budget__bar { position: relative; inline-size: 150px; block-size: 6px; background: var(--line); }
   .budget__bar::before {
     content: "";
     position: absolute;
     inset-block: 0;
     inset-inline-start: 0;
     inline-size: calc(min(var(--spent), 1) * 100%);
-    border-radius: 3px 0 0 3px;
-    background: var(--budget-color);
+    background: var(--fill);
   }
-  .budget__bar::after {                           /* aviso al 80 % */
+  .budget__bar::after {                            /* aviso al 80 % */
     content: "";
     position: absolute;
-    inset-block: -5px;
-    inset-inline-start: calc(var(--warn-at) * 100% - 1px);
-    inline-size: 2px;
-    background: var(--warn);
+    inset-block: -3px;
+    inset-inline-start: calc(var(--warn-at) * 100%);
+    inline-size: 1px;
+    background: var(--ink-3);
   }
-  .budget__scale {
-    position: relative;
-    block-size: 1.4em;
-    font-size: var(--step--2);
-    color: var(--text-2);
-    font-variant-numeric: tabular-nums lining-nums;
-  }
-  .budget__scale > * { position: absolute; inset-block-start: 0; inset-inline-start: 0; white-space: nowrap; }
-  .budget__mark { inset-inline-start: calc(var(--warn-at) * 100%); translate: -50% 0; }
-  .budget__rooms { display: grid; }
-  [data-theme="contrast"] .budget__bar { outline: 2px solid #FFFFFF; }
 
-  /* ---- Registro de eventos ------------------------------------------ */
-  .log__table { inline-size: 100%; font-size: var(--step--1); line-height: var(--leading-ui); }
-  .log__table th {
-    padding: var(--space-2) var(--space-3);
-    text-align: start;
-    font-size: var(--step--2);
-    font-weight: 700;
-    color: var(--text-2);
-    border-block-end: var(--rule-w) solid var(--rule-strong);
+  .operators { font-size: 12.5px; color: var(--ink-2); }
+  .operators__list { display: flex; gap: 3px; }
+  .operators__list li {
+    display: grid;
+    place-items: center;
+    inline-size: 24px;
+    block-size: 22px;
+    font: 700 10.5px/1 var(--font-label);
+    font-stretch: 85%;
+    color: var(--ink-2);
+    border: var(--border-w) solid var(--line-2);
   }
-  .log__table td {
-    padding: var(--space-2) var(--space-3);
-    vertical-align: baseline;
-    border-block-end: var(--rule-w) solid var(--rule);
-  }
-  .log__table th:first-child, .log__table td:first-child { padding-inline-start: 0; }
-  .log__time { white-space: nowrap; color: var(--text-2); font-variant-numeric: tabular-nums lining-nums; }
-  .log__room { white-space: nowrap; font-weight: 700; }
-  .log__row--error td { background: color-mix(in oklab, var(--fail) 7%, transparent); }
 
-  .level {
-    --level-color: var(--idle);
-    display: inline-flex;
+  /* ---- Atención: solo lo que pide una acción ahora, por gravedad ---------------- */
+  .attn {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    background: var(--panel);
+    border: var(--border-w) solid var(--line);
+  }
+  .attn__head {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 16px;
+    border-inline-end: var(--border-w) solid var(--line);
+  }
+  .attn__head b { font: 750 18px/1 var(--font-label); font-stretch: 82%; }
+  .attn__head span { font-size: 12px; color: var(--ink-3); }
+  .attn__row {
+    --s: var(--line-2);
+    display: grid;
+    grid-template-columns: 9px 140px minmax(0, 1fr) 72px auto;
     align-items: center;
-    gap: 0.4em;
-    font-weight: 700;
+    column-gap: 14px;
+    min-block-size: 46px;
+    padding: 0 8px 0 16px;
+    border-inline-start: var(--bar-w) solid var(--s);
+  }
+  .attn__row + .attn__row { border-block-start: var(--border-w) solid var(--line); }
+  .attn__row--degraded { --s: var(--warn); }
+  .attn__row--down     { --s: var(--fault); }
+  .attn__room { font: 700 15px/1 var(--font-label); font-stretch: 82%; }
+  .attn__what { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .attn__what em { font-style: normal; color: var(--ink-2); }
+  .attn__age { font-size: 11.5px; color: var(--ink-3); text-align: end; }
+  .attn__ok {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    min-block-size: 46px;
+    padding: 0 16px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .attn--calm .attn__list { display: none; }
+  .attn--calm .attn__ok { display: flex; }
+
+  /* ---- Pared de monitores ---------------------------------------------------- */
+  .wall {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+    gap: 10px;
+    min-block-size: 0;
+  }
+  .monitor {
+    --s: var(--ink-3);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+    min-inline-size: 0;
+    background: var(--panel);
+    border: var(--border-w) solid var(--line);
+    color: var(--ink);
+    text-align: start;
+    cursor: pointer;
+  }
+  .monitor:hover { border-color: var(--line-2); }
+  .monitor--degraded { --s: var(--warn); border-color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
+  .monitor--down     { --s: var(--fault); border-color: var(--fault); box-shadow: inset 0 0 0 1px var(--fault); }
+  .monitor[aria-expanded="true"] { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .monitor__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-block-size: 46px;
+    padding: 0 12px 0 16px;
+    flex: none;
+  }
+  .monitor__name {
+    min-inline-size: 0;
+    font: 700 19px/1 var(--font-label);
+    font-stretch: var(--narrow-3);
+    letter-spacing: 0.003em;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .level::before {
-    content: "";
-    inline-size: 0.6em; block-size: 0.6em;
-    border-radius: 50%;
-    box-shadow: inset 0 0 0 2px var(--level-color);
-  }
-  .level--warn  { --level-color: var(--warn); }
-  .level--warn::before  { box-shadow: none; background: var(--level-color); clip-path: polygon(50% 0, 100% 100%, 0 100%); inline-size: 0.7em; border-radius: 0; }
-  .level--error { --level-color: var(--fail); }
-  .level--error::before { box-shadow: none; background: var(--level-color); border-radius: 1px; }
+  .monitor__state { font: 600 13px/1 var(--font-label); color: var(--s); white-space: nowrap; }
+  .monitor--idle .monitor__state { font-weight: 500; }
+  .monitor__head > :is(.monitor__tc, kbd) { margin-inline-start: auto; }
+  .monitor__head > .monitor__tc + kbd { margin-inline-start: 0; }
+  .monitor__tc { font-size: 12px; color: var(--ink-3); }
 
-  @container glosa (max-width: 40rem) {
-    .log__table thead { position: absolute; clip-path: inset(50%); inline-size: 1px; block-size: 1px; overflow: hidden; }
-    .log__table tr {
-      display: grid;
-      grid-template-columns: auto auto 1fr;
-      gap: var(--space-1) var(--space-3);
-      padding-block: var(--space-3);
-      border-block-end: var(--rule-w) solid var(--rule);
-    }
-    .log__table td { padding: 0; border: 0; background: none; }
-    .log__table td:last-child { grid-column: 1 / -1; }
+  .monitor__issue {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: none;
+    padding: 9px 10px 9px 16px;
+    background: var(--panel-2);
+    border-block-start: var(--border-w) solid var(--line);
   }
+  .monitor__issue > span { flex: 1; min-inline-size: 0; font-size: 13.5px; line-height: 1.3; }
+  .monitor__issue b { font-weight: 650; }
 
-  /* ---- Overlay de TV (OBS / vMix) ------------------------------------ */
-  /* Ventana fija de N renglones anclada abajo: el texto sube como en los
-     subtítulos "roll-up" de la tele. La caja no cambia de tamaño al llegar texto. */
-  .overlay {
-    --overlay-size: 48px;
-    --overlay-lines: 2;
-    --overlay-measure: 19em;                      /* ≈ 42 caracteres de Atkinson a 600 */
-    inline-size: min(calc(var(--overlay-measure) + 1.2em), 100%);
-    padding: 0.32em 0.6em 0.38em 0.5em;
-    border-inline-start: 0.12em solid var(--brand-accent);
-    border-radius: 0.14em;
-    background: var(--overlay-bg);
-    color: var(--overlay-text);
-    font-family: var(--font-text);
-    font-size: var(--overlay-size);
-    font-weight: 600;
-    line-height: 1.3;
-    letter-spacing: 0.005em;
-  }
-  .overlay__window {
+  /* Sala inactiva: la próxima charla y cuánto falta. */
+  .monitor__wait {
+    flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    block-size: calc(var(--overlay-lines) * 1.3em);
+    gap: 4px;
+    padding: 0 22px 20px 35px;
+  }
+  .monitor__count { margin-block-end: 6px; font-size: 15px; line-height: 1; color: var(--ink-2); }
+  .monitor__wait b { font: 650 15px/1.25 var(--font-label); font-stretch: 88%; color: var(--ink-2); }
+  .monitor__wait > span:not(.monitor__count) { font-size: 12.5px; color: var(--ink-3); }
+
+  /* ---- Registro: alertas por defecto; lo informativo, a un clic -------------------- */
+  .log {
+    flex: 1;
+    min-block-size: 0;
+    overflow: auto;
+    padding-block-end: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+  .log__item {
+    display: grid;
+    grid-template-columns: 9px 52px minmax(0, 1fr);
+    column-gap: 10px;
+    align-items: baseline;
+    padding: 7px 14px 7px 16px;
+  }
+  .log__item > .led { align-self: center; }
+  .log__item:is(a, button, [tabindex]) { cursor: pointer; }
+  .log__item:is(a, button, [tabindex]):hover { background: var(--panel); }
+  .log__time { font-size: 11px; color: var(--ink-3); }
+  .log__text { font-size: 13px; line-height: 1.35; }
+  .log__text b { font-weight: 650; color: var(--ink-2); margin-inline-end: 5px; }
+  .log__text em { font-style: normal; color: var(--ink-3); }
+  .log:not(.log--all) > .log__item--info { display: none; }
+  .log--compact { overflow: visible; padding: 0; }
+  .log--compact .log__item { grid-template-columns: 9px 56px minmax(0, 1fr); padding: 4px 0; }
+  .log__more { flex: none; align-self: flex-start; margin: 0 10px 10px 16px; font-size: 12.5px; }
+
+  /* ---- Agenda: una fila fina por sala ------------------------------------------------ */
+  /* Minutos desde el comienzo de la ventana: --span (ventana), --t (ahora),
+     --m (marca del eje), --s y --d (comienzo y duración de una charla). */
+  .schedule { padding: 0 14px 10px; }
+  .schedule__head { display: flex; align-items: center; gap: 18px; min-block-size: 40px; }
+  .schedule__next { font-size: 13px; color: var(--ink-2); }
+  .schedule__next b { font-weight: 650; color: var(--ink); }
+  .legend { display: flex; gap: 16px; margin-inline-start: auto; font-size: 12px; color: var(--ink-3); }
+  .legend > span { display: flex; align-items: center; gap: 6px; }
+  .swatch { display: inline-block; inline-size: 14px; block-size: 9px; }
+  .swatch--manual { background: repeating-linear-gradient(135deg, var(--line-2) 0 2px, transparent 2px 5px); }
+  .swatch--now { inline-size: 2px; block-size: 12px; background: var(--ink); }
+
+  .timeline {
+    --label-w: 168px;
+    --span: 270;
+    --t: 0;
+    position: relative;
+    display: grid;
+  }
+  .timeline::after {                               /* lo pasado, apenas más oscuro */
+    content: "";
+    position: absolute;
+    inset-block: 18px 0;
+    inset-inline-start: var(--label-w);
+    inline-size: calc((100% - var(--label-w)) * min(max(var(--t), 0), var(--span)) / var(--span));
+    background: rgb(0 0 0 / 0.18);
+    pointer-events: none;
+  }
+  .timeline__axis {
+    position: relative;
+    block-size: 18px;
+    margin-inline-start: var(--label-w);
+    font-size: 10.5px;
+    color: var(--ink-3);
+  }
+  .timeline__axis > span { position: absolute; inset-block-start: 1px; inset-inline-start: calc(var(--m) / var(--span) * 100%); translate: -50% 0; }
+  .timeline__axis > span:first-child { translate: 0 0; }
+  .timeline__axis > span:last-child { translate: -100% 0; }
+  .timeline__row { display: grid; grid-template-columns: var(--label-w) minmax(0, 1fr); block-size: 23px; }
+  .timeline__room {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-inline-size: 0;
+    font: 600 13px/1 var(--font-label);
+    font-stretch: 84%;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .timeline__room kbd { min-inline-size: 17px; block-size: 17px; font-size: 10px; }
+  .timeline__room .led { inline-size: 7px; block-size: 7px; }
+  .timeline__track {
+    position: relative;
+    background: repeating-linear-gradient(90deg, rgb(127 127 127 / 0.07) 0 1px, transparent 1px calc(100% * 30 / var(--span)));
+  }
+  .timeline__talk {
+    position: absolute;
+    inset-block: 2px;
+    inset-inline-start: calc(var(--s) / var(--span) * 100%);
+    inline-size: calc(var(--d) / var(--span) * 100% - 3px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 7px;
     overflow: hidden;
+    white-space: nowrap;
+    font: 500 12px/1 var(--font-label);
+    font-stretch: 82%;
+    color: var(--ink-3);
+    border-inline-start: var(--border-w) solid var(--line-2);
   }
-  .overlay__text { text-wrap: wrap; overflow-wrap: break-word; }
-  .overlay .phrase--open { color: var(--overlay-open); }
-  .overlay .phrase--open::after { background: var(--brand-accent); }
-
-  /* ---- Pie con la definición --------------------------------------- */
-  .colophon {
-    font-family: var(--font-gloss);
-    font-style: italic;
-    font-size: var(--step-0);
-    line-height: var(--leading-body);
-    color: var(--text-2);
+  .timeline__talk > span { overflow: hidden; text-overflow: ellipsis; }
+  .timeline__talk .tc { flex: none; font-size: 10.5px; }
+  .timeline__talk--past { border-inline-start-color: transparent; opacity: 0.55; }
+  .timeline__talk--now { background: var(--sel); color: var(--ink); font-weight: 650; border-inline-start-color: transparent; }
+  .timeline__talk--now .tc { color: var(--ink-2); }
+  .timeline__talk--next { box-shadow: inset 0 0 0 1px var(--line-2); color: var(--ink-2); border-inline-start-color: transparent; }
+  .timeline__talk--next > em { flex: none; margin-inline-start: auto; padding-inline-start: 8px; font-style: normal; color: var(--ink); }
+  .timeline__talk--manual {                         /* manual: el piloto no actúa */
+    background-image: repeating-linear-gradient(135deg, rgb(127 127 127 / 0.14) 0 2px, transparent 2px 6px);
+    border-inline-start-color: transparent;
   }
-  .colophon b { font-style: normal; font-weight: 800; color: var(--text); }
+  .timeline__now {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(var(--label-w) + (100% - var(--label-w)) * min(max(var(--t), 0), var(--span)) / var(--span));
+    inline-size: 2px;
+    margin-inline-start: -1px;
+    background: var(--ink);
+    pointer-events: none;
+  }
+  .timeline__now > span {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 4px;
+    padding: 3px 4px;
+    font-size: 10.5px;
+    line-height: 1;
+    background: var(--ink);
+    color: var(--room);
+    white-space: nowrap;
+  }
 
-  /* ---- Alto contraste del sistema (Windows) ------------------------- */
-  @media (forced-colors: active) {
-    .status::before, .level::before, .nib, .phrase--open::after,
-    .vu__track::before, .budget__bar::before, .quality__bar::before, .strip::before {
-      forced-color-adjust: none;
-      background: CanvasText;
-    }
-    .status--idle::before, .level::before { background: transparent; box-shadow: inset 0 0 0 2px CanvasText; }
-    .line--live .line__text, .room-card--live .slot--now .slot__what { border-inline-start-color: Highlight; }
-    .phrase--open { color: GrayText; }
+  /* ---- Cajón lateral: controles, métricas con sus topes e historial --------------- */
+  .scrim {
+    position: fixed;
+    inset: 52px 460px 0 0;
+    z-index: 10;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms;
+  }
+  .scrim--open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    --vu-gap: var(--drawer);
+    position: fixed;
+    inset-block: 52px 0;
+    inset-inline-end: 0;
+    z-index: 11;
+    display: flex;
+    flex-direction: column;
+    inline-size: min(460px, 100vw);
+    overflow-y: auto;
+    background: var(--drawer);
+    border-inline-start: var(--border-w) solid var(--line-2);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 200ms var(--ease-out), visibility 0s 200ms;
+  }
+  .drawer--open { transform: none; visibility: visible; transition: transform 200ms var(--ease-out), visibility 0s; }
+  .drawer__sec { padding: 15px 24px; border-block-end: var(--border-w) solid var(--line); }
+  .drawer__sec:last-child { border-block-end: 0; }
+  .drawer__head { display: flex; align-items: center; gap: 10px; }
+  .drawer__title { font: 750 25px/1 var(--font-label); font-stretch: var(--narrow-3); }
+  .drawer__close {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-inline-start: auto;
+    border: 0;
+    background: none;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .drawer__state { display: flex; align-items: baseline; gap: 8px; margin-block-start: 10px; font-size: 14px; }
+  .drawer__state .led { align-self: center; }
+  .drawer__talk { display: block; font: 700 17px/1.2 var(--font-label); font-stretch: 88%; }
+  .drawer__who { display: block; margin-block-start: 3px; font-size: 13.5px; color: var(--ink-2); }
+  .drawer__meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-block-start: 12px; font-size: 12.5px; color: var(--ink-3); }
+  .drawer__meta .tc { font-size: 12px; color: var(--ink-2); }
+  .drawer__mode { display: flex; align-items: center; gap: 12px; margin-block-end: 12px; font-size: 13px; color: var(--ink-2); }
+  .drawer__mode > .segmented { margin-inline-start: auto; }
+  .drawer__keys { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .drawer__keys .btn { justify-content: flex-start; }
+  .drawer__hint { margin-block-start: 10px; font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+  .drawer__cc {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    block-size: calc(16px * 1.55 * 3 + 14px);
+    padding: 0 18px 12px;
+    overflow: hidden;
+    background: var(--well);
+    border: var(--border-w) solid var(--line);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 30%);
+  }
+  .drawer__cc p { font: 400 16px/1.55 var(--font-caption); color: var(--cap); }
+  .drawer__cc--frozen p { color: var(--ink-3); }
+  .drawer__h { margin-block-end: 10px; font: 700 14px/1 var(--font-label); font-stretch: 86%; color: var(--ink-2); }
+
+  /* Métricas con su tope. Fuera de rango: una luz del estado adelante del valor. */
+  .metrics {
+    display: grid;
+    grid-template-columns: 78px 96px minmax(0, 1fr);
+    row-gap: 9px;
+    align-items: baseline;
+  }
+  .metrics dt { font-size: 12.5px; color: var(--ink-3); }
+  .metrics__value {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font: 650 17px/1 var(--font-label);
+    font-variant-numeric: tabular-nums;
+  }
+  .metrics__value--none { font-weight: 400; color: var(--ink-3); }
+  .metrics__note { font-size: 12.5px; line-height: 1.3; color: var(--ink-3); }
+
+  /* Medidor de audio: gris, porque es un nivel y no un estado. --level de 0 a 1. */
+  .vu {
+    --level: 0;
+    position: relative;
+    display: inline-block;
+    inline-size: 150px;
+    block-size: 7px;
+    background: var(--line);
+    vertical-align: middle;
+  }
+  .vu::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--ink-2);
+    clip-path: inset(0 calc((1 - var(--level)) * 100%) 0 0);
+  }
+  .vu::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 32 - 1.5px), var(--vu-gap, var(--panel)) calc(100% / 32 - 1.5px) calc(100% / 32));
   }
 }
 
@@ -1196,59 +1403,82 @@
    -------------------------------------------------------------------------- */
 @layer glosa.views {
 
-  /* ---- Sala: celular primero ------------------------------------------ */
+  /* ---- Sala: celular primero ------------------------------------------------- */
   .room {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas: "head" "stage" "controls";
     block-size: var(--room-h, 100dvh);
-    background: var(--bg);
+    background: var(--glass);
   }
   .room > .room-head { grid-area: head; }
   .room > .room-nav  { display: none; }
   .room > .controls  { grid-area: controls; }
+  .room > .room__clock { display: none; }   /* en celular el reloj va en la fila de la sala */
 
   .room__stage {
+    --stage-pad-top: 20px;
     grid-area: stage;
     display: flex;
     flex-direction: column;
     min-block-size: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: var(--space-5) var(--space-2) var(--space-6);
+    padding: var(--stage-pad-top) 20px 24px;
+    background: var(--glass);
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+    /* Lo viejo se desvanece arriba, como el roll-up. */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 64px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 64px);
+  }
+  /* Las páginas enfrentadas llevan rótulos pegados arriba: ahí no hay desvanecido.
+     Abajo de 40rem el bilingüe es interlineal, sin rótulos, y conserva el roll-up. */
+  @container glosa (width > 40rem) {   /* no min-width: a 640 px exactos rige el interlineal (max-width: 40rem) */
+    .room__stage:has(> .transcript--facing) { -webkit-mask-image: none; mask-image: none; }
   }
   .room__stage > :first-child { margin-block-start: auto; }   /* el vivo queda abajo sin romper el scroll */
+  /* Sin anclaje de scroll del navegador: room.js maneja el scroll solo. El anclaje
+     subía el vidrio sin que el lector hiciera nada (cuando B612 reemplaza a la fuente
+     de reserva, o cuando la página más corta del bilingüe crece hacia arriba), y
+     room.js lo tomaba como el lector yéndose para atrás. */
+  .room__stage { overflow-anchor: none; }
 
-  /* Pantallas anchas (64rem = 1024 px): subtítulos más grandes y margen más ancho. */
-  @container glosa (min-width: 64rem) {
-    .room, .index, .admin {
-      --gutter: 2rem;
-      --margin-w: 5rem;
-      --margin-gap: 1.25rem;
-      --caption-base: clamp(1.75rem, 1rem + 1.35cqi, 2.5rem);
-      --history-base: 1.3125rem;
-    }
+  /* "Volver al vivo" flota abajo del vidrio. */
+  .room > .room__to-live {
+    grid-area: stage;
+    align-self: end;
+    justify-self: center;
+    z-index: 2;
+    margin-block-end: var(--space-4);
   }
 
-  /* Escritorio: salas al costado, controles arriba a la derecha. */
+  /* Escritorio (64rem = 1024 px): el monitor grande, las otras salas al costado.
+     De 64 a 75rem va compacto (lista de 17rem, márgenes de 2rem, el reloj en la fila
+     de la sala y el tema solo con ícono) para que el título de la charla no pase de
+     dos renglones; desde 75rem (1200 px), la versión amplia, con el reloj a la derecha. */
   @container glosa (min-width: 64rem) {
     .room {
-      grid-template-columns: 19rem minmax(0, 1fr) auto;
+      --gutter: 1rem;
+      --tap: 40px;
+      --caption-base: clamp(1.5rem, 0.75rem + 1.3cqi, 2.25rem);
+      --head-pad: 2rem;
+      grid-template-columns: 17rem minmax(0, 1fr) auto;
       grid-template-rows: auto minmax(0, 1fr);
       grid-template-areas:
-        "head head controls"
+        "head head  controls"
         "nav  stage stage";
+      background: var(--room);
     }
     .room > .room-nav { display: flex; grid-area: nav; }
-    /* El encabezado usa las columnas de la sala: la marca queda sobre la lista de salas
-       y el nombre de la sala arranca en el mismo borde que los subtítulos. */
+
+    /* El encabezado usa las columnas de la sala: la marca queda sobre la lista de
+       salas y el nombre de la sala arranca en el mismo borde que los subtítulos. */
     .room > .room-head {
       grid-template-columns: subgrid;
       grid-template-rows: auto auto auto;
       align-items: center;
-      column-gap: 0;
-      row-gap: var(--space-1);
-      padding: var(--space-4) 0;
+      padding: 16px 0;
     }
     .room > .room-head .room-head__bar {
       grid-column: 1;
@@ -1256,113 +1486,201 @@
       flex-direction: column;
       align-items: flex-start;
       justify-content: center;
-      gap: var(--space-2);
-      margin: 0;
-      padding-inline: var(--gutter);
+      gap: 10px;
       align-self: stretch;
+      min-block-size: 0;
+      margin: -16px 0;
+      padding: 16px var(--gutter);
+      border-block-end: 0;
+      border-inline-end: var(--border-w) solid var(--line);
     }
+    .room > .room-head .room-head__brand { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .room > .room-head .room-head__event.event-name { font-size: var(--step-1); font-weight: 650; color: var(--ink); }
     .room > .room-head > :not(.room-head__bar) {
       grid-column: 2;
-      padding-inline: calc(var(--space-2) + var(--margin-w) + var(--margin-gap)) var(--gutter);
+      padding-inline: var(--head-pad) var(--space-4);
     }
-    .room > .room-head .room-head__name { font-size: var(--step-4); }
-    .room > .room-head .room-head__talk { font-size: var(--step-2); }
-    .room > .controls {
-      border-block-start: 4px solid var(--brand-primary);
-      border-block-end: var(--rule-w) solid var(--rule);
-      padding-block: var(--space-3);
-    }
-    .room > .controls .control--select { flex: 0 0 11rem; }
-    .room__stage { padding-inline-end: var(--gutter); padding-block-end: var(--space-7); }
     .room-head__rooms { display: none; }
-    .room-head__brand { flex-direction: column; gap: var(--space-2); }
-    .room-head__event { display: block; }
+    .room > .room-head .room-head__name { font-size: var(--step-4); }
+    .room > .room-head .room-head__talk { margin-block-start: 10px; font-size: var(--step-3); }
+    .room > .room-head .room-head__meta { margin-block-start: 5px; }
+
+    .room > .controls {
+      align-self: stretch;
+      padding: 0 var(--space-4) 0 0;
+      border-block-start: 0;
+      border-block-end: var(--border-w) solid var(--line);
+    }
+    .room .control--fullscreen { display: inline-flex; }
+
+    /* El borde del texto del encabezado y el de los subtítulos coinciden (--head-pad). */
+    .room__stage { padding: 32px var(--head-pad) 72px; --stage-pad-top: 32px; }
+    .room .transcript--facing { --caption-base: clamp(1.25rem, 0.5rem + 1.05cqi, 1.75rem); }
+    .room .transcript--facing > .page { padding-inline-end: 2.5rem; }
+    .room .transcript--facing > .page + .page { padding-inline: 2.5rem 0; }
+  }
+  @container glosa (64rem <= width < 75rem) {
+    .room .control__word { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+  }
+  @container glosa (min-width: 75rem) {
+    .room {
+      --head-pad: 3rem;
+      grid-template-columns: 20rem minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "head head  controls clock"
+        "nav  stage stage    stage";
+    }
+    .room > .room-head > :not(.room-head__bar) { padding-inline-end: var(--space-5); }
+    .room > .controls { padding: 0; }
+    /* El reloj de la casa, a la derecha de las teclas, como en la franja del panel. */
+    .room-head__umd > .clock { display: none; }
+    .room > .room__clock {
+      grid-area: clock;
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      padding-inline: 20px var(--space-5);
+      background: var(--panel);
+      border-block-end: var(--border-w) solid var(--line);
+      font-size: var(--step-1);
+    }
   }
 
-  /* ---- Lista pública de salas --------------------------------------- */
-  /* La franja de marca va de lado a lado; el contenido, en una columna de 84rem. */
+  /* ---- Lista pública de salas --------------------------------------------------- */
   .index {
-    padding: 0 max(var(--gutter), (100% - 84rem) / 2) var(--space-7);
-    border-block-start: 4px solid var(--brand-primary);
+    display: flex;
+    flex-direction: column;
+    min-block-size: 100dvh;
   }
   .index__head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    padding-block: var(--space-3);
+    min-block-size: 52px;
+    padding: 0 var(--gutter);
+    background: var(--panel);
+    border-block-end: var(--border-w) solid var(--edge);
   }
-  .index__intro {
-    display: grid;
-    gap: var(--space-3);
-    padding-block: var(--space-6) var(--space-6);
-  }
+  .index__head > a:last-child { font-size: var(--step-0); color: var(--ink-2); }
+  .index__brand { display: flex; align-items: center; gap: var(--space-3); }
+  .index__intro { padding: 28px var(--gutter) 20px; }
   .index__title {
-    font-size: var(--step-5);
-    font-weight: 800;
-    letter-spacing: -0.015em;
-    line-height: 1;
+    font: 750 var(--step-5)/1.05 var(--font-label);
+    font-stretch: var(--narrow-3);
+    letter-spacing: -0.005em;
   }
   .index__lede {
-    max-inline-size: 34rem;
+    max-inline-size: 36em;
+    margin-block-start: 10px;
     font-size: var(--step-1);
-    line-height: var(--leading-body);
-    color: var(--text-2);
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+  .index__lede a { color: var(--ink); }
+  .index > .room-list { margin-inline: var(--gutter); }
+  .index__empty {
+    max-inline-size: 40rem;
+    margin-inline: var(--gutter);
+    padding: 18px 16px;
+    background: var(--panel);
+    border: var(--border-w) solid var(--line);
+    font-size: var(--step-1);
+    line-height: 1.45;
+    color: var(--ink-2);
   }
   .index__foot {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
-    gap: var(--space-3) var(--space-6);
-    padding-block-start: var(--space-5);
-    border-block-start: var(--rule-w) solid var(--rule);
+    gap: var(--space-2) var(--space-5);
+    margin-block-start: auto;
+    padding: 28px var(--gutter);
     font-size: var(--step--1);
-    color: var(--text-2);
+    color: var(--ink-3);
   }
+  .index__foot a { color: var(--ink-2); }
+
   @container glosa (min-width: 64rem) {
-    .index__title { font-size: var(--step-7); }
-    .index__intro { padding-block: var(--space-8) var(--space-7); }
+    .index { --gutter: 2rem; }
+    .index__intro, .index > .room-list, .index__empty, .index__foot {
+      inline-size: min(100% - 2 * var(--gutter), 90rem);
+      margin-inline: auto;
+      padding-inline: 0;
+    }
+    .index__empty { padding-inline: 16px; }
+    .index__intro { padding-block: 44px 28px; }
+    .index__title { font-size: var(--step-6); }
+    .room-card {
+      grid-template-columns: minmax(12rem, 17rem) minmax(0, 1fr);
+      column-gap: var(--space-6);
+      align-items: start;
+      padding: 16px 20px 18px;
+    }
+    .room-card .agenda { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); }
+    .room-card .slot__what .talk-title { font-size: var(--step-2); }
   }
 
-  /* ---- Panel de producción ------------------------------------------ */
+  /* ---- Panel de producción ------------------------------------------------------ */
+  /* Siempre oscuro: es una sala de control. */
   .admin {
-    min-block-size: 100dvh;
+    color-scheme: dark;
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 52px auto minmax(0, 1fr) auto;
+    block-size: 100vh;
+    min-block-size: 820px;
+    font-size: var(--step-0);
+    line-height: 1.3;
+    background: var(--room);
+    color: var(--ink);
   }
-  .admin__bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3) var(--space-5);
-    padding: var(--space-3) var(--gutter);
-    background: var(--surface);
-    border-block-start: 4px solid var(--brand-primary);
-    border-block-end: var(--rule-w) solid var(--rule);
+  .admin > .attn { margin: 14px 16px 0; }
+  .admin > .wall { margin: 12px 16px 0; }
+  .admin > .schedule { margin: 12px 16px 14px; }
+
+  @container glosa (max-width: 86.25rem) {      /* 1380 px */
+    .masthead__cell { padding: 0 14px; }
+    .tally { gap: 12px; }
+    .budget__bar { inline-size: 90px; }
+    .operators__list { display: none; }
+    .attn__row { grid-template-columns: 9px 128px minmax(0, 1fr) 64px auto; }
   }
-  .admin__title { font-family: var(--font-gloss); font-weight: 700; font-style: italic; font-size: var(--step-2); }
-  .admin__clock { font-size: var(--step-2); font-weight: 700; font-variant-numeric: tabular-nums lining-nums; }
-  .admin__summary { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
-  .admin__user { margin-inline-start: auto; display: flex; align-items: center; gap: var(--space-3); font-size: var(--step--1); color: var(--text-2); }
-  .admin__main {
-    display: grid;
-    gap: var(--space-6);
-    padding: var(--space-5) var(--gutter) var(--space-7);
-    align-content: start;
+  @container glosa (max-width: 73.75rem) {      /* 1180 px */
+    .admin { block-size: auto; min-block-size: 100vh; }
+    .masthead { overflow-x: auto; }
+    .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 250px; }
+    .attn__row {
+      grid-template-columns: 9px 120px minmax(0, 1fr) auto;
+      row-gap: 4px;
+      padding-block: 10px;
+    }
+    .attn__age { display: none; }
+    .schedule { overflow-x: auto; }
+    .timeline { min-inline-size: 900px; }
+    .scrim { inset-inline-end: 0; }
   }
-  .admin__lower {
-    display: grid;
-    gap: var(--space-6);
-  }
-  .panel { display: grid; gap: var(--space-3); align-content: start; }
-  .panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
-  .panel__title { font-size: var(--step-3); }
-  .panel__note { font-size: var(--step--1); color: var(--text-2); }
-  @container glosa (min-width: 64rem) {
-    .admin__lower { grid-template-columns: minmax(0, 2fr) minmax(18rem, 1fr); }
+  /* Interim admin of Task 7 (v1 markup). Delete with Task 12. */
+  .admin:has(> .admin__bar) { grid-template-rows: auto minmax(0, 1fr); block-size: auto; min-block-size: 100dvh; align-content: start; }
+  .admin__bar { display: flex; align-items: center; gap: 12px; min-block-size: 52px; padding: 0 16px; background: var(--panel); border-block-end: var(--border-w) solid var(--edge); }
+  .admin__title { font: 700 var(--step-2)/1 var(--font-label); }
+  .admin__user { margin-inline-start: auto; }
+  .admin__main { padding: 14px 16px; }
+  .console { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 10px; padding: 0 16px 16px; }
+  .strip { display: grid; align-content: start; gap: 8px; padding: 12px 16px; background: var(--room); border: var(--border-w) solid var(--line); }
+  .strip--degraded { border-color: var(--warn); }
+  .strip--down { border-color: var(--fault); }
+  .strip__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .strip__name { font: 700 var(--step-3)/1.1 var(--font-label); font-stretch: var(--narrow-3); }
+  .strip__actions { display: flex; gap: 6px; }
+
+  @container glosa (max-width: 40rem) {
+    .wall { grid-template-columns: minmax(0, 1fr); }
+    .attn { grid-template-columns: minmax(0, 1fr); }
+    .attn__head { padding-block: 10px; border-inline-end: 0; border-block-end: var(--border-w) solid var(--line); }
   }
 
-  /* ---- Página del overlay (fuente de navegador en OBS) --------------- */
+  /* ---- Página del overlay (fuente de navegador en OBS) ------------------------------ */
   .overlay-page {
     min-block-size: 100vh;
     margin: 0;

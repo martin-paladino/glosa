@@ -150,7 +150,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from glosa.audio.ingest import CHUNK_BYTES, CHUNK_S, AudioIngest
+from glosa.audio.ingest import CHUNK_BYTES, CHUNK_S, AudioIngest, StationHub
 from glosa.audio.vad import EnergyVad
 from glosa.captions.assembler import CaptionAssembler
 from glosa.captions.bus import CaptionBus
@@ -313,6 +313,7 @@ class RoomWorker:
         tail_s: float = TAIL_S,
         on_talk_end: TalkEndHook | None = None,
         translate: TranslateFn | None = None,
+        station_hub: StationHub | None = None,
     ) -> None:
         self.room = room
         self._settings = settings
@@ -323,6 +324,10 @@ class RoomWorker:
         self._ingest_factory = ingest_factory
         self._realtime = realtime
         self._tail_s = tail_s
+        # Task 14a: only meaningful for source_type == "emitter" (status()
+        # reads the connected station's info into the raw `detail`, Ruling
+        # 29 -- never the public API); None for every other source type.
+        self._station_hub = station_hub
         cfg = next((r for r in settings.rooms if r.id == room.id), None)
         self.language = cfg.language if cfg is not None else "en"
         try:
@@ -466,6 +471,8 @@ class RoomWorker:
                     state, detail = "red", f"engine halted: the API key was refused ({run.halt_code})"
                 else:
                     state, detail = "red", "engine halted: non-retryable error, waiting for a reconnect"
+        if self.room.source_type == "emitter" and self._station_hub is not None:
+            detail = f"{detail} | {self._station_summary()}"
         return RoomStatus(
             state=state,
             level_db=level,
@@ -475,6 +482,19 @@ class RoomWorker:
             talk_id=talk_id,
             detail=detail,
         )
+
+    def _station_summary(self) -> str:
+        """The connected station's info (Task 14a), for status()'s raw
+        `detail` (admin-only, Ruling 29): connected or not, device, last
+        level in dB, how long since its last audio."""
+        assert self._station_hub is not None
+        info = self._station_hub.info(self.room.id)
+        if not info.connected:
+            return "station: not connected"
+        device = info.device or "unknown device"
+        level = "no level yet" if info.level_db is None else f"{info.level_db:.1f} dBFS"
+        age = "no audio yet" if info.last_audio_age_s is None else f"last audio {info.last_audio_age_s:.1f}s ago"
+        return f"station: {device}, {level}, {age}"
 
     def free_talk(self) -> Talk:
         """A new free session (Ruling 27: one id per run)."""
@@ -1096,6 +1116,22 @@ class RoomWorker:
         if restarts > run.ingest_restarts:
             run.ingest_restarts = restarts
             await self._log("warning", "source_restart", f"ffmpeg restart #{restarts}: {run.ingest.last_error}")
+
+        # Task 14a: EmitterIngest.chunks() never ends on a quiet station (so
+        # a reconnect resumes the same talk with no operator action), so it
+        # can't report a dead source the way AudioIngest does (chunks()
+        # ending). It exposes `stale()` instead (not part of the Ingest
+        # protocol AudioIngest satisfies -- checked with getattr), polled
+        # here to set/clear the same `_source_down` a dying AudioIngest sets.
+        stale = getattr(run.ingest, "stale", None) if run.ingest is not None else None
+        if stale is not None:
+            reason = stale()
+            if reason != self._source_down:
+                self._source_down = reason
+                if reason:
+                    await self._log("error", "source_down", reason)
+                else:
+                    await self._log("info", "source_recovered", "station reconnected")
 
         if now - run.last_cost_flush >= COST_FLUSH_S:
             await self._flush_cost(run, now)

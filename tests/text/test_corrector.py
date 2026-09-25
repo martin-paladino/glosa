@@ -24,13 +24,15 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from pathlib import Path
+
 import pytest
 
 from glosa.config import Settings
 from glosa.models import GlossaryTerm
 from glosa.text.corrector import Corrector, correct_segments
 
-ENV_PATH = "/Users/mpaladino/repos/glosa/.env"
+ENV_PATH = str(Path(__file__).resolve().parents[2] / ".env")
 
 GLOSSARY = [
     GlossaryTerm(term="Kubernetes", keep_in_english=True),

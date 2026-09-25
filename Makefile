@@ -1,4 +1,4 @@
-.PHONY: test run demo demo-fake bench samples
+.PHONY: test run demo demo-fake bench load samples
 
 # Fast, free test suite (no live API calls). See pytest.ini: `live` tests are
 # excluded by default.
@@ -28,6 +28,15 @@ demo-fake:
 # quality and glossary-term accuracy. Implemented in T15 (bench/bench.py).
 bench:
 	@echo "pending T15"
+
+# Simulated fan-out load test (Task 15a, plan-scale): boots a real server
+# (python -m glosa.web.app, engine_mode fake -- no API spend) with 50 `file`
+# rooms and hits it with 500 concurrent SSE clients for 60s. Measures
+# losses, fan-out delay (p50/p95/p99) and server CPU/RSS; appends one row to
+# bench/load-results.md. `uv run python bench/load_test.py --help` for the
+# other scales run for Task 15a (see bench/load-results.md).
+load:
+	uv run python bench/load_test.py --rooms 50 --clients 500 --seconds 60
 
 # Download the longer sample clips (the full source talks the short demo
 # clips are cut from) to samples/long/ (gitignored), used by

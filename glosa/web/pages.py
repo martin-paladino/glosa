@@ -124,6 +124,7 @@ def room_page(slug: str, request: Request):
     config = {
         "slug": room["slug"],
         "streamBase": f"/api/stream/{quote(stream_slug, safe='')}/",
+        "summaryBase": f"/api/summary/{quote(stream_slug, safe='')}/",
         "langs": langs,
         "defaultLang": caption_lang,
         "forcedLang": forced_caption,

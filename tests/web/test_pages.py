@@ -292,6 +292,7 @@ def test_room_config_gives_room_js_what_it_needs(client: TestClient) -> None:
 
     assert config["slug"] == "r1"
     assert config["streamBase"] == "/api/stream/r1/"
+    assert config["summaryBase"] == "/api/summary/r1/"
     assert config["langs"] == ["en", "es"]
     assert config["source"] == "en"
     assert config["talkId"] == "t1"
@@ -307,6 +308,20 @@ def test_room_page_loads_the_design_system_and_room_js(client: TestClient) -> No
     assert 'src="/static/js/room.js"' in html
     assert client.get("/static/css/glosa.css").status_code == 200
     assert client.get("/static/js/room.js").status_code == 200
+
+
+def test_room_page_has_an_accessible_summary_button_and_panel(client: TestClient) -> None:
+    """Task 17, "¿Qué me perdí?": a hidden-by-default toggle button
+    (aria-expanded, controlled by room.js polling GET /api/summary) and a
+    dismissable panel with a close button, both in Spanish by default."""
+    html = client.get("/s/r1", headers=SPANISH).text
+
+    assert 'data-summary-toggle' in html and 'aria-expanded="false"' in html
+    assert 'aria-controls="summary-panel"' in html
+    assert t("what_did_i_miss", "es") in html
+    assert 'data-summary-panel' in html and 'id="summary-panel"' in html
+    assert 'data-summary-close' in html
+    assert f'aria-label="{t("summary_close", "es")}"' in html
 
 
 def test_audience_pages_link_only_assets_that_exist(client: TestClient) -> None:
@@ -604,6 +619,7 @@ def test_room_config_uses_the_token_as_the_stream_base_in_qr_only_mode() -> None
     config = _room_config(client.get("/s/tok-r1", headers=SPANISH).text)
 
     assert config["streamBase"] == "/api/stream/tok-r1/"
+    assert config["summaryBase"] == "/api/summary/tok-r1/"
 
 
 def test_room_config_still_uses_the_slug_as_the_stream_base_in_all_mode() -> None:

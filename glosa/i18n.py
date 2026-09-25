@@ -94,6 +94,10 @@ STRINGS: dict[str, dict[str, str]] = {
         # "Escuchar el audio" (Task 14b, Ruling 5): admins only, test mode only
         "listen_audio": "Escuchar el audio",
         "listen_preparing": "Preparando el audio…",
+        # "¿Qué me perdí?" (Task 17): a short summary of the last few minutes
+        "what_did_i_miss": "¿Qué me perdí?",
+        "summary_close": "Cerrar",
+        "summary_ago": "hace {n} min",
     },
     "en": {
         # Navigation and brand
@@ -174,6 +178,10 @@ STRINGS: dict[str, dict[str, str]] = {
         # "Escuchar el audio" (Task 14b, Ruling 5): admins only, test mode only
         "listen_audio": "Listen to the audio",
         "listen_preparing": "Preparing the audio…",
+        # "¿Qué me perdí?" (Task 17): a short summary of the last few minutes
+        "what_did_i_miss": "What did I miss?",
+        "summary_close": "Close",
+        "summary_ago": "{n} min ago",
     },
 }
 

@@ -46,6 +46,10 @@
       <span class="status status--idle" data-status data-state="idle" role="status">{{ tr("between_talks") }}</span>
       {%- endif %}
       <time class="clock" data-clock hidden></time>
+      {#- Task 17, "¿Qué me perdí?": hidden until a summary exists for the
+          current caption language (room.js polls GET /api/summary/{slug}/{lang}). #}
+      <button class="summary-toggle" type="button" data-action="summary" data-summary-toggle
+              aria-expanded="false" aria-controls="summary-panel" hidden>{{ tr("what_did_i_miss") }}</button>
     </div>
     {%- if room.now %}
     <p class="room-head__talk talk-title" data-talk-title lang="{{ room.now.language }}">{{ room.now.title }}</p>
@@ -164,6 +168,20 @@
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v11M4 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     {{ tr("back_to_live") }}
   </button>
+
+  {#- Task 17, "¿Qué me perdí?": a small dismissable panel with the last
+      summary. Esc and the close button both dismiss it (room.js). #}
+  <div class="summary-scrim" data-action="summary-close" data-summary-scrim></div>
+  <div class="summary-panel" id="summary-panel" data-summary-panel role="dialog" aria-modal="true"
+       aria-labelledby="summary-panel-title">
+    <div class="summary-panel__head">
+      <h2 class="summary-panel__title" id="summary-panel-title">{{ tr("what_did_i_miss") }}</h2>
+      <button class="summary-panel__close" type="button" data-action="summary-close" data-summary-close
+              aria-label="{{ tr('summary_close') }}">&times;</button>
+    </div>
+    <ul class="summary-panel__bullets" data-summary-bullets></ul>
+    <p class="summary-panel__ago" data-summary-ago></p>
+  </div>
 </div>
 <script type="application/json" id="glosa-room">{{ config | tojson }}</script>
 {% endblock %}

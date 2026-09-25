@@ -4,19 +4,21 @@ One real `RoomWorker` run per (clip, engine) combination, real-time pace, real G
 
 Date: 2026-09-24 (original live run) / 2026-09-25 (this recompute). Models: fast engine `gemini-3.5-live-translate-preview`; glossary engine `gemini-3.5-transcribe-live` (VERBATIM + customVocabulary) -> `gemini-3.5-flash-lite` translation (talk glossary as context); judge and reference translation `gemini-3.8-flash` (thinking LOW). **Recomputed from bench/raw/*.jsonl -- no new API calls this round** (Task 15c fix round 1: the latency metric was wrong, see Method below); original live run's real spend: US$0.1601 (cap US$0.50).
 
+**Glossary-engine re-run (2026-09-25, +US$0.043):** after Task 16q (translation context from the previous two segments, inflected glossary terms) the two glossary rows were re-run live (`--live --only <clip>:glossary`); the fast rows are still the first run. Compared with the first run: EN→ES unchanged (translation lag p50 1.34 s, judge 3/2, terms 100 %); ES→EN judge scores improved from 3/2 to 4/3 and terms from 94 % to 100 %, but translation lag p50 rose from 1.76 s to 3.22 s. One run each, so part of that is noise; a longer prompt (the added context) plausibly costs some of it.
+
 ## en_clip (English -> Spanish)
 
 | clip | engine | source latency p50/p90 (s) | translation latency p50/p90 (s) | fidelity | fluency | % terms | US$/run | US$/h |
 |---|---|---|---|---|---|---|---|---|
 | en_clip | fast | 1.28 / 2.08 (n=19) | 1.40 / 3.84 (n=19) | 4 | 3 | 94% | 0.0595 | 2.19 |
-| en_clip | glossary | 0.69 / 1.59 (n=19) | 1.34 / 4.25 (n=19) | 3 | 2 | 100% | 0.0190 | 0.70 |
+| en_clip | glossary | 0.80 / 1.48 (n=19) | 1.34 / 3.02 (n=19) | 3 | 2 | 100% | 0.0203 | 0.75 |
 
 ## es_clip (Spanish -> English)
 
 | clip | engine | source latency p50/p90 (s) | translation latency p50/p90 (s) | fidelity | fluency | % terms | US$/run | US$/h |
 |---|---|---|---|---|---|---|---|---|
 | es_clip | fast | 1.66 / 2.35 (n=19) | 2.57 / 3.90 (n=19) | 5 | 4 | 100% | 0.0583 | 2.16 |
-| es_clip | glossary | 0.52 / 1.33 (n=19) | 1.76 / 5.59 (n=19) | 3 | 2 | 94% | 0.0199 | 0.74 |
+| es_clip | glossary | 0.74 / 1.57 (n=19) | 3.22 / 5.17 (n=19) | 4 | 3 | 100% | 0.0203 | 0.75 |
 
 ## Method
 
@@ -29,4 +31,4 @@ Date: 2026-09-24 (original live run) / 2026-09-25 (this recompute). Models: fast
 
 ## Recommendation
 
-Averaged over both clips: fast scored fidelity 4.5/5, fluency 3.5/5, 97% glossary terms, at $2.17/h. Glossary scored fidelity 3.0/5, fluency 2.0/5, 97% glossary terms, at $0.72/h. Translation progress-lag (avg p50/p90 across both clips): fast 1.99s / 3.87s, glossary 1.55s / 4.92s -- on this run, glossary's median lag is actually at or below fast's on both clips (its two-stage pipeline, transcribe then translate, does not show up as a clearly worse p50 here), but its p90 tail is consistently worse than fast's on both clips; read both numbers, not just the median. This is one run of ~93 s clips each, not a statistically robust sample -- read the deltas as a signal for the controller's call on `default_engine_en`, not as a verdict on their own.
+Averaged over both clips: fast scored fidelity 4.5/5, fluency 3.5/5, 97% glossary terms, at $2.17/h. Glossary scored fidelity 3.5/5, fluency 2.5/5, 100% glossary terms, at $0.75/h. Translation progress-lag (avg p50/p90 across both clips): fast 1.99s / 3.87s, glossary 2.28s / 4.09s -- on this run, glossary's median lag is actually at or below fast's on both clips (its two-stage pipeline, transcribe then translate, does not show up as a clearly worse p50 here), but its p90 tail is consistently worse than fast's on both clips; read both numbers, not just the median. This is one run of ~93 s clips each, not a statistically robust sample -- read the deltas as a signal for the controller's call on `default_engine_en`, not as a verdict on their own.

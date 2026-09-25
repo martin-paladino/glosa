@@ -1,5 +1,11 @@
 # secrets & local data
+# B-Minor #3: .dockerignore already excludes config.yaml and .env.* (a real
+# event's own config can carry private source URLs with credentials, Ruling
+# 29) -- keep git in sync so `git add -A` can't sweep either in by accident.
 .env
+.env.*
+!.env.example
+config.yaml
 data/
 samples/long/
 # tooling

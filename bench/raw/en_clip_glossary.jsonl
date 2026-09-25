@@ -1,0 +1,284 @@
+{"t": 0.035, "lang": "en", "type": "talk", "data": {"talk_id": "en_clip-glossary", "title": "Bench en_clip (glossary)", "speakers": [], "language": "en"}}
+{"t": 0.035, "lang": "es", "type": "talk", "data": {"talk_id": "en_clip-glossary", "title": "Bench en_clip (glossary)", "speakers": [], "language": "en"}}
+{"t": 0.556, "lang": "en", "type": "status", "data": {"state": "green"}}
+{"t": 0.556, "lang": "es", "type": "status", "data": {"state": "green"}}
+{"t": 1.829, "lang": "en", "type": "set", "seg": 0, "text": "So,"}
+{"t": 2.043, "lang": "en", "type": "set", "seg": 0, "text": "So, what"}
+{"t": 2.269, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that"}
+{"t": 2.501, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then"}
+{"t": 2.736, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean?"}
+{"t": 2.967, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like"}
+{"t": 3.34, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what"}
+{"t": 3.487, "lang": "es", "type": "append", "seg": 0, "text": "Entonces, \u00bfqu\u00e9 significa eso en realidad?"}
+{"t": 3.487, "lang": "es", "type": "close", "seg": 0}
+{"t": 3.848, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like, what do we"}
+{"t": 4.344, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need"}
+{"t": 4.772, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order"}
+{"t": 5.289, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build"}
+{"t": 5.783, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of"}
+{"t": 6.278, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we"}
+{"t": 6.626, "lang": "es", "type": "append", "seg": 1, "text": "Como qu\u00e9 necesitamos para construir ese tipo de"}
+{"t": 6.626, "lang": "es", "type": "close", "seg": 1}
+{"t": 6.786, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap"}
+{"t": 7.215, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power"}
+{"t": 7.694, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these"}
+{"t": 8.209, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents?"}
+{"t": 8.892, "lang": "es", "type": "append", "seg": 2, "text": "mundo en el que podamos aprovechar el poder de este tipo de agente?"}
+{"t": 8.892, "lang": "es", "type": "close", "seg": 2}
+{"t": 9.193, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So,"}
+{"t": 9.604, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So agents"}
+{"t": 10.066, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So agents,"}
+{"t": 10.58, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So agents requirements are"}
+{"t": 11.066, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So agents requirements are fundamentally"}
+{"t": 11.584, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So agents requirements are fundamentally different from"}
+{"t": 11.978, "lang": "en", "type": "set", "seg": 0, "text": "So, what does that then actually mean? Like what do we need in order to build that kind of world where we can tap into the power from these kind of agents? So, agents' requirements are fundamentally different from humans."}
+{"t": 11.978, "lang": "en", "type": "close", "seg": 0}
+{"t": 12.522, "lang": "en", "type": "set", "seg": 1, "text": "I"}
+{"t": 12.693, "lang": "es", "type": "append", "seg": 3, "text": "Por lo tanto, los requisito de los agente son fundamentalmente diferente de los humanos."}
+{"t": 12.693, "lang": "es", "type": "close", "seg": 3}
+{"t": 13.002, "lang": "en", "type": "set", "seg": 1, "text": "I think we can"}
+{"t": 13.481, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybe"}
+{"t": 14.482, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybe intuitively"}
+{"t": 14.888, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybe intuitively realize that."}
+{"t": 15.412, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybe intuitively realize that, like"}
+{"t": 15.607, "lang": "es", "type": "append", "seg": 4, "text": "Creo que tal vez podamos darnos cuenta de eso intuitivamente."}
+{"t": 15.607, "lang": "es", "type": "close", "seg": 4}
+{"t": 15.921, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybeintuitively realize that, like agents are"}
+{"t": 16.374, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybeintuitively realize that, like agents are different than"}
+{"t": 16.516, "lang": "en", "type": "set", "seg": 1, "text": "I think we can maybe intuitively realize that agents are different than humans."}
+{"t": 16.516, "lang": "en", "type": "close", "seg": 1}
+{"t": 17.044, "lang": "en", "type": "set", "seg": 2, "text": "AI"}
+{"t": 17.125, "lang": "es", "type": "append", "seg": 5, "text": "los agente son diferentes a los humanos."}
+{"t": 17.125, "lang": "es", "type": "close", "seg": 5}
+{"t": 17.522, "lang": "en", "type": "set", "seg": 2, "text": "AI is"}
+{"t": 18.02, "lang": "en", "type": "set", "seg": 2, "text": "AI is different than"}
+{"t": 18.936, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what"}
+{"t": 19.413, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it"}
+{"t": 19.663, "lang": "es", "type": "append", "seg": 6, "text": "es diferente de tu imagen,"}
+{"t": 19.663, "lang": "es", "type": "close", "seg": 6}
+{"t": 19.924, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually"}
+{"t": 20.423, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in"}
+{"t": 21.315, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice?"}
+{"t": 21.833, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we"}
+{"t": 21.977, "lang": "es", "type": "append", "seg": 7, "text": "pero qu\u00e9 significa realmente en la pr\u00e1ctica?"}
+{"t": 21.977, "lang": "es", "type": "close", "seg": 7}
+{"t": 22.332, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know"}
+{"t": 22.843, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm"}
+{"t": 23.644, "lang": "es", "type": "append", "seg": 8, "text": "Como obviamente sabemos, ya sabes,"}
+{"t": 23.644, "lang": "es", "type": "close", "seg": 8}
+{"t": 23.755, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and"}
+{"t": 24.291, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and"}
+{"t": 24.76, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know I can"}
+{"t": 25.227, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can"}
+{"t": 25.734, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here"}
+{"t": 25.888, "lang": "es", "type": "append", "seg": 9, "text": "Soy todo carne y hueso y ya sabes,"}
+{"t": 25.888, "lang": "es", "type": "close", "seg": 9}
+{"t": 26.159, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here, interact with"}
+{"t": 26.646, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here, interact with people and"}
+{"t": 26.791, "lang": "es", "type": "append", "seg": 10, "text": "Puedo ir aqu\u00ed,"}
+{"t": 26.791, "lang": "es", "type": "close", "seg": 10}
+{"t": 27.159, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here, interact with people and so forth and"}
+{"t": 27.609, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here, interact with people and so forth, an agent"}
+{"t": 28.133, "lang": "en", "type": "set", "seg": 2, "text": "is different than your image, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here, interact with people and so forth, an agent, AI"}
+{"t": 28.271, "lang": "es", "type": "append", "seg": 11, "text": "interactuar con la gente y todo eso,"}
+{"t": 28.271, "lang": "es", "type": "close", "seg": 11}
+{"t": 28.393, "lang": "en", "type": "set", "seg": 2, "text": "AI is different than human, but like what does it actually mean in practice? Like we obviously know, you know, I'm all flesh and blood and you know, I can I can go here, interact with people and so forth. An agent, AI agent is"}
+{"t": 28.393, "lang": "en", "type": "close", "seg": 2}
+{"t": 28.833, "lang": "en", "type": "set", "seg": 3, "text": "That"}
+{"t": 29.043, "lang": "es", "type": "append", "seg": 12, "text": "Un agente, agente de IA es"}
+{"t": 29.043, "lang": "es", "type": "close", "seg": 12}
+{"t": 29.281, "lang": "en", "type": "set", "seg": 3, "text": "Not that."}
+{"t": 30.018, "lang": "es", "type": "append", "seg": 13, "text": "No eso."}
+{"t": 30.018, "lang": "es", "type": "close", "seg": 13}
+{"t": 31.224, "lang": "en", "type": "set", "seg": 3, "text": "Not that. There are"}
+{"t": 31.693, "lang": "en", "type": "set", "seg": 3, "text": "Not that. There are differences"}
+{"t": 32.211, "lang": "en", "type": "set", "seg": 3, "text": "Not that. There are differences. Some of"}
+{"t": 32.641, "lang": "en", "type": "set", "seg": 3, "text": "Not that. There are differences. Some of them are"}
+{"t": 32.857, "lang": "es", "type": "append", "seg": 14, "text": "Hay diferencia."}
+{"t": 32.857, "lang": "es", "type": "close", "seg": 14}
+{"t": 32.968, "lang": "en", "type": "set", "seg": 3, "text": "Not that. Um um there are differences. Some of them are"}
+{"t": 32.968, "lang": "en", "type": "close", "seg": 3}
+{"t": 33.73, "lang": "es", "type": "append", "seg": 15, "text": "hay diferencia."}
+{"t": 33.73, "lang": "es", "type": "close", "seg": 15}
+{"t": 33.987, "lang": "en", "type": "set", "seg": 4, "text": "agents"}
+{"t": 34.516, "lang": "en", "type": "set", "seg": 4, "text": "agents and humans"}
+{"t": 34.518, "lang": "es", "type": "append", "seg": 16, "text": "Algunos de ellos son"}
+{"t": 34.518, "lang": "es", "type": "close", "seg": 16}
+{"t": 34.979, "lang": "en", "type": "set", "seg": 4, "text": "agents and humans are"}
+{"t": 34.979, "lang": "en", "type": "close", "seg": 4}
+{"t": 35.492, "lang": "en", "type": "set", "seg": 5, "text": "built"}
+{"t": 35.562, "lang": "es", "type": "append", "seg": 17, "text": "agente y humanos son"}
+{"t": 35.562, "lang": "es", "type": "close", "seg": 17}
+{"t": 35.976, "lang": "en", "type": "set", "seg": 5, "text": "built or"}
+{"t": 36.965, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain"}
+{"t": 37.385, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks"}
+{"t": 37.924, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's"}
+{"t": 38.352, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something"}
+{"t": 38.872, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to"}
+{"t": 39.232, "lang": "es", "type": "append", "seg": 18, "text": "construidos o mejores en ciertas tareas y eso es algo"}
+{"t": 39.232, "lang": "es", "type": "close", "seg": 18}
+{"t": 39.371, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into"}
+{"t": 39.77, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account"}
+{"t": 40.266, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're"}
+{"t": 40.771, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking"}
+{"t": 41.272, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about"}
+{"t": 41.78, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of"}
+{"t": 42.182, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and"}
+{"t": 42.606, "lang": "es", "type": "append", "seg": 19, "text": "que tenemos que tener en cuenta cuando estamos pensando en qu\u00e9 tipo de"}
+{"t": 42.606, "lang": "es", "type": "close", "seg": 19}
+{"t": 42.662, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and how do"}
+{"t": 43.217, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and how do we build"}
+{"t": 43.647, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and how do we build agents and how do"}
+{"t": 44.167, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and how do we build agents and how do we"}
+{"t": 44.567, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and how do we build agents and how do we manage"}
+{"t": 45.073, "lang": "en", "type": "set", "seg": 5, "text": "built or better at certain tasks and that's something that we have to take into account when we're thinking about what type of agents and how do we build agents and how do we manage agents."}
+{"t": 45.073, "lang": "en", "type": "close", "seg": 5}
+{"t": 45.651, "lang": "en", "type": "set", "seg": 6, "text": "an infrastructure"}
+{"t": 45.679, "lang": "es", "type": "append", "seg": 20, "text": "agente y c\u00f3mo construimos agente y c\u00f3mo gestionamos agente."}
+{"t": 45.679, "lang": "es", "type": "close", "seg": 20}
+{"t": 46.588, "lang": "en", "type": "set", "seg": 6, "text": "an infrastructure space specific"}
+{"t": 46.975, "lang": "en", "type": "set", "seg": 6, "text": "in infrastructure space specifically."}
+{"t": 46.976, "lang": "en", "type": "close", "seg": 6}
+{"t": 47.719, "lang": "es", "type": "append", "seg": 21, "text": "espec\u00edficamente en el espacio de infraestructura."}
+{"t": 47.719, "lang": "es", "type": "close", "seg": 21}
+{"t": 48.316, "lang": "en", "type": "set", "seg": 7, "text": "So"}
+{"t": 48.715, "lang": "en", "type": "set", "seg": 7, "text": "So what are"}
+{"t": 49.172, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the"}
+{"t": 49.693, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities?"}
+{"t": 50.455, "lang": "es", "type": "append", "seg": 22, "text": "Entonces, \u00bfcu\u00e1les son las capacidad?"}
+{"t": 50.455, "lang": "es", "type": "close", "seg": 22}
+{"t": 50.689, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus"}
+{"t": 51.093, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents?"}
+{"t": 51.629, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because"}
+{"t": 51.718, "lang": "es", "type": "append", "seg": 23, "text": "de humanos versus agente?"}
+{"t": 51.718, "lang": "es", "type": "close", "seg": 23}
+{"t": 52.106, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents, because again, as I"}
+{"t": 52.591, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both"}
+{"t": 53.095, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something"}
+{"t": 53.236, "lang": "es", "type": "append", "seg": 24, "text": "Porque de nuevo, como dije,"}
+{"t": 53.236, "lang": "es", "type": "close", "seg": 24}
+{"t": 53.565, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well."}
+{"t": 53.984, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both"}
+{"t": 54.256, "lang": "es", "type": "append", "seg": 25, "text": "ambos hacen algo realmente bien."}
+{"t": 54.256, "lang": "es", "type": "close", "seg": 25}
+{"t": 54.53, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do"}
+{"t": 54.988, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something"}
+{"t": 55.505, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so"}
+{"t": 55.895, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some"}
+{"t": 56.401, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well."}
+{"t": 57.14, "lang": "es", "type": "append", "seg": 26, "text": "y ambos hacen algo no tan bien de algunas maneras tambi\u00e9n."}
+{"t": 57.14, "lang": "es", "type": "close", "seg": 26}
+{"t": 57.403, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well. So here"}
+{"t": 57.86, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well. So here I have a"}
+{"t": 58.296, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well. So here I have a nice"}
+{"t": 58.827, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well. So here I have a nice dandy"}
+{"t": 59.289, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities? of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well. So here I have a nice dandy little"}
+{"t": 59.852, "lang": "en", "type": "set", "seg": 7, "text": "So what are like the capabilities of humans versus agents? Because again, as I said, both do something really well and both do something not so well in some ways as well. So here I have a nice dandy little"}
+{"t": 59.852, "lang": "en", "type": "close", "seg": 7}
+{"t": 60.516, "lang": "es", "type": "append", "seg": 27, "text": "As\u00ed que aqu\u00ed tengo un peque\u00f1o y bonito artefacto"}
+{"t": 60.516, "lang": "es", "type": "close", "seg": 27}
+{"t": 61.084, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you"}
+{"t": 61.523, "lang": "en", "type": "set", "seg": 8, "text": "Highlights so you have a human"}
+{"t": 62.09, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human"}
+{"t": 62.526, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for"}
+{"t": 63.037, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example."}
+{"t": 63.165, "lang": "es", "type": "append", "seg": 28, "text": "Lo destacado es que tienes capacidad humana,"}
+{"t": 63.165, "lang": "es", "type": "close", "seg": 28}
+{"t": 63.526, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example,"}
+{"t": 63.934, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are"}
+{"t": 64.433, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really"}
+{"t": 64.44, "lang": "es", "type": "append", "seg": 29, "text": "por ejemplo."}
+{"t": 64.44, "lang": "es", "type": "close", "seg": 29}
+{"t": 64.931, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at"}
+{"t": 65.421, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating"}
+{"t": 66.288, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity."}
+{"t": 66.802, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone"}
+{"t": 66.99, "lang": "es", "type": "append", "seg": 30, "text": "Los humanos somos muy, muy buenos navegando la ambiguedad."}
+{"t": 66.99, "lang": "es", "type": "close", "seg": 30}
+{"t": 67.315, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you,"}
+{"t": 67.831, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh,"}
+{"t": 68.348, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go"}
+{"t": 68.478, "lang": "es", "type": "append", "seg": 31, "text": "Si alguien te dice, oh,"}
+{"t": 68.478, "lang": "es", "type": "close", "seg": 31}
+{"t": 68.746, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about"}
+{"t": 69.234, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go roundabout there,"}
+{"t": 69.718, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know,"}
+{"t": 70.211, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow"}
+{"t": 70.309, "lang": "es", "type": "append", "seg": 32, "text": "solo ve a escribir sobre ah\u00ed,"}
+{"t": 70.309, "lang": "es", "type": "close", "seg": 32}
+{"t": 70.723, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever,"}
+{"t": 71.132, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can"}
+{"t": 71.363, "lang": "es", "type": "append", "seg": 33, "text": "solo, ya sabes, sigue la corriente y lo que sea,"}
+{"t": 71.363, "lang": "es", "type": "close", "seg": 33}
+{"t": 71.648, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure"}
+{"t": 72.088, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out."}
+{"t": 72.622, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You"}
+{"t": 72.669, "lang": "es", "type": "append", "seg": 34, "text": "se puede deducir m\u00e1s o menos."}
+{"t": 72.669, "lang": "es", "type": "close", "seg": 34}
+{"t": 73.137, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that"}
+{"t": 73.522, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If"}
+{"t": 73.999, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells"}
+{"t": 74.173, "lang": "es", "type": "append", "seg": 35, "text": "Entiendes lo que eso significa."}
+{"t": 74.173, "lang": "es", "type": "close", "seg": 35}
+{"t": 74.525, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you,"}
+{"t": 74.998, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh,"}
+{"t": 75.514, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black"}
+{"t": 75.714, "lang": "es", "type": "append", "seg": 36, "text": "Si alguien te dice, oh,"}
+{"t": 75.714, "lang": "es", "type": "close", "seg": 36}
+{"t": 75.906, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is"}
+{"t": 76.423, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you"}
+{"t": 76.893, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand"}
+{"t": 76.986, "lang": "es", "type": "append", "seg": 37, "text": "Se acercara el Viernes Negro,"}
+{"t": 76.986, "lang": "es", "type": "close", "seg": 37}
+{"t": 77.446, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh,"}
+{"t": 77.965, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand a lot of"}
+{"t": 78.323, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of"}
+{"t": 78.833, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of"}
+{"t": 79.328, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things"}
+{"t": 79.509, "lang": "es", "type": "append", "seg": 38, "text": "entiendes, oh, a gran escala,"}
+{"t": 79.509, "lang": "es", "type": "close", "seg": 38}
+{"t": 79.82, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening, and"}
+{"t": 80.304, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening, and so forth."}
+{"t": 80.444, "lang": "es", "type": "append", "seg": 39, "text": "muchas cosas pasando,"}
+{"t": 80.444, "lang": "es", "type": "close", "seg": 39}
+{"t": 80.731, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth."}
+{"t": 81.214, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But"}
+{"t": 81.711, "lang": "es", "type": "append", "seg": 40, "text": "y as\u00ed sucesivamente."}
+{"t": 81.711, "lang": "es", "type": "close", "seg": 40}
+{"t": 81.718, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents,"}
+{"t": 82.211, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really"}
+{"t": 82.68, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need"}
+{"t": 83.609, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit"}
+{"t": 84.097, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural"}
+{"t": 84.981, "lang": "es", "type": "append", "seg": 41, "text": "Pero los agente, realmente necesitan informacion estructural expl\u00edcita"}
+{"t": 84.981, "lang": "es", "type": "close", "seg": 41}
+{"t": 85.087, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information."}
+{"t": 85.516, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is"}
+{"t": 85.794, "lang": "es", "type": "append", "seg": 42, "text": "informacion."}
+{"t": 85.794, "lang": "es", "type": "close", "seg": 42}
+{"t": 86.029, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no"}
+{"t": 86.53, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh,"}
+{"t": 87.018, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll"}
+{"t": 87.494, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's"}
+{"t": 87.943, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no,"}
+{"t": 88.163, "lang": "es", "type": "append", "seg": 43, "text": "No hay, ah, improvisar\u00e9."}
+{"t": 88.163, "lang": "es", "type": "close", "seg": 43}
+{"t": 88.421, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll"}
+{"t": 88.939, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll"}
+{"t": 89.461, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as"}
+{"t": 89.914, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go."}
+{"t": 90.39, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go,"}
+{"t": 90.588, "lang": "es", "type": "append", "seg": 44, "text": "No hay, oh, lo ir\u00e9 sintiendo sobre la marcha."}
+{"t": 90.588, "lang": "es", "type": "close", "seg": 44}
+{"t": 90.84, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go, because that doesn't"}
+{"t": 91.801, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go, because that doesn't exist as a"}
+{"t": 92.32, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go, because that doesn't exist as a concept"}
+{"t": 92.715, "lang": "en", "type": "set", "seg": 8, "text": "Highlights are you have human capability, for example. Humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go write about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go, because that doesn't exist as a concept really."}
+{"t": 93.219, "lang": "en", "type": "set", "seg": 8, "text": "highlights or you have human capability, for example, humans, we are really, really good at navigating ambiguity. If someone tells you, oh, just go broad about there, just, you know, follow along and whatever, you can kind of figure it out. You understand what that means. If someone tells you, oh, Black Friday is coming up, you understand, oh, a lot of scale, a lot of things happening and so forth. But agents, they really need explicit structural information. There is no, oh, I'll wing it. There's no, oh, I'll I'll feel it out as we go because that doesn't exist as a concept really."}
+{"t": 93.219, "lang": "en", "type": "close", "seg": 8}
+{"t": 93.482, "lang": "es", "type": "append", "seg": 45, "text": "porque eso realmente no existe como concepto."}
+{"t": 93.482, "lang": "es", "type": "close", "seg": 45}
+{"t": 97.262, "lang": "en", "type": "status", "data": {"state": "yellow"}}
+{"t": 97.262, "lang": "es", "type": "status", "data": {"state": "yellow"}}
+{"t": 97.775, "lang": "en", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}
+{"t": 97.775, "lang": "es", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}

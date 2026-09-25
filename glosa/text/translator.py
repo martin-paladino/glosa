@@ -3,6 +3,13 @@ translation with gemini-3.5-flash-lite (thinking_level=MINIMAL, per
 globals.md), guided by the talk's glossary and the last couple of segments
 for continuity.
 
+Known limit: a GlossaryTerm's ``translation`` is ONE string, and the room's
+translation lane passes the same glossary for every target language. On a
+talk translated into en and pt, a term with ``translation="plano de
+control"`` is asked for as "plano de control" in both. Terms kept in
+English (``keep_in_english``) are fine in every language; a per-language
+translation would need the glossary model to carry one per target.
+
 Retries on 429 (rate limited) / 503 (overloaded) wait a growing amount of
 time between attempts. After _MAX_CONSECUTIVE_FAILURES failures in a row on
 one model, Translator switches to fallback_model and starts a fresh run of

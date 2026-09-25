@@ -210,6 +210,10 @@
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     const [track] = stream.getAudioTracks();
+    if (currentTrack && currentTrack !== track) {
+      currentTrack.onended = null; // a deliberate swap, not a disconnect: don't re-trigger reacquire()
+      currentTrack.stop(); // release the old device instead of leaking it
+    }
     currentTrack = track;
     track.onended = () => {
       setBadge("degraded", T.station_device_gone || "The microphone disconnected");

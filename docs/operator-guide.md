@@ -330,7 +330,7 @@ curl -b 'glosa_admin=<cookie>' -H 'X-Glosa-Admin: 1' -X POST \
 
 If a mini PC's browser tab freezes, the drawer's **Recargar estación**/
 **Reload station** button (`POST /api/admin/rooms/<id>/station/reload`)
-sends it a reload over its own WebSocket — no RustDesk, no walking over to
+sends it a reload over its own WebSocket — no remote desktop, no walking over to
 the stage (README's *Room stations*, "F5 remoto").
 
 ### Auto vs. Manual, and when to switch

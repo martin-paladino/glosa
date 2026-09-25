@@ -8,7 +8,7 @@ Source: the official `#nerdearla-vibeathon` channel on the sysarmy Discord, 2026
 |---|---|---|
 | **Audio source** | The mics come out of the stage's audio interface through a **3.5 mm jack into a mini PC**, and the input is captured **in a web browser**. | None mentioned. It is simple and works. |
 | **Engine** | A commercial SaaS listens to that input and transcribes and translates until someone presses stop. | Paid per session; nothing is automatic. |
-| **Operation** | No dedicated operator per room. They leave **RustDesk** running so someone can remote in "if it needs an F5 because it froze". | Freezes that need a manual reload, and remote access to every mini PC. |
+| **Operation** | No dedicated operator per room. They leave a **remote-desktop** tool running so someone can remote in "if it needs an F5 because it froze". | Freezes that need a manual reload, and remote access to every mini PC. |
 | **In-room audience** | The same browser that captures the audio shows the captions on **screens in front of the stage**. | Nothing specific. |
 | **Phones** | Attendees can also **scan a QR code** and follow on their phone. | Nothing specific. |
 | **Online audience (stream)** | Captions are not in the stream. The staff would like to "plug it into vMix and burn the subtitles into the stream too, because we don't have live translation" for virtual attendees. | Remote viewers get no translation. The staff later said this is **an idea, not a requirement**. |
@@ -32,7 +32,7 @@ Other answers from the channel:
      - it keeps the screen awake.
    - Stage display: the same page shows the captions full screen, in any language, for the stage screens. This keeps today's physical setup.
    - Stable URL: the station keeps its URL across server restarts, so an unattended mini PC keeps working.
-2. **No RustDesk needed.**
+2. **No remote desktop needed.**
    - The production panel shows each station's state: connected or not, audio level, device, and seconds since the last audio.
    - A **remote reload** button sends an "F5" to the station.
    - Rooms reconnect their model sessions on their own and raise alarms when something goes wrong.

@@ -65,23 +65,23 @@ testing, not a full event) was **≈ US$1.4 of a US$10 budget**
 (`progress.md`, 2026-09-24) — far below any of the scenarios above, because
 it was minutes of testing, not days of continuous captioning.
 
-## Comparison with Maestra (Nerdearla's current tool)
+## Comparison with a commercial live-captioning SaaS
 
-Maestra is the commercial SaaS Nerdearla uses today for live captioning/
-translation (`docs/field-notes.md`). Its **public list price**
-(maestra.ai pricing page, surveyed 2026-09-23 — not a negotiated or
+Today's setup relies on a commercial live-captioning/translation SaaS
+(`docs/field-notes.md`). A typical plan's **public list price** (the
+vendor's pricing page, surveyed 2026-09-23 — not a negotiated or
 Nerdearla-specific rate) is:
 
-- **Business Plus, US$359/month = 900 minutes of translation** → US$359 /
+- **US$359/month = 900 minutes of translation** → US$359 /
   15 h = **≈ US$24/h per translated language** (list price).
 - **≈ US$4.8/h for captions only** (no translation) — list price, same
   source.
 
 At the same 120-room-hour scale, 120 h x US$24/h (list) ≈ **US$2,880** if
-every room-hour needed a translated language at Maestra's list rate —
+every room-hour needed a translated language at that list rate —
 roughly **11x** our all-English/fast-engine scenario above, and **~33x**
 our all-glossary-engine scenario. This is a list-price-to-list-price
-comparison; Maestra plans typically bundle a monthly minute allowance
+comparison; such plans typically bundle a monthly minute allowance
 rather than pure metered per-minute billing, so an organization already
 paying for a plan might have unused minutes that cost nothing marginally
 — the per-hour figure is only the *list* rate implied by the plan size.

@@ -10,8 +10,8 @@ the event's agenda once and an autopilot opens and closes each room's talks
 on schedule, switching language, engine and glossary with it, so nobody has
 to press start/stop per talk. It runs on two interchangeable Gemini engines
 — a fast, fluent one and a glossary-accurate one for technical talks — at
-up to **~30× less than the public list price** of the commercial SaaS
-Nerdearla currently uses for this (see [Costs](#costs) and
+up to **~30× less than the public list price** of a commercial
+live-captioning SaaS (see [Costs](#costs) and
 [`docs/costs.md`](docs/costs.md)).
 
 ## Screenshots
@@ -253,7 +253,7 @@ shows the room's own captions full screen for the stage screens
 (`docs/field-notes.md` has the story behind this — see
 [Operation](#operation)). The URL is stable across a server restart, and is
 revoked by changing `ADMIN_PASSWORD`. A remote reload ("F5 remoto", no more
-RustDesk) is one click in the admin (`POST
+remote desktop) is one click in the admin (`POST
 /api/admin/rooms/<id>/station/reload`).
 
 **The key never leaks.** Every page sends `Referrer-Policy: same-origin`,
@@ -350,7 +350,7 @@ Each extra target language (beyond the first) adds one more Flash-Lite
 translation pass over the same transcribed text, at roughly the glossary
 engine's own translation cost — no new transcription session.
 
-**vs. Maestra** (Nerdearla's current SaaS), public list price surveyed
+**vs. a commercial live-captioning SaaS**, public list price surveyed
 2026-09-23: **≈ US$24/h per translated language**. At the same scale, that
 is roughly **11×** the fast-engine cost above and **≈33×** the
 glossary-engine cost — a list-price-to-list-price comparison, not a
@@ -497,7 +497,7 @@ Full checklist and reference: [`docs/operator-guide.md`](docs/operator-guide.md)
 (credentials, HTTPS, `config.yaml`, agenda import, room stations, reading
 room status, autopilot, exports, backups). Why Glosa's operation model
 looks the way it does: Nerdearla's own staff described their current
-setup as a SaaS tab left running with **RustDesk** open "in case it needs
+setup as a SaaS tab left running with a **remote-desktop** tool open "in case it needs
 an F5 because it froze" — no dedicated operator per room, remote access to
 every mini PC as the only recovery. Glosa's room stations, remote reload
 and autopilot exist specifically to remove that: see

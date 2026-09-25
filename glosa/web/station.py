@@ -1,5 +1,5 @@
 """The room station (Task 14a): a mini PC's page for one room, replacing the
-event's RustDesk-and-a-SaaS-tab setup (docs/field-notes.md). It captures the
+event's remote-desktop-and-a-SaaS-tab setup (docs/field-notes.md). It captures the
 audio desk's mic feed in the browser, streams it to the server over a
 WebSocket, and shows the room's own captions full screen for the stage
 screens -- all unattended, all day, reloadable from the admin panel.
@@ -32,7 +32,7 @@ screens -- all unattended, all day, reloadable from the admin panel.
     ``require_admin`` + ``require_csrf_header``, glosa/web/auth.py -- same
     dependencies as ``glosa/web/admin_api.py``'s ``api_router``, a separate
     instance so this task doesn't touch that file): sends ``reload`` to the
-    room's connected station, if any ("F5 remoto" -- no more RustDesk).
+    room's connected station, if any ("F5 remoto" -- no more remote desktop).
   - ``GET /emitter/{room_id}``: alias for the plan's `/emitter/{room}`
     (task-14-brief.md). Admin-cookie gated like ``/admin``; redirects to
     this room's ``station_url()`` so a logged-in admin doesn't need to know

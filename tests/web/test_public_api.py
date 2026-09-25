@@ -141,7 +141,13 @@ async def test_rooms_api_lists_both_rooms_with_their_talk(server: str) -> None: 
     assert r2["langs"] == ["es", "en"]
     talk_id = r1["now"]["talk_id"]
     assert FREE_ID.fullmatch(talk_id) and talk_id.startswith("free-r1-")  # Ruling 27
-    assert r1["now"] == {"talk_id": talk_id, "title": "Sesión libre", "speakers": [], "language": "en"}
+    assert {k: r1["now"][k] for k in ("talk_id", "title", "speakers", "language")} == {
+        "talk_id": talk_id, "title": "Sesión libre", "speakers": [], "language": "en",
+    }
+    # The index's agenda data (fields only added, none removed): times in the
+    # event timezone, the abstract, and whether it's a free session.
+    assert {"start", "end", "starts_at", "ends_at", "abstract", "free"} <= set(r1["now"])
+    assert r1["now"]["free"] is True and r1["now"]["abstract"] == ""
     assert r2["now"]["language"] == "es"
     assert r1["next"] is None
     # Ruling 29: the public status is state, talk and a fixed text, nothing raw

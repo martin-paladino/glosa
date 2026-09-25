@@ -582,26 +582,28 @@ class RoomWorker:
         self._next_talk = talk
 
     def view(self) -> dict:
-        """The room as the audience pages see it (task-6 contract)."""
-        talk = self.talk
-        now = None
-        if talk is not None:
-            now = {
-                "talk_id": talk.id,
-                "title": talk.title,
-                "speakers": list(talk.speakers),
-                "language": talk.language,
-            }
-        nxt = None
-        if self._next_talk is not None:
-            nxt = {
-                "talk_id": self._next_talk.id,
-                "title": self._next_talk.title,
-                "speakers": list(self._next_talk.speakers),
-                "language": self._next_talk.language,
-                "start": self._next_talk.start.astimezone(self._tz).strftime("%H:%M"),
-            }
+        """The room as the audience pages see it (task-6 contract). ``now`` and
+        ``next`` carry the public agenda data the index shows: times in the
+        event timezone ("HH:MM" plus ISO 8601 ``starts_at``/``ends_at``), the
+        abstract, and ``free`` for a free session (no agenda talk)."""
+        now = self._agenda_view(self.talk) if self.talk is not None else None
+        nxt = self._agenda_view(self._next_talk) if self._next_talk is not None else None
         return {"slug": self.room.slug, "name": self.room.name, "langs": self.langs(), "now": now, "next": nxt}
+
+    def _agenda_view(self, talk: Talk) -> dict:
+        start, end = talk.start.astimezone(self._tz), talk.end.astimezone(self._tz)
+        return {
+            "talk_id": talk.id,
+            "title": talk.title,
+            "speakers": list(talk.speakers),
+            "language": talk.language,
+            "start": f"{start:%H:%M}",
+            "end": f"{end:%H:%M}",
+            "starts_at": start.isoformat(),
+            "ends_at": end.isoformat(),
+            "abstract": talk.abstract,
+            "free": is_free_talk(talk.id),
+        }
 
     def status(self) -> RoomStatus:
         run = self._run

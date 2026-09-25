@@ -170,9 +170,13 @@ def test_index_marks_live_and_idle_rooms(client: TestClient) -> None:
     html = client.get("/", headers=SPANISH).text
 
     assert html.count("status--live") == 1
-    assert t("no_talk_now", "es") in html
-    assert t("no_more_talks", "es") in html
+    assert html.count("room-card--live") == 1
+    assert html.count("room-card--between") == 1   # r2: nothing on, a next talk
+    assert html.count("room-card--closed") == 1    # r3: nothing on, nothing next
     assert t("between_talks", "es") in html
+    assert t("next_talk", "es") in html
+    assert t("no_more_talks", "es") in html
+    assert t("no_talks", "es") in html
 
 
 def test_index_describes_talk_and_caption_languages(client: TestClient) -> None:

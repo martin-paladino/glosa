@@ -10,6 +10,7 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOM_JS = path.join(__dirname, "..", "..", "glosa", "web", "static", "js", "room.js");
+const THEME_JS = path.join(__dirname, "..", "..", "glosa", "web", "static", "js", "theme.js");
 
 const kebab = (key) => key.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
 
@@ -281,6 +282,8 @@ if (input.pip) {
   };
 }
 vm.createContext(context);
+// room.html loads the shared theme.js first (both deferred, in order).
+vm.runInContext(fs.readFileSync(THEME_JS, "utf8"), context, { filename: "theme.js" });
 vm.runInContext(fs.readFileSync(ROOM_JS, "utf8"), context, { filename: "room.js" });
 
 const [source] = sources;

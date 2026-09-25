@@ -1,19 +1,11 @@
 {% extends "base.html" %}
 
-{% macro direction_badge(d) -%}
-<span class="direction" data-direction aria-label="{{ d.label }}">
-  {%- for code in d.codes %}
-  {%- if not loop.first %}
-  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  {%- endif %}
-  <abbr title="{{ d.names[loop.index0] }}">{{ code | upper }}</abbr>
-  {%- endfor %}
-</span>
-{%- endmacro %}
+{% from "_macros.html" import direction_badge %}
 
 {% block title %}{{ tr("room_title").format(room=room.name) }} | Glosa{% endblock %}
 
 {% block head %}
+  <script src="/static/js/theme.js" defer></script>
   <script src="/static/js/room.js" defer></script>
   <script src="/static/js/clock.js" defer></script>
   {%- if listen %}

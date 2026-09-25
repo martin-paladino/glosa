@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 
+{% from "_macros.html" import direction_badge %}
+
 {% block title %}{{ tr("index_title").format(event=event_name) }} | Glosa{% endblock %}
+
+{% block head %}
+  <script src="/static/js/theme.js" defer></script>
+  <script src="/static/js/index.js" defer></script>
+{%- endblock %}
+
+{#- The talk's minute track: one segment per minute, filled up to now.
+    index.js keeps it (and "Quedan N min") current while the page is open. #}
+{% macro track(talk) -%}
+<div class="room-card__track" data-track data-start="{{ talk.starts_at }}" data-end="{{ talk.ends_at }}" data-left-template="{{ tr('time_left') }}">
+  <span class="room-card__bar" style="--progress: {{ talk.progress }}; --segs: {{ talk.segments }}" aria-hidden="true"></span>
+  <span class="room-card__left" data-left>{{ talk.left_text }}</span>
+</div>
+{%- endmacro %}
+
+{% macro abstract(talk, id) -%}
+{%- if talk.abstract %}
+<div class="room-card__about" data-about>
+  <p class="room-card__abstract" id="{{ id }}">{{ talk.abstract }}</p>
+  <button class="room-card__more" type="button" aria-expanded="false" aria-controls="{{ id }}" data-more data-less-label="{{ tr('show_less') }}" data-more-label="{{ tr('show_more') }}" hidden>{{ tr("show_more") }}</button>
+</div>
+{%- endif %}
+{%- endmacro %}
 
 {% block body %}
 <div class="index">
@@ -11,51 +36,102 @@
       <img class="event-logo" src="{{ logo_url }}" alt="{{ event_name }}">
       {%- endif %}
     </div>
-    <a href="/?lang={{ other_lang }}" lang="{{ other_lang }}" hreflang="{{ other_lang }}">{{ other_lang_name }}</a>
+    <div class="index__tools">
+      <button class="index__tool" type="button" data-action="theme"
+        data-theme-label="{{ tr('theme') }}"
+        data-theme-names='{{ {"system": tr("theme_system"), "light": tr("theme_light"), "dark": tr("theme_dark"), "contrast": tr("theme_contrast")} | tojson }}'
+        aria-label="{{ tr('theme').format(name=tr('theme_system')) }}" title="{{ tr('theme').format(name=tr('theme_system')) }}">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2.5a7.5 7.5 0 0 1 0 15z" fill="currentColor"/></svg>
+        <span>{{ tr("theme_button") }}</span>
+      </button>
+      <a class="index__tool" href="/?lang={{ other_lang }}" lang="{{ other_lang }}" hreflang="{{ other_lang }}">{{ other_lang_name }}</a>
+    </div>
   </header>
 
   <section class="index__intro" aria-labelledby="event">
     <h1 class="index__title" id="event">{{ event_name }}</h1>
     <p class="index__lede">{{ tr("index_lede") }}</p>
+    {%- if zone and rooms %}
+    <p class="index__zone">{{ tr("times_in_zone").format(zone=zone) }}</p>
+    {%- endif %}
   </section>
 
   {%- if rooms %}
   <ul class="room-list" aria-label="{{ tr('rooms') }}">
     {%- for room in rooms %}
-    <li class="room-card{% if room.live %} room-card--live{% endif %}">
+    {%- set n = loop.index %}
+    {%- set f = room.feature %}
+    <li class="room-card room-card--{{ room.state }}">
       <div class="room-card__head">
-        <h2 class="room-card__name"><a class="room-card__link" href="{{ room.href }}">{{ room.name }}</a></h2>
+        <h2 class="room-card__name" id="room-{{ n }}">{{ room.name }}</h2>
         {%- if room.live %}
         <span class="status status--live">{{ tr("live") }}</span>
-        {%- else %}
+        {%- elif room.state == "between" %}
         <span class="status status--idle">{{ tr("between_talks") }}</span>
+        {%- else %}
+        <span class="status status--idle">{{ tr("no_talks") }}</span>
         {%- endif %}
       </div>
-      <dl class="agenda">
-        <div class="slot slot--now">
-          <dt class="slot__when">{{ tr("now") }}</dt>
-          {%- if room.now %}
-          <dd class="slot__what">
-            <cite class="talk-title" lang="{{ room.now.language }}">{{ room.now.title }}</cite>
-            <span class="talk-meta">{{ room.now.meta }}</span>
-          </dd>
-          {%- else %}
-          <dd class="slot__what"><span class="slot__empty">{{ tr("no_talk_now") }}</span></dd>
-          {%- endif %}
-        </div>
-        <div class="slot">
-          {%- if room.next %}
-          <dt class="slot__when">{{ tr("next") }} <time datetime="{{ room.next.start }}">{{ room.next.start }}</time></dt>
-          <dd class="slot__what">
-            <cite class="talk-title" lang="{{ room.next.language }}">{{ room.next.title }}</cite>
-            <span class="talk-meta">{{ room.next.meta }}</span>
-          </dd>
-          {%- else %}
-          <dt class="slot__when">{{ tr("next") }}</dt>
-          <dd class="slot__what"><span class="slot__empty">{{ tr("no_more_talks") }}</span></dd>
-          {%- endif %}
-        </div>
-      </dl>
+
+      <div class="room-card__body">
+        {%- if room.state == "live" %}
+        <p class="room-card__when">
+          <span class="room-card__label">{{ tr("now") }}</span>
+          <span class="room-card__time"><time datetime="{{ f.starts_at }}">{{ f.start }}</time>–<time datetime="{{ f.ends_at }}">{{ f.end }}</time></span>
+          {{ direction_badge(f.direction) }}
+        </p>
+        <h3 class="room-card__title talk-title" lang="{{ f.language }}">{{ f.title }}</h3>
+        {%- if f.speakers_text %}
+        <p class="room-card__who">{{ f.speakers_text }}</p>
+        {%- endif %}
+        {%- if f.progress is not none %}
+        {{ track(f) }}
+        {%- endif %}
+        {{ abstract(f, "about-" ~ n) }}
+
+        {%- elif room.state == "between" %}
+        <p class="room-card__when">
+          <span class="room-card__label">{{ tr("next_talk") }}</span>
+          {{ direction_badge(f.direction) }}
+        </p>
+        <p class="room-card__at">
+          {%- if f.day %}<span class="room-card__day">{{ f.day }}</span> {% endif -%}
+          <time datetime="{{ f.starts_at }}">{{ f.start }}</time>
+          {%- if f.soon_text %} <span class="room-card__soon" data-soon data-start="{{ f.starts_at }}" data-soon-template="{{ tr('starts_in') }}">{{ f.soon_text }}</span>{% endif %}
+        </p>
+        <h3 class="room-card__title talk-title" lang="{{ f.language }}">{{ f.title }}</h3>
+        {%- if f.speakers_text %}
+        <p class="room-card__who">{{ f.speakers_text }}</p>
+        {%- endif %}
+        {{ abstract(f, "about-" ~ n) }}
+
+        {%- elif room.state == "free" %}
+        <p class="room-card__when">
+          <span class="room-card__label">{{ tr("now") }}</span>
+          {{ direction_badge(room.now.direction) }}
+        </p>
+        <h3 class="room-card__title talk-title">{{ room.now.title }}</h3>
+        <p class="room-card__note">{{ tr("free_session_note") }}</p>
+
+        {%- else %}
+        <p class="room-card__note">{{ tr("no_more_talks") }}</p>
+        {%- endif %}
+      </div>
+
+      {%- if room.state in ("live", "free") and room.next %}
+      <p class="room-card__next">
+        <span class="room-card__label">{{ tr("next") }}</span>
+        <span class="room-card__time">{% if room.next.day %}{{ room.next.day }} {% endif %}<time datetime="{{ room.next.starts_at }}">{{ room.next.start }}</time></span>
+        <span class="room-card__next-title" lang="{{ room.next.language }}">{{ room.next.title }}</span>
+        {%- if room.next.speakers_text %}
+        <span class="room-card__next-who">{{ room.next.speakers_text }}</span>
+        {%- endif %}
+      </p>
+      {%- endif %}
+
+      <a class="room-card__open" href="{{ room.href }}" id="open-{{ n }}" aria-labelledby="open-{{ n }} room-{{ n }}">
+        {{- tr("read_captions") if room.live else tr("open_room") -}}
+      </a>
     </li>
     {%- endfor %}
   </ul>

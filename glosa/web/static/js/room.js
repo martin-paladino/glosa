@@ -31,7 +31,6 @@
   const T = cfg.i18n;
 
   const SCALES = [0.8, 0.9, 1, 1.15, 1.3, 1.5, 1.75];
-  const THEMES = ["system", "light", "dark", "contrast"];
   const FOLLOW_SLACK_PX = 48;      // scrolling up more than this pauses auto-scroll
   const PARAGRAPH_PHRASES = 3;     // closed phrases per history paragraph
   const PARAGRAPH_CHARS = 160;     // ...or fewer if they are long,
@@ -681,21 +680,17 @@
     syncPipRoot();
   }
 
-  function currentTheme() {
-    return THEMES.includes(root.dataset.theme) ? root.dataset.theme : "system";
-  }
+  // The theme itself lives in static/js/theme.js (shared with the room list).
+  const THEME_NAMES = {
+    system: T.theme_system, light: T.theme_light, dark: T.theme_dark, contrast: T.theme_contrast,
+  };
 
   function labelTheme() {
-    const label = format(T.theme, { name: T[`theme_${currentTheme()}`] });
-    themeButton.setAttribute("aria-label", label);
-    themeButton.title = label;
+    window.GlosaTheme.label(themeButton, T.theme, THEME_NAMES);
   }
 
   function cycleTheme() {
-    const next = THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length];
-    if (next === "system") delete root.dataset.theme;
-    else root.dataset.theme = next;
-    store.set("glosa.theme", next === "system" ? null : next);
+    window.GlosaTheme.cycle();
     labelTheme();
     syncPipRoot();
   }

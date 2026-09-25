@@ -704,13 +704,13 @@ async def test_the_free_session_and_the_engine_config(db) -> None:
     assert factory.configs[0].kind == "fast"
     assert (factory.configs[0].source_lang, factory.configs[0].target_lang) == ("en", "es")
     assert ingests.made[0].args == ("file", "fake://r1", False)
-    assert worker.view() == {
-        "slug": "r1",
-        "name": "Sala r1",
-        "langs": ["en", "es"],
-        "now": {"talk_id": FREE_R1, "title": "Sesión libre", "speakers": [], "language": "en"},
-        "next": None,
+    view = worker.view()
+    now = view.pop("now")
+    assert view == {"slug": "r1", "name": "Sala r1", "langs": ["en", "es"], "next": None}
+    assert {k: now[k] for k in ("talk_id", "title", "speakers", "language", "abstract", "free")} == {
+        "talk_id": FREE_R1, "title": "Sesión libre", "speakers": [], "language": "en", "abstract": "", "free": True,
     }
+    assert now["start"] == now["starts_at"][11:16] and now["end"] == now["ends_at"][11:16]
     stored = await db.get_talk(FREE_R1)
     assert stored is not None and stored.status == "live" and stored.actual_start is not None
 
@@ -742,8 +742,13 @@ async def test_view_next_reflects_set_next_talk(db) -> None:
     nxt.start = datetime(2026, 1, 1, 15, 30, tzinfo=timezone.utc)
     worker.set_next_talk(nxt)
 
+    nxt.end = datetime(2026, 1, 1, 16, 10, tzinfo=timezone.utc)
+    nxt.abstract = "What the talk is about."
+    worker.set_next_talk(nxt)
     assert worker.view()["next"] == {
         "talk_id": "n1", "title": "Talk n1", "speakers": [], "language": "en", "start": "15:30",
+        "end": "16:10", "starts_at": "2026-01-01T15:30:00+00:00", "ends_at": "2026-01-01T16:10:00+00:00",
+        "abstract": "What the talk is about.", "free": False,
     }
 
     worker.set_next_talk(None)

@@ -1,0 +1,9 @@
+{"t": 0.05, "kind": "source_delta", "text": "Hola", "meta": {"lang": "es"}}
+{"t": 0.35, "kind": "source_delta", "text": " mundo.", "meta": {"lang": "es"}}
+{"t": 0.40, "kind": "target_delta", "text": "Hello", "meta": {"lang": "en"}}
+{"t": 0.55, "kind": "target_delta", "text": " world.", "meta": {"lang": "en"}}
+{"t": 1.00, "kind": "source_delta", "text": " Adios", "meta": {"lang": "es"}}
+{"t": 1.30, "kind": "source_delta", "text": " amigos.", "meta": {"lang": "es"}}
+{"t": 1.35, "kind": "target_delta", "text": " Goodbye", "meta": {"lang": "en"}}
+{"t": 1.55, "kind": "target_delta", "text": " friends.", "meta": {"lang": "en"}}
+{"t": 9.00, "kind": "source_delta", "text": " Nunca deberia llegar.", "meta": {"lang": "es"}}

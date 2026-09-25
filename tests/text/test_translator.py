@@ -141,6 +141,30 @@ def test_a_term_kept_in_english_is_never_written_as_keep() -> None:
     assert '"Kubernetes": leave it as is, untranslated' in text
 
 
+def test_glossary_translations_are_inflected_to_fit_the_sentence() -> None:
+    """Live run: a glossary target pasted verbatim gave "los agente", "las
+    capacidad" (task-16q-brief.md). The rule now tells the model to inflect
+    the translation (number, gender, article agreement) instead."""
+    text = _build_system_instruction("es", GLOSSARY, [])
+
+    rules = text.split("Glossary")[1].lower()
+    assert "inflected" in rules
+    assert "number" in rules and "gender" in rules and "agreement" in rules
+    assert '"control plane": translate it as "plano de control"' in text  # still names the term
+
+
+def test_a_term_with_no_translation_and_not_kept_in_english_is_translated_normally() -> None:
+    """translation=None + keep_in_english=False means "vocabulary for the
+    transcriber only" (customVocabulary): the bench found it was treated
+    like "keep as is" instead. It must not be listed as keep-verbatim (or
+    at all) in the translation prompt."""
+    glossary = [GlossaryTerm(term="agents", keep_in_english=False, translation=None)]
+    text = _build_system_instruction("es", glossary, [])
+
+    assert '"agents"' not in text
+    assert "Glossary" not in text  # nothing left to list: transcriber-only vocabulary
+
+
 async def test_thinking_level_is_minimal() -> None:
     translator, client = _translator([_FakeResponse(text="ok")])
     await translator.translate("hi", "es", [], [])

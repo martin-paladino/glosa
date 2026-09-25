@@ -55,16 +55,22 @@ def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context
         f"Translate the user's message into {target}. "
         "Reply with ONLY the translation: no quotes, no notes, no explanations.",
     ]
-    if glossary:
+    # keep_in_english=True: never translated (a customVocabulary term the caption keeps verbatim).
+    # translation set (keep_in_english=False): translated to that exact term.
+    # translation=None and not keep_in_english: vocabulary for the transcriber only (recognize and
+    # spell the term correctly); it is not listed below, so the Translator translates it normally.
+    listed_terms = [term for term in glossary if term.keep_in_english or term.translation]
+    if listed_terms:
         lines.append("")
         lines.append(
             "Glossary. Use an entry only when its term, or an obvious inflection of it, appears in the "
-            "segment you are translating; then apply it exactly. Never add a glossary term that is not "
-            "in the segment, and never use one to replace a different word (e.g. do not turn a plain "
-            "noun into a glossary term):"
+            "segment you are translating; then use its translation, inflected (number, gender, article "
+            "agreement) to fit the sentence -- never paste it in verbatim. Never add a glossary term "
+            "that is not in the segment, and never use one to replace a different word (e.g. do not "
+            "turn a plain noun into a glossary term):"
         )
-        for term in glossary:
-            if term.keep_in_english or not term.translation:
+        for term in listed_terms:
+            if term.keep_in_english:
                 lines.append(f'- "{term.term}": leave it as is, untranslated')
             else:
                 lines.append(f'- "{term.term}": translate it as "{term.translation}"')

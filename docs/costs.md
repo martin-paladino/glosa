@@ -6,14 +6,19 @@ measured spending during this vibeathon. None of this is a quote or a
 contract price from Google — it is what the API billed us, and the public
 per-minute rate we billed against.
 
-## Cost per room-hour, by engine (one target language)
+## Cost per room-hour, by engine
 
-Today, each room captions **one source language and one target language**
-live (`glosa/room.py`'s `target_lang()`: "Live Translate takes one target
-per session", and the glossary engine's translation step likewise runs
-once per configured target). A room with two target languages would mean
-running it twice (two `RoomCfg` entries against the same source), which is
-possible but not something we tested at scale.
+A talk's `targets` list can hold more than one language (`PUT
+/api/admin/talks/<id>`'s `targets` field, or the agenda CSV's `destinos`
+column). Live Translate itself still produces only one target per session
+(`glosa/room.py`'s `target_lang()`: "Live Translate takes one target per
+session"), so the **fast** engine covers the first target live and hands
+any extra targets to the same text-translation lane (Flash-Lite) the
+**glossary** engine uses for all of its targets (`glosa/room.py`'s
+`_build_engine`, `glosa/room_text.py`). The table below is the cost of the
+first (or only) target language; each extra target adds one more
+Flash-Lite translation pass over the same transcribed text — see "Extra
+target languages" below.
 
 | Engine | US$/min of audio | US$/hour, one room | Source |
 |---|---|---|---|
@@ -24,13 +29,18 @@ The glossary engine is roughly **3x cheaper per room-hour** than Live
 Translate for one target language, on top of being the only one of the two
 that respects the configured glossary (see `docs/alternatives.md`).
 
-**More target languages, today:** not a live feature. The pre-event spike
-estimated reusing the glossary engine's already-transcribed text for
-extra languages at roughly **US$0.1/h per extra language** (Flash-Lite
-translation only, no new transcription) — this is the spike's own
-recommendation (`spike-latencia/REPORT.md`, 2026-09-23), not a number we
-re-measured or a shipped feature.
-<!-- TODO(controller): confirm once multi-target fan-out (if any) lands, and correct this section if the real per-language marginal cost differs. -->
+**Extra target languages:** a shipped feature — every target beyond the
+first is translated from the already-transcribed source text by a
+`TranslationLane` (Flash-Lite, the same code path the glossary engine uses
+for its own translation), not by opening another Live Translate/
+Transcribe-Live session. There is no separate `Prices` entry for it: its
+per-minute cost is Flash-Lite's token price (`flash_lite_in_per_m`/
+`flash_lite_out_per_m`), the same rate the glossary engine's translation
+step bills at (≈US$0.003/min in the "glossary" row above). This lines up
+with the pre-event spike's own estimate of roughly **US$0.1/h per extra
+language** (`spike-latencia/REPORT.md`, 2026-09-23) — that estimate has
+not been separately re-measured for multiple simultaneous targets in this
+build, but it is the same mechanism the spike proposed, now shipped.
 
 ## Estimating a Nerdearla-scale event
 
@@ -112,18 +122,26 @@ today, and they are not the same mechanism:
    (`glosa/metrics.py`) turns into the room state **`red`**, detail
    `"payment blocked: budget exhausted"` — and the relay **keeps retrying
    every 30 s** in case the project is topped up, rather than giving up.
-2. **Implemented but not yet wired to a UI: an 80%-of-budget warning.**
+2. **Wired to the admin console: an 80%-of-budget warning.**
    `glosa/metrics.py`'s `CostTracker.alert()` returns `"80%"` once spend
-   reaches 80% of `budget_usd`, and `"exhausted"` at or past 100% — this
-   is unit-tested (`tests/test_metrics.py`) but as of this build nothing
-   calls it: no `RoomWorker`/admin-API code constructs a `CostTracker`
-   from `Settings.budget_usd`, so there is no live 80% warning banner yet.
-   Each room's own running spend is visible today at
-   `GET /api/admin/rooms` (`status.cost_usd` per room, real — a running
-   total since the server process started, not per-talk), but nothing
-   aggregates it against `budget_usd` or shows a percentage in the panel
-   yet.
-   <!-- TODO(controller): confirm whether Task 12's admin console wires CostTracker/budget_usd to a visible 80%/exhausted indicator before the event, and update this section to match what actually shipped. -->
+   reaches 80% of `budget_usd`, and `"exhausted"` at or past 100% — this is
+   unit-tested (`tests/test_metrics.py`) and now built into the admin
+   panel's live feed: `GET /api/admin/stream` constructs a `CostTracker`
+   from `Settings.budget_usd` every tick (`glosa/web/admin_stream.py`) and
+   sends its `alert` to the browser. The panel (`admin.html`/`admin.js`)
+   shows a **spend meter** ("Gasto"/"Spend") in the masthead that fills as
+   the event spends its budget and turns into a warning or "over" state at
+   80%/100%; the same alert also adds a row to the **Atención** bar (see
+   below) once it fires, and a room whose engine is actually payment-
+   blocked (case 1, above) is reported as `"exhausted"` regardless of the
+   tracked total. Two different totals coexist: `GET /api/admin/rooms`'s
+   `status.cost_usd` is each `RoomWorker`'s own in-memory counter (resets
+   on a restart), while the panel's spend meter and the 80%/exhausted
+   alert are computed from `db.cost_by_room()` — the durable, all-time sum
+   of the SQLite `costs` table (`glosa/db.py`), summed across every room
+   (`glosa/web/admin_stream.py`) — so the meter keeps counting correctly
+   across a restart even though the per-room API figure does not. See
+   `docs/operator-guide.md`.
 
 Operationally: watch Google AI Studio's own usage/billing page as the
 source of truth for remaining credit, and treat a room going red with

@@ -41,6 +41,8 @@ hook never delays the app's own startup or the autopilot loop.
   - ``admin_events``: the admin panel's in-process broadcaster
     (glosa/web/admin_events.py);
   - ``workers``: room id -> RoomWorker, in config.yaml order;
+  - ``summaries``: Task 17's SummaryStore (one SummaryScheduler task per
+    room, started here and cancelled at shutdown, feeds it);
   - ``station_hub``: the one StationHub (Task 14a: ``source_type: emitter``
     rooms -- glosa/web/station.py's WebSocket handler, EmitterIngest);
   - ``autopilot``: the Autopilot (once started);
@@ -114,6 +116,7 @@ from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
+from glosa.summary import FakeSummarizer, Summarizer, SummaryScheduler, SummaryStore
 from glosa.text.corrector import build_corrected
 from glosa.web import admin_api, admin_listen, admin_stream, pages, public_api, station, test_audio
 from glosa.web.admin_events import AdminEvents
@@ -192,6 +195,18 @@ def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
         return LiveTranslateEngine(cfg, settings.gemini_api_key, clock, price_per_min=prices.lt_per_min)
 
     return live
+
+
+def make_summarizer(settings: Settings) -> FakeSummarizer | Summarizer:
+    """Task 17: the summary poller's model, one shared instance for the
+    whole process (unlike Translator, it is not tied to a run's lifecycle).
+    ``engine_mode: fake`` -> FakeSummarizer, no key needed."""
+    if settings.engine_mode == "fake":
+        return FakeSummarizer()
+    prices = settings.prices
+    return Summarizer(
+        settings.gemini_api_key, price_in_per_m=prices.flash_lite_in_per_m, price_out_per_m=prices.flash_lite_out_per_m
+    )
 
 
 class ReferrerPolicyMiddleware:
@@ -296,6 +311,11 @@ def create_app(
     station_hub = StationHub(clock)
     factory = engine_factory if engine_factory is not None else make_engine_factory(settings, clock)
     workers: dict[str, RoomWorker] = {}
+    # Task 17: one SummaryStore for the process, one Summarizer/FakeSummarizer
+    # shared by every room's SummaryScheduler (started below, one task per
+    # room, mirroring the autopilot task).
+    summaries = SummaryStore()
+    summarizer = make_summarizer(settings)
 
     async def talk_ended(talk: Talk) -> None:
         """Every room's RoomWorker.on_talk_end: tell the admin panel, then
@@ -318,6 +338,7 @@ def create_app(
         db = await asyncio.to_thread(init_db, settings.db_path)
         app.state.db = db
         pilot: asyncio.Task | None = None
+        summary_tasks: list[asyncio.Task] = []
         boot_hooks: set[asyncio.Task] = set()
         try:
             known = {room.id: room for room in await db.get_rooms()}
@@ -344,6 +365,12 @@ def create_app(
             app.state.autopilot = autopilot
             await _boot_rooms(autopilot, workers, db, clock.wall(), on_talk_end, boot_hooks)
             pilot = asyncio.create_task(autopilot.run(autopilot_interval_s), name="autopilot")
+            summary_tasks = [
+                asyncio.create_task(
+                    SummaryScheduler(worker, summaries, summarizer, db, clock).run(), name=f"summary-{room_id}"
+                )
+                for room_id, worker in workers.items()
+            ]
             yield
         finally:
             if pilot is not None:  # first, so no tick starts a room while they stop
@@ -351,6 +378,16 @@ def create_app(
                 (result,) = await asyncio.gather(pilot, return_exceptions=True)
                 if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
                     log.error("autopilot loop failed", exc_info=result)
+            for task in summary_tasks:
+                task.cancel()
+            if summary_tasks:
+                results = await asyncio.gather(*summary_tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                        log.error("summary loop failed", exc_info=result)
+            aclose_summarizer = getattr(summarizer, "aclose", None)
+            if aclose_summarizer is not None:
+                await aclose_summarizer()
             rooms = list(workers.values())
             results = await asyncio.gather(*(w.stop() for w in rooms), return_exceptions=True)
             for worker, result in zip(rooms, results, strict=True):
@@ -368,6 +405,7 @@ def create_app(
     app.state.bus = bus
     app.state.admin_events = admin_events
     app.state.workers = workers
+    app.state.summaries = summaries
     app.state.station_hub = station_hub
     # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
     # invalidates every outstanding admin session cookie.

@@ -228,6 +228,53 @@ async def test_stream_refuses_other_languages_before_touching_the_bus(tmp_path: 
     assert not {key for key in tracks if key[1] in ("pt", "fr", "de-AT")}
 
 
+async def test_summary_endpoint_returns_the_latest_summary_or_404(tmp_path: Path) -> None:
+    """Task 17: GET /api/summary/{slug}/{lang} -- 404 with no summary yet
+    (or an unknown room/lang), 200 with the SummaryStore's shape once
+    glosa/summary.py's SummaryScheduler has written one."""
+    from glosa.summary import Summary
+
+    app = create_app(_settings(tmp_path, rooms=[RoomCfg(id="r1", name="Sala Uno", default_targets=["es"])]))
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            assert (await client.get("/api/summary/r1/es")).status_code == 404
+            assert (await client.get("/api/summary/r1/pt")).status_code == 404  # not a stream_langs() lang
+            assert (await client.get("/api/summary/nope/es")).status_code == 404
+
+            worker = app.state.workers["r1"]
+            app.state.summaries.set(
+                worker.room.id, "es", Summary(talk_id="t1", generated_at=123.0, bullets=["Uno", "Dos"])
+            )
+            ok = await client.get("/api/summary/r1/es")
+
+    assert ok.status_code == 200
+    assert ok.json() == {"talk_id": "t1", "generated_at": 123.0, "bullets": ["Uno", "Dos"]}
+
+
+async def test_summary_endpoint_follows_the_qr_only_token_rule(tmp_path: Path) -> None:
+    """Same rule as /api/stream/{slug}/{lang} (Ruling 56): in qr_only mode a
+    plain slug never resolves a summary either, only the room's token."""
+    from glosa.summary import Summary
+
+    app = create_app(
+        _settings(tmp_path, audience_mode="qr_only", rooms=[RoomCfg(id="r1", name="Sala Uno", default_targets=["es"])])
+    )
+    async with app.router.lifespan_context(app):
+        worker = app.state.workers["r1"]
+        token = worker.room.public_token
+        app.state.summaries.set(worker.room.id, "es", Summary(talk_id="t1", generated_at=1.0, bullets=["a"]))
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            by_slug = await client.get("/api/summary/r1/es")
+            by_token = await client.get(f"/api/summary/{token}/es")
+
+    assert by_slug.status_code == 404
+    assert by_token.status_code == 200
+    assert by_token.json()["bullets"] == ["a"]
+
+
 async def test_pages_and_static_files_are_served(server: str) -> None:
     async with _client(server) as client:
         index = await client.get("/", headers={"Accept-Language": "es"})

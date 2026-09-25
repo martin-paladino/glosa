@@ -67,6 +67,9 @@ log = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+# B-Minor #8: the page embeds the station key (config.wsUrl's ?key=...),
+# same as admin_api.py's _PAGE_HEADERS for the admin panel's station links.
+_PAGE_HEADERS = {"Cache-Control": "no-store"}
 
 # Ruling 38: hex digest length the station key is truncated to.
 STATION_KEY_LEN = 32
@@ -150,7 +153,7 @@ def station_page(room_id: str, request: Request, key: str = ""):
         "now": (now | {"speakers_text": join_names(list(now.get("speakers") or []), ui)}) if now else None,
         "config": _room_js_config(worker, ui, key),
     }
-    return templates.TemplateResponse(request, "station.html", context)
+    return templates.TemplateResponse(request, "station.html", context, headers=_PAGE_HEADERS)
 
 
 @router.get("/emitter/{room_id}", include_in_schema=False)

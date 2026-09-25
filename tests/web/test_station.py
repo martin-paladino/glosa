@@ -209,6 +209,20 @@ def test_station_js_does_not_reconnect_on_4409_and_offers_a_take_over_button() -
     assert "data-retake" in js
 
 
+def test_station_page_sends_cache_control_no_store() -> None:
+    # B-Minor #8: the station page embeds the station key in its JSON
+    # config (config.wsUrl's ?key=...), same as the admin panel embedding
+    # station links -- admin_api.py's pages already send this header
+    # (_PAGE_HEADERS); the station page didn't.
+    client = _client(_make_app())
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    response = client.get(f"/station/r1?key={key}")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_station_page_403_without_a_key() -> None:
     client = _client(_make_app())
     assert client.get("/station/r1").status_code == 403

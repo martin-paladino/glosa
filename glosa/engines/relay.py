@@ -90,7 +90,10 @@ Events
     that are not forwarded (a standby's output, the sessions' own
     ``closed``) keep their ``meta["usd"]`` increments: those ride on the next
     forwarded event, so summing ``usd`` over ``events()`` gives the full cost.
-    The stream ends with exactly one ``closed``, after ``stop()``.
+    The stream ends with exactly one ``closed``, after ``stop()``. Sessions
+    are numbered from ``first_seq`` (1): a room that replaces its relay
+    starts the new one at the old one's ``last_seq + 1``, so session numbers
+    never repeat within a talk.
 
 Stats
     ``stats["rotations"]`` counts planned hand-overs (age or GoAway).
@@ -196,6 +199,7 @@ class SessionRelay:
         buffer_s: float = 2.0,
         jitter: float = 0.25,
         rng: random.Random | None = None,
+        first_seq: int = 1,
     ) -> None:
         if not 0 < standby_at <= force_at:
             raise ValueError(f"need 0 < standby_at <= force_at, got {standby_at} and {force_at}")
@@ -218,7 +222,7 @@ class SessionRelay:
 
         self._started = False
         self._stopped = False
-        self._seq = 0
+        self._seq = first_seq - 1  # the last session number used
         self._active: _Session | None = None
         self._standby: _Session | None = None
         self._connecting: _Session | None = None
@@ -245,6 +249,24 @@ class SessionRelay:
         self._pumps: set[asyncio.Task[Any]] = set()
 
     # ------------------------------------------------------------ public API
+
+    @property
+    def last_seq(self) -> int:
+        """The number of the last session opened (``first_seq - 1`` before any)."""
+        return self._seq
+
+    def take_pending(self) -> list[AudioChunk]:
+        """Hand over the chunks no session has taken yet (while no session
+        can take audio, the last ``buffer_s`` s are held), for a relay that
+        replaces this one (``preload``). They are no longer this relay's."""
+        chunks = list(self._pending)
+        self._pending.clear()
+        return chunks
+
+    def preload(self, chunks: list[AudioChunk]) -> None:
+        """Chunks to send before any fed later (another relay's
+        ``take_pending()``), under the same ``buffer_s`` rule."""
+        self._pending.extendleft(reversed(chunks))
 
     async def start(self) -> None:
         """Begin connecting the first session. Returns at once: audio fed

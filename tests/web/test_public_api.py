@@ -25,6 +25,7 @@ from glosa.clock import RealClock
 from glosa.config import ConfigError, RoomCfg, Settings
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
+from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig
 from glosa.web import app as app_module
 from glosa.web.app import create_app, make_engine_factory
@@ -127,19 +128,23 @@ async def test_rooms_api_lists_both_rooms_with_their_talk(server: str) -> None: 
 
 
 async def test_stream_delivers_captions_for_both_rooms_at_once(server: str) -> None:  # 5.4
-    r1, r2 = await asyncio.wait_for(
+    r1, r2, r2_en = await asyncio.wait_for(
         asyncio.gather(
             _read_sse(server, "/api/stream/r1/es", {"talk", "append", "close"}),
-            _read_sse(server, "/api/stream/r2/es", {"talk", "append", "close"}),
+            _read_sse(server, "/api/stream/r2/es", {"talk", "set"}),
+            _read_sse(server, "/api/stream/r2/en", {"talk", "append", "close"}),
         ),
         timeout=15,
     )
 
     assert r1[0]["type"] == "talk" and r1[0]["data"]["talk_id"].startswith("free-r1-")
     assert any(m["type"] == "append" and "palabra" in m["text"] for m in r1)  # r1: EN talk, ES translation
+    # r2: ES talk, so its free session runs the glossary engine (the recorded
+    # transcribe-live session): the source is "set", the English translated
     assert r2[0]["data"]["talk_id"].startswith("free-r2-")
-    assert any(m["type"] == "append" and "word" in m["text"] for m in r2)  # r2: ES talk, its source track
-    assert all(isinstance(m["id"], int) and m["ts"] for m in r1 + r2)
+    assert any(m["type"] == "set" and "cierto" in m["text"] for m in r2)
+    assert any(m["type"] == "append" and m["text"].startswith("[en] ") for m in r2_en)  # FakeTranslator
+    assert all(isinstance(m["id"], int) and m["ts"] for m in r1 + r2 + r2_en)
 
 
 async def test_stream_resumes_after_last_event_id(server: str) -> None:
@@ -279,6 +284,11 @@ def test_fake_fixture_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     with pytest.raises(ConfigError, match="fake_fixture"):
         make_engine_factory(_settings(tmp_path, fake_fixture=None), clock)
 
+    # the glossary engine's recording (samples/fixtures/tr_es.jsonl) is looked up the same way
+    monkeypatch.setattr(app_module, "CHECKOUT_FAKE_GLOSSARY_FIXTURE", tmp_path / "nowhere" / "tr_es.jsonl")
+    with pytest.raises(ConfigError, match="glossary engine"):
+        make_engine_factory(_settings(tmp_path), clock)
+
 
 async def test_lifespan_logs_a_room_that_fails_to_stop(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     settings = _settings(tmp_path, rooms=[RoomCfg(id="a", name="A"), RoomCfg(id="b", name="B")])
@@ -306,6 +316,39 @@ def test_engine_factory_by_engine_mode(tmp_path: Path) -> None:
     assert isinstance(fake, FakeEngine) and fake.cfg.fixture_path == str(tmp_path / "fast.jsonl")
     assert isinstance(live, LiveTranslateEngine)
     assert live._price_per_min == 0.0368  # Ruling 5: the price comes from Settings.prices
+
+
+def test_engine_factory_by_engine_kind(tmp_path: Path) -> None:
+    """engine "glossary": transcribe-live, or in fake mode the recorded
+    transcribe-live session (fake_fixture is the fast engine's)."""
+    clock = RealClock()
+    cfg = EngineConfig(kind="glossary", source_lang="es", target_lang=None, vocabulary=["Kubernetes"])
+
+    fake = make_engine_factory(_settings(tmp_path), clock)(cfg)
+    live = make_engine_factory(_settings(tmp_path, engine_mode="live"), clock)(cfg)
+
+    assert isinstance(fake, FakeEngine)
+    assert Path(fake.cfg.fixture_path) == (ROOT / "samples" / "fixtures" / "tr_es.jsonl").resolve()
+    assert isinstance(live, TranscribeLiveEngine)
+    assert live.cfg.vocabulary == ["Kubernetes"]
+    assert live._price_per_min == 0.009  # Settings.prices.transcribe_per_min
+
+
+def test_fake_mode_warns_when_the_recording_speaks_another_language(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """engine_mode fake replays one recording per engine: English for fast
+    (lt_en.jsonl), Spanish for glossary (tr_es.jsonl), whatever the talk says."""
+    factory = make_engine_factory(_settings(tmp_path, fake_fixture=None), RealClock())
+
+    with caplog.at_level(logging.WARNING, logger="glosa.web.app"):
+        factory(EngineConfig(kind="glossary", source_lang="es", target_lang=None))
+        factory(EngineConfig(kind="fast", source_lang="en", target_lang="es"))
+        assert caplog.text == ""
+        factory(EngineConfig(kind="glossary", source_lang="en", target_lang=None))
+        factory(EngineConfig(kind="glossary", source_lang="en", target_lang=None))  # once per engine and language
+
+    assert caplog.text.count("replays a recording in es for a talk in en") == 1
 
 
 def test_main_serves_with_a_graceful_shutdown_timeout(monkeypatch: pytest.MonkeyPatch) -> None:

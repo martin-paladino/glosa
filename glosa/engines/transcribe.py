@@ -4,8 +4,9 @@ downstream on the text (glosa.text.translator).
 
 One instance is one Live API session, configured as
 ``inputAudioTranscription{mode: VERBATIM, languageCodes: [source_lang],
-customVocabulary: <up to 100 terms of cfg.vocabulary>}``. VERBATIM because
-SMART mode ignores the custom vocabulary. No response modality is needed.
+customVocabulary: <up to 100 terms of cfg.vocabulary>}``: stripped, and
+deduped ignoring case before the cap. VERBATIM because SMART mode ignores
+the custom vocabulary. No response modality is needed.
 
 What the server sends (probe of samples/es_clip.opus, 2026-09-24; the
 recording is samples/fixtures/tr_es.jsonl):
@@ -33,14 +34,57 @@ Events:
 - a final -> ``source_final``: the segment's final text; it closes the open
   segment. An empty final closes an open segment with ``""`` (the interim
   was not speech after all); with nothing open it is dropped.
+- the closed segment's text is cut off the next segment. In the live runs
+  of 2026-09-24 (T10-wiring, 60 s of es_clip.opus through a RoomWorker,
+  twice), 0.3-0.5 s after 3 of the 8 finals the next segment's first
+  interim was the closed segment's last interim again, alone or with the
+  new words after it. Taken as is, it flashed the old text on screen, got
+  the whole utterance translated twice, and pushed the translation lane's
+  committed prefix (counted in words) past the new segment's own words, so
+  its end went untranslated ("y en Azure."). So after a final, until the
+  first clean interim (one that does not start with it) or the next final
+  (no timer: a stale repeat can come late):
+
+  - an interim that is only (a start of) the closed segment's last
+    interim or final is dropped;
+  - one that starts with the closed segment's text (word by word, each
+    word the one at that position in the last interim or the final, at
+    least as far as the shorter of the two and ``STALE_MIN_WORDS`` words:
+    the server may repeat an interim newer than the last one it sent us)
+    loses that start, and so does the final of that segment if it starts
+    the same way;
+  - a final that only repeats the closed segment, with nothing of a new
+    segment shown, is dropped.
+
+  Cutting or dropping an interim is reversible (the final rewrites the
+  segment); cutting or dropping a final is not, so a final is only touched
+  for a match of ``FINAL_STALE_MIN_WORDS`` (6) words or more. The server's
+  repeats had 8 to 45 words; a speaker repeating a short phrase ("Sí, sí,
+  sí." then "Sí, sí, sí, claro.", "Vamos a ver." twice) keeps it.
+
+  Words are compared ignoring case and punctuation; a token that is only
+  punctuation ("—", "¿") is skipped on both sides, and a repeat may stop
+  in the middle of a word. The third live run showed the server often
+  glues the old text to the new words ("…de teams,the labels",
+  "cluster?O dentro", "Azure.que tienen"), so the cut reads the raw text:
+  the closed segment's words may end at punctuation followed by a letter.
+  The fifth showed it glued with nothing in between ("…en este
+  particularEs", "…particularesa visibilidad"): in an interim, an exact
+  prefix of 6+ words that is the closed segment's last interim or final is
+  cut wherever it ends. Never in a final (finals were never glued): a real
+  repeat that goes on with its last word ("…es desplegar", then "…es
+  desplegarlo en producción.") keeps its final whole.
+  Every drop or cut is logged at INFO. A new segment that really starts
+  with the words of the one before shows up with its next interim (~0.5 s).
 - ``go_away`` with ``meta["time_left_s"]``, like LiveTranslateEngine.
 
 Same contract as LiveTranslateEngine for the relay: ``connect()`` never
 raises (a failure comes out of ``events()`` as ``error`` then ``closed``);
 ``events()`` always ends with exactly one ``closed``; errors are classified
-the same way (402/payment stop, 1007/1008 hard unless the 1008 reason
-mentions GoAway, 429/5xx/network retryable) and nothing is an error after
-our own ``close()`` or on a normal close (1000). ``close()`` is idempotent
+by the same shared policy (``glosa.engines._gemini_live.classify_error``:
+402/payment stop, 1007/1008 hard unless the 1008 reason mentions GoAway,
+429/5xx/network retryable) and nothing is an error after our own
+``close()`` or on a normal close (1000). ``close()`` is idempotent
 and safe during the handshake; call it after ``closed``.
 
 Cost: priced at ``price_per_min`` per minute of audio actually sent (the
@@ -60,21 +104,15 @@ from google.genai import types
 from websockets.exceptions import ConnectionClosed
 
 from glosa.clock import Clock
-from glosa.engines.live_translate import (
-    _GOAWAY_ABORT,
-    _NON_RETRYABLE_WS,
-    _NORMAL_CLOSE,
-    _PAYMENT_HINTS,
-    AUDIO_MIME,
-    _duration_s,
-    _error_code,
-)
+from glosa.engines._gemini_live import AUDIO_MIME, NORMAL_CLOSE, classify_error, duration_s, error_code, vocabulary
 from glosa.models import AudioChunk, EngineConfig, EngineEvent
 
 log = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-transcribe-live"
 MAX_VOCABULARY = 100  # spec: customVocabulary gets at most 100 terms
+STALE_MIN_WORDS = 3  # shorter closed segments are never cut off an interim: "Sí." then "Sí, claro"
+FINAL_STALE_MIN_WORDS = 6  # a final is only cut or dropped for a longer match (see above)
 _BYTES_PER_S = 16000 * 2  # PCM16 mono @ 16 kHz
 
 
@@ -98,11 +136,14 @@ class TranscribeLiveEngine:
         self._ended = False  # events() is over: the session takes no more audio
         self._audio_since_end = False  # audio sent since the last audio_stream_end
         self._open_text: str | None = None  # last interim of the open segment
+        # (last interim, final) of the segment just closed, while its text may come back (see above)
+        self._just_closed: tuple[str, str] | None = None
+        self._cut_open = False  # stale words were cut off the open segment's interims
         self.usd_total = 0.0
         self._usd_unreported = 0.0
 
     def _vocabulary(self) -> list[str] | None:
-        terms = list(dict.fromkeys(t.strip() for t in self.cfg.vocabulary if t.strip()))
+        terms = vocabulary(self.cfg.vocabulary)
         if len(terms) > MAX_VOCABULARY:
             log.warning(
                 "transcribe: %d vocabulary terms, only the first %d are sent", len(terms), MAX_VOCABULARY
@@ -181,7 +222,7 @@ class TranscribeLiveEngine:
                         for event in self._map_message(msg):
                             yield event
             except Exception as exc:
-                if not self._closing and _error_code(exc) != _NORMAL_CLOSE:
+                if not self._closing and error_code(exc) != NORMAL_CLOSE:
                     yield self._classify_error(exc)
         self._ended = True
         yield self._with_usage(EngineEvent(kind="closed", t_recv=self._clock.now()))
@@ -200,48 +241,161 @@ class TranscribeLiveEngine:
             # interim costs nothing (the next one repeats the whole segment),
             # but a segment left open after its final would linger.
             interim = sc.interim_input_transcription
-            if interim is not None and interim.text and interim.text != self._open_text:
-                self._open_text = interim.text
+            text = self._unstale(interim.text) if interim is not None and interim.text else ""
+            if text and text != self._open_text:
+                self._open_text = text
                 lang = interim.language_code or self.cfg.source_lang
-                events.append(
-                    EngineEvent(kind="source_delta", text=interim.text, lang=lang, t_recv=now, meta={"interim": True})
-                )
+                events.append(EngineEvent(kind="source_delta", text=text, lang=lang, t_recv=now, meta={"interim": True}))
             final = sc.input_transcription
-            if final is not None and (final.text or self._open_text is not None):
+            text = self._unstale_final(final.text or "") if final is not None else None
+            if text is not None and (text or self._open_text is not None):
+                self._just_closed = (self._open_text or "", text)
                 self._open_text = None
+                self._cut_open = False
                 lang = final.language_code or self.cfg.source_lang
-                events.append(EngineEvent(kind="source_final", text=final.text or "", lang=lang, t_recv=now))
+                events.append(EngineEvent(kind="source_final", text=text, lang=lang, t_recv=now))
         if msg.go_away is not None:
-            time_left_s = _duration_s(msg.go_away.time_left)
+            time_left_s = duration_s(msg.go_away.time_left)
             events.append(EngineEvent(kind="go_away", t_recv=now, meta={"time_left_s": time_left_s}))
         if events:
             self._with_usage(events[0])
         return events
 
+    def _unstale(self, text: str) -> str:
+        """An interim without the closed segment's text at its start, or ""
+        if that is all it is (see the module docstring)."""
+        if self._just_closed is None:
+            return text
+        cut = _stale_cut(text, self._just_closed)
+        if cut is None:
+            self._just_closed = None  # a clean interim: the server moved on
+            return text
+        if cut >= len(text) or not _count_words(text[cut:]):
+            log.info("transcribe: dropped a stale interim (the closed segment's text): %r", text)
+            return ""
+        log.info("transcribe: cut %d stale words off an interim: %r", _count_words(text[:cut]), text)
+        self._cut_open = True
+        return text[cut:]
+
+    def _unstale_final(self, text: str) -> str | None:
+        """A final without the closed segment's text at its start, if the
+        interims of its segment lost it too; None for a final that only
+        repeats the closed segment."""
+        if self._just_closed is None or not text:
+            return text
+        # never the no-separator cut: in a final it would cut into a real
+        # word ("…es desplegar" then "…es desplegarlo en producción.")
+        cut = _stale_cut(text, self._just_closed, glued=False)
+        if cut is None or _count_words(text[:cut]) < FINAL_STALE_MIN_WORDS:
+            return text  # no final is ever cut for a short match: it may be a real repeat
+        if cut >= len(text) or not _count_words(text[cut:]):
+            if self._open_text is None:
+                log.info("transcribe: dropped a final that repeats the closed segment: %r", text)
+                return None
+            return text
+        if not self._cut_open:
+            return text
+        log.info("transcribe: cut %d stale words off a final: %r", _count_words(text[:cut]), text)
+        return text[cut:]
+
     def _classify_error(self, exc: BaseException) -> EngineEvent:
-        """Same policy as LiveTranslateEngine._classify_error."""
-        code = _error_code(exc)
-        reason = str(exc) or exc.__class__.__name__
-        if code == 402 or any(hint in reason.lower() for hint in _PAYMENT_HINTS):
-            meta: dict = {"code": 402, "retryable": False, "payment": True}
-        elif code in (429, 503) or 500 <= code < 600:
-            meta = {"code": code, "retryable": True}
-        elif code == _GOAWAY_ABORT and "goaway" in reason.lower():
-            meta = {"code": code, "retryable": True}
-        elif 400 <= code < 500 or code in _NON_RETRYABLE_WS:
-            meta = {"code": code, "retryable": False}
-        else:  # 1011 internal error, 1006 abnormal closure, 0 = network/unknown
-            meta = {"code": code, "retryable": True}
-        event = EngineEvent(
-            kind="error",
-            text=f"{exc.__class__.__name__}: {reason}",
-            t_recv=self._clock.now(),
-            meta=meta,
-        )
-        return self._with_usage(event)
+        """glosa.engines._gemini_live.classify_error, carrying the usage."""
+        return self._with_usage(classify_error(exc, self._clock.now()))
 
     def _with_usage(self, event: EngineEvent) -> EngineEvent:
         if self._usd_unreported > 0:
             event.meta["usd"] = self._usd_unreported
             self._usd_unreported = 0.0
         return event
+
+
+_OPENING = "¿¡([{«“"  # punctuation that opens the new words after a glued stale text
+
+
+def _norm(word: str) -> str:
+    """A word for comparing interims: lower case, no punctuation ("" for a
+    token that is only punctuation)."""
+    return "".join(ch for ch in word.casefold() if ch.isalnum())
+
+
+def _count_words(text: str) -> int:
+    return sum(1 for word in text.split() if _norm(word))
+
+
+def _stale_cut(text: str, closed: tuple[str, str], *, glued: bool = True) -> int | None:
+    """Where the closed segment's text ends at the start of ``text``: None
+    if ``text`` does not start with it; ``len(text)`` if ``text`` is only (a
+    start of) its last interim or final, possibly ending mid-word; else the
+    index where the new words start, past any punctuation.
+
+    ``text`` starts with the closed segment's text when, word by word, each
+    of its words is the word at that position in the last interim or in the
+    final, at least as far as the shorter of the two, and at least
+    ``STALE_MIN_WORDS`` words: a stale text can be an interim between the
+    last one the engine sent and the final. The match reads the raw text,
+    since the server glues the old text to the new words ("…de
+    teams,the labels", "cluster?O"); an exact prefix of either of
+    ``FINAL_STALE_MIN_WORDS`` or more words counts even with no space or
+    punctuation before the new words ("…en este particularEs",
+    "…particularesa visibilidad"), while a shorter one never cuts into a
+    word ("cluster" is not the start of "clustering"). ``glued=False``
+    leaves that no-separator case out: finals (never glued in the live
+    runs) must not lose part of a word a real repeat goes on with."""
+    norms = [n for n in map(_norm, text.split()) if n]
+    if not norms:
+        return len(text)  # only punctuation
+    refs = [ref for ref in ([n for n in map(_norm, prev.split()) if n] for prev in closed) if ref]
+    if not refs:
+        return None
+    k = len(norms)
+    for old in refs:
+        if k <= len(old) and norms[: k - 1] == old[: k - 1] and old[k - 1].startswith(norms[-1]):
+            return len(text)
+    # The server's own text, glued as is: an exact prefix, even with no
+    # space or punctuation before the new words ("…particularEs").
+    end = None
+    for prev in closed if glued else ():
+        prev = prev.rstrip()
+        if _count_words(prev) >= FINAL_STALE_MIN_WORDS and len(text) > len(prev) and text.startswith(prev):
+            end = max(end or 0, len(prev))
+    full = max(min(len(ref) for ref in refs), STALE_MIN_WORDS)
+    i, matched = 0, 0
+    while True:
+        nxt = None
+        for word in dict.fromkeys(ref[matched] for ref in refs if matched < len(ref)):
+            nxt = _consume_word(text, i, word)
+            if nxt is not None:
+                break
+        if nxt is None:
+            break
+        i, matched = nxt, matched + 1
+        if matched >= full:
+            end = max(end or 0, i)
+    if end is None:
+        return None
+    while end < len(text) and not text[end].isalnum() and text[end] not in _OPENING:
+        end += 1  # spaces and the closed segment's last punctuation, not "¿" or "¡" of the new one
+    return end
+
+
+def _consume_word(text: str, i: int, word: str) -> int | None:
+    """The index in ``text`` right after ``word`` (``_norm``ed) read from
+    ``i``: punctuation before it or inside it ("k8s.io") and case are
+    skipped; a space inside it or a longer word ("clustering" for
+    "cluster") is no match (None)."""
+    n = len(text)
+    while i < n and not text[i].isalnum():
+        i += 1
+    j = 0
+    while j < len(word):
+        if i >= n or text[i].isspace():
+            return None
+        if text[i].isalnum():
+            folded = text[i].casefold()
+            if not word.startswith(folded, j):
+                return None
+            j += len(folded)
+        i += 1
+    if i < n and text[i].isalnum():
+        return None
+    return i

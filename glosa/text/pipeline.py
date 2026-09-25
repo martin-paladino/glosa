@@ -24,6 +24,11 @@ the ".") and a time cut can land between two deltas of one word
 unless it is only punctuation (the model adding a comma to a word that was
 already cut), which is dropped.
 
+Each segment carries ``t_start``/``t_end`` in the caller's ``t``: when its
+text started arriving and when it was cut. Several cuts made by one call (a
+final with three sentences) share that call's span in proportion to their
+length, so their spans follow each other without overlapping.
+
 Segmenting: on every interim/delta/tick/final the uncommitted tail is run
 through a FRESH Segmenter (from ``segmenter_factory``) fed with the time the
 open segment started, so rewrites of uncommitted words are honoured (e.g. a
@@ -35,8 +40,13 @@ Translation: each segment gets the next ``index`` (0, 1, 2... for the life of
 the pipeline) and one job per target, with the ``context_n`` previous SOURCE
 segments as context. Jobs run FIFO on ``max_inflight`` worker tasks, so at
 most that many translations are in flight across all targets. A failure (an
-exception, or no answer within ``translate_timeout_s``) yields ``text=None``
-and does not hold back the next segment. A per-target reorder buffer calls
+exception, no answer within ``translate_timeout_s``, or an empty
+translation) yields ``text=None`` and does not hold back the next segment.
+A job still queued ``max_age_s`` (8 s) after its cut is not sent at all: it
+yields ``text=None`` too (a caption that late is no use live, and sending it
+would only make the ones behind it later). Every job gets its result
+recorded, whatever happens to its translation, so a target's order never
+waits for an index that will not come. A per-target reorder buffer calls
 ``on_segment`` (sync or async) strictly in index order for each target, one
 call at a time per target; keep it quick, it runs on a translation worker. ``latency_s`` is ``clock.now()`` from the cut to
 the answer, so it includes the time spent queued.
@@ -76,7 +86,9 @@ class TranslatedSegment:
     source: str  # source text of the segment
     text: str | None  # translation (None if it failed: the caller decides, e.g. not to publish)
     latency_s: float  # from when the segment was cut until the translation arrived
-    usd: float
+    usd: float  # spent on it, also when it failed (an empty answer is still billed)
+    t_start: float = 0.0  # caller's t: when the segment's text started arriving
+    t_end: float = 0.0  # caller's t: when it was cut
 
 
 @dataclass
@@ -86,6 +98,8 @@ class _Job:
     source: str
     context: list[str]
     cut_at: float  # clock.now() when the segment was cut
+    t_start: float  # caller's t, see TranslatedSegment
+    t_end: float
 
 
 def _has_alnum(text: str) -> bool:
@@ -105,6 +119,7 @@ class LivePipeline:
         max_inflight: int = 4,
         context_n: int = 2,
         translate_timeout_s: float | None = 10.0,
+        max_age_s: float | None = 8.0,
     ) -> None:
         if max_inflight < 1:
             raise ValueError("max_inflight must be at least 1")
@@ -118,6 +133,7 @@ class LivePipeline:
         self._on_segment = on_segment
         self._max_inflight = max_inflight
         self._translate_timeout_s = translate_timeout_s
+        self._max_age_s = max_age_s
 
         # open utterance
         self._text = ""  # its whole text so far (latest interim, or the deltas appended)
@@ -142,6 +158,7 @@ class LivePipeline:
         self._segments = 0
         self._translated = 0
         self._failed = 0
+        self._dropped = 0
         self._inflight = 0
         self._usd_total = 0.0
         self._latencies: list[float] = []
@@ -223,13 +240,16 @@ class LivePipeline:
     @property
     def stats(self) -> dict:
         """segments: source segments cut; translated/failed: per (segment, target)
-        translation; inflight: translations running now; queued: waiting for a
-        worker; usd_total; latencies_s of the successful translations and their p50.
+        translation; dropped: the failed ones never sent (older than max_age_s);
+        inflight: translations running now; queued: waiting for a worker;
+        usd_total (failed ones included); latencies_s of the successful
+        translations and their p50.
         """
         return {
             "segments": self._segments,
             "translated": self._translated,
             "failed": self._failed,
+            "dropped": self._dropped,
             "inflight": self._inflight,
             "queued": self._queue.qsize(),
             "usd_total": self._usd_total,
@@ -283,10 +303,14 @@ class LivePipeline:
             return
 
         end = 0  # chars of `tail` consumed by the cuts
+        total = sum(len(cut) for cut in cuts)
+        done = 0
         for cut in cuts:
             end = tail.index(cut, end) + len(cut)
+            start_t = opened + (t - opened) * done / total
+            done += len(cut)
             if _has_alnum(cut):
-                self._emit(cut)
+                self._emit(cut, start_t, opened + (t - opened) * done / total)
 
         # map `end` back to a committed position in the utterance's words
         offset = 0
@@ -307,7 +331,7 @@ class LivePipeline:
             offset += len(token) + 1
         raise AssertionError("segment cuts ran past the end of the tail")  # pragma: no cover
 
-    def _emit(self, source: str) -> None:
+    def _emit(self, source: str, t_start: float, t_end: float) -> None:
         index = self._next_index
         self._next_index += 1
         self._segments += 1
@@ -315,7 +339,7 @@ class LivePipeline:
         self._recent_sources.append(source)
         cut_at = self._clock.now()
         for target in self._targets:
-            self._queue.put_nowait(_Job(index, target, source, context, cut_at))
+            self._queue.put_nowait(_Job(index, target, source, context, cut_at, t_start, t_end))
         self._ensure_workers()
 
     # --- translating and delivering ------------------------------------------------------
@@ -357,25 +381,48 @@ class LivePipeline:
     async def _run(self, job: _Job) -> None:
         text: str | None = None
         usd = 0.0
-        self._inflight += 1
         try:
-            async with asyncio.timeout(self._translate_timeout_s):
-                translation = await self._translate(job.source, job.target, self._glossary, job.context)
-            text, usd = translation.text, translation.usd
+            waited = self._clock.now() - job.cut_at
+            if self._max_age_s is not None and waited > self._max_age_s:
+                self._dropped += 1
+                log.warning(
+                    "segment %d -> %s waited %.1fs since its cut: dropped untranslated", job.index, job.target, waited
+                )
+            else:
+                self._inflight += 1
+                try:
+                    async with asyncio.timeout(self._translate_timeout_s):
+                        translation = await self._translate(job.source, job.target, self._glossary, job.context)
+                    usd = translation.usd
+                    text = (translation.text or "").strip() or None
+                finally:
+                    self._inflight -= 1
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if task is not None and task.cancelling():
+                raise  # aclose() / drain(): really cancelled
+            # raised by the translate call itself: just a failure
+            log.warning("translation of segment %d to %s failed: CancelledError", job.index, job.target)
         except Exception as exc:  # noqa: BLE001 - any failure (API error, timeout, bug) -> text=None
             log.warning("translation of segment %d to %s failed: %r", job.index, job.target, exc)
-        finally:
-            self._inflight -= 1
-        latency_s = self._clock.now() - job.cut_at
-        if text is None:
-            self._failed += 1
-        else:
-            self._translated += 1
+        finally:  # every job gets its result, or its target's order would wait for it forever
+            latency_s = self._clock.now() - job.cut_at
             self._usd_total += usd
-            self._latencies.append(latency_s)
-        self._ready[job.target][job.index] = TranslatedSegment(
-            target=job.target, index=job.index, source=job.source, text=text, latency_s=latency_s, usd=usd
-        )
+            if text is None:
+                self._failed += 1
+            else:
+                self._translated += 1
+                self._latencies.append(latency_s)
+            self._ready[job.target][job.index] = TranslatedSegment(
+                target=job.target,
+                index=job.index,
+                source=job.source,
+                text=text,
+                latency_s=latency_s,
+                usd=usd,
+                t_start=job.t_start,
+                t_end=job.t_end,
+            )
         await self._deliver(job.target)
 
     async def _deliver(self, target: str) -> None:

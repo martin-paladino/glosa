@@ -80,3 +80,17 @@ def test_a_cut_reopens_a_fresh_timeout_window() -> None:
     # in-progress text since then has only been open ~0.5s.
     assert seg.tick(10.9) == []
     assert seg.tick(13.6) == ["trailing words"]
+
+
+def test_a_period_inside_a_token_does_not_cut() -> None:
+    seg = Segmenter()
+    out = seg.feed("We run Node.js 3.5 on k8s.io today. Then", t=0.0)
+    assert out == ["We run Node.js 3.5 on k8s.io today."]
+
+
+def test_a_period_that_ends_the_text_so_far_still_cuts() -> None:
+    # What follows is unknown yet: cutting now keeps the latency low (the
+    # LivePipeline carries the rest of a word cut this way to the next segment).
+    seg = Segmenter()
+    assert seg.feed("we moved to version 3.", t=0.0) == ["we moved to version 3."]
+    assert seg.feed("Wait... what?", t=0.0) == ["Wait.", ".", ".", "what?"]

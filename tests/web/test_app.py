@@ -333,3 +333,27 @@ async def test_shutdown_stops_the_shared_mlx_threads_within_the_hook_grace(tmp_p
         assert calls == []
 
     assert sorted(calls) == [("parakeet", HOOK_GRACE_S), ("translategemma", HOOK_GRACE_S)]
+
+
+@pytest.mark.parametrize("engine_mode", ["fake", "local"])
+async def test_export_talk_never_calls_the_api_in_fake_or_local_mode(
+    monkeypatch: pytest.MonkeyPatch, engine_mode: str
+) -> None:  # M3
+    """engine_mode fake (make demo-fake) and local ("no Gemini, no internet,
+    no API key spent") promise no API calls: an agenda talk's end must not
+    reach gemini with whatever key is in .env."""
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build_corrected(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        return "ready"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
+    settings = _FakeSettings()
+    settings.engine_mode = engine_mode
+    events = _FakeAdminEvents()
+    db = _StatusDb()
+
+    await _export_talk(_talk("t1"), db=db, settings=settings, admin_events=events)
+
+    assert calls == [] and db.statuses == [] and events.published == []

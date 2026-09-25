@@ -711,8 +711,8 @@ async def _export_talk(
     yet "pending" too, and the next boot builds them again (``langs``: only
     those, create_app's ``on_export_retry``).
     """
-    if is_free_talk(talk.id):
-        return
+    if is_free_talk(talk.id) or getattr(settings, "engine_mode", None) in ("fake", "local"):
+        return  # M3: fake and local modes promise no API calls
     todo = [lang for lang in (langs if langs is not None else talk.targets) if lang != talk.language]
     for lang in todo:
         await db.set_export_status(talk.id, lang, "pending")

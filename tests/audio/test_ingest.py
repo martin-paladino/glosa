@@ -286,6 +286,70 @@ async def test_station_hub_connect_serializes_concurrent_connections() -> None:
     assert hub.info("r1").connected is False
 
 
+@pytest.mark.asyncio
+async def test_station_hub_standby_connect_is_accepted_when_no_station_is_active() -> None:
+    """Ruling 62: a standby attempt with nobody active becomes the room's
+    one active station, same as a normal connect (normal flow, no 4409)."""
+    hub = StationHub(FakeClock())
+    ws = MagicMock()
+    ws.close = AsyncMock()
+
+    generation = await hub.connect("r1", ws, standby=True)
+
+    assert generation is not None
+    ws.close.assert_not_awaited()
+    assert hub.info("r1").connected is True
+
+
+@pytest.mark.asyncio
+async def test_station_hub_standby_connect_is_rejected_while_active_and_active_is_untouched() -> None:
+    """Ruling 62: a standby attempt while another station is active is
+    closed (4409) at once -- the active one is never touched (not closed,
+    not replaced, its device/level state untouched)."""
+    hub = StationHub(FakeClock())
+    active = MagicMock()
+    active.close = AsyncMock()
+    gen_active = await hub.connect("r1", active)
+    hub.set_hello("r1", "Focusrite Scarlett 2i2")
+    hub.set_level("r1", -12.0)
+
+    standby_attempt = MagicMock()
+    standby_attempt.close = AsyncMock()
+    generation = await hub.connect("r1", standby_attempt, standby=True)
+
+    assert generation is None
+    standby_attempt.close.assert_awaited_once_with(code=4409)
+    active.close.assert_not_awaited()
+
+    info = hub.info("r1")
+    assert info.connected is True
+    assert info.device == "Focusrite Scarlett 2i2"
+    assert info.level_db == -12.0
+
+    # the active connection's own generation is still the one registered --
+    # proof the rejected standby attempt never touched it.
+    hub.disconnect("r1", gen_active)
+    assert hub.info("r1").connected is False
+
+
+@pytest.mark.asyncio
+async def test_station_hub_connect_without_standby_still_replaces_the_active_station() -> None:
+    """Ruling 62: the manual 'Tomar el control' takeover always uses a
+    normal (non-standby) connect, which must keep replacing, even though
+    standby connects now sometimes get rejected."""
+    hub = StationHub(FakeClock())
+    old = MagicMock()
+    old.close = AsyncMock()
+    await hub.connect("r1", old)
+
+    new = MagicMock()
+    generation = await hub.connect("r1", new, standby=False)
+
+    assert generation is not None
+    old.close.assert_awaited_once_with(code=4409)
+    assert hub.info("r1").connected is True
+
+
 def test_station_hub_hello_and_level_update_info() -> None:
     hub = StationHub(FakeClock())
     assert hub.info("r1") == ingest_module.StationInfo(

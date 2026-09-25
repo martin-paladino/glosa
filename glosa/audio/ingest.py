@@ -237,7 +237,7 @@ class StationHub:
             lock = self._connect_locks[room_id] = asyncio.Lock()
         return lock
 
-    async def connect(self, room_id: str, ws: _StationSocket) -> int:
+    async def connect(self, room_id: str, ws: _StationSocket, *, standby: bool = False) -> int | None:
         """Register ``ws`` as ``room_id``'s one active station, closing (4409)
         whatever was connected before (a reload, a second tab, a flaky
         network: the newest connection always wins). Returns a generation
@@ -249,10 +249,28 @@ class StationHub:
         the same (stale) ``state.ws`` before either had written its own
         socket in -- the loser's socket would then never be closed (4409)
         and would keep pushing audio into the queue forever, alongside the
-        winner's."""
+        winner's.
+
+        Ruling 62 (round 2 -- no one-way trap when a station is replaced): a
+        station that just got 4409'd doesn't sit dead until a human clicks
+        "Tomar el control" -- it retries every 10 s as a *standby* attempt
+        (``standby=True``, glosa/web/station.py's ``?standby=1``). A standby
+        attempt is only ever promoted to active when the room has none
+        (then it's exactly a normal connect, below); if one is already
+        active, the standby attempt itself -- not the active one -- is
+        closed with 4409 at once, and returns ``None`` so the caller knows
+        nothing was registered. This is why the loser of a transient
+        replacement (e.g. an admin's preview tab) recovers on its own once
+        that transient client disconnects, instead of leaving the room dark
+        forever. A normal (non-standby) connect, as used by the manual
+        take-over button, is unchanged: it always wins."""
         async with self._connect_lock(room_id):
             state = self._state_of(room_id)
             old = state.ws
+            if standby and old is not None:
+                with contextlib.suppress(Exception):
+                    await ws.close(code=4409)
+                return None
             if old is not None:
                 with contextlib.suppress(Exception):
                     await old.close(code=4409)

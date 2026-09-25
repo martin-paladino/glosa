@@ -209,6 +209,22 @@ def test_station_js_does_not_reconnect_on_4409_and_offers_a_take_over_button() -
     assert "data-retake" in js
 
 
+def test_station_js_retries_as_standby_every_10s_instead_of_sitting_dead() -> None:
+    # Ruling 62 (round 2): a 4409 must not be a one-way trap any more --
+    # station.js has to retry as a ?standby=1 attempt on a fixed 10 s
+    # interval (not the growing backoff used for ordinary drops), so a
+    # transient replacer (e.g. an admin's preview tab) leaving lets the real
+    # station recover on its own. The URL-building/state-transition logic
+    # itself is exercised for real under Node in test_station_js.py (this
+    # file has no DOM/WebSocket harness); this is a code-reading check that
+    # the runtime wiring calls into it.
+    js = (Path(station.__file__).parent / "static" / "js" / "station.js").read_text()
+    assert "standby=1" in js or '"standby"' in js
+    assert "10000" in js  # STANDBY_RETRY_MS
+    assert "scheduleStandbyRetry" in js
+    assert "stationWsUrl" in js and "nextStationAction" in js
+
+
 def test_station_page_sends_cache_control_no_store() -> None:
     # B-Minor #8: the station page embeds the station key in its JSON
     # config (config.wsUrl's ?key=...), same as the admin panel embedding
@@ -327,6 +343,47 @@ def test_ws_second_connection_replaces_the_first_with_4409() -> None:
             assert excinfo.value.code == 4409
         assert app.state.station_hub.info("r1").connected is False
     # closing the (already-superseded) ws1 context must not un-set that.
+
+
+def test_ws_standby_connection_is_rejected_with_4409_while_active_and_active_keeps_working() -> None:
+    """Ruling 62: a ?standby=1 attempt is closed with 4409 at once while a
+    station is already active -- and that active station is never touched,
+    unlike a normal second connection (which always replaces it)."""
+    app = _make_app()
+    client = TestClient(app)
+    hub: StationHub = app.state.station_hub
+
+    with client.websocket_connect(_ws_url()) as ws1:
+        ws1.send_json({"type": "hello", "device": "Focusrite Scarlett 2i2", "version": 1})
+        assert ws1.receive_json() == {"type": "ack"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect(_ws_url() + "&standby=1") as ws2:
+                ws2.receive_bytes()
+        assert excinfo.value.code == 4409
+
+        # the active station was never touched by the rejected standby
+        # attempt: same device, still connected, still able to stream.
+        assert hub.info("r1").connected is True
+        assert hub.info("r1").device == "Focusrite Scarlett 2i2"
+        ws1.send_bytes(b"\x00" * CHUNK_BYTES)
+
+    assert hub.queue("r1").qsize() == 1
+
+
+def test_ws_standby_connection_is_accepted_when_no_station_is_active() -> None:
+    """Ruling 62: with nobody active, ?standby=1 is accepted exactly like a
+    normal connect (this is how the real station recovers on its own once
+    a transient replacer -- e.g. an admin's preview tab -- disconnects)."""
+    app = _make_app()
+    client = TestClient(app)
+    hub: StationHub = app.state.station_hub
+
+    with client.websocket_connect(_ws_url() + "&standby=1") as ws:
+        ws.send_json({"type": "hello", "device": "Focusrite Scarlett 2i2", "version": 1})
+        assert ws.receive_json() == {"type": "ack"}
+        assert hub.info("r1").connected is True
+        assert hub.info("r1").device == "Focusrite Scarlett 2i2"
 
 
 def test_ws_hello_and_level_update_the_hub_and_are_acked() -> None:

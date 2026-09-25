@@ -16,6 +16,34 @@
 //     single big "Start" button (the gesture the browser requires);
 //   - an on-screen explanation instead of a silent failure when the page
 //     is not in a secure context (getUserMedia's hard requirement).
+
+// ---- pure helpers (Ruling 62, round 2) -----------------------------------
+// Kept outside the IIFE below on purpose: neither touches the DOM, a
+// WebSocket or any timer, so tests/web/test_station_js.py can exercise them
+// directly under Node (tests/web/station_js_harness.js) without stubbing
+// WebSocket/AudioContext/getUserMedia -- station.js has no other JS test
+// harness (unlike room.js/room_js_harness.js).
+
+// Builds the station's WS URL, optionally as a standby attempt
+// (?standby=1) rather than a normal (takeover) connect -- see
+// StationHub.connect in glosa/audio/ingest.py.
+function stationWsUrl(wsUrl, origin, standby) {
+  const url = new URL(wsUrl, origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (standby) url.searchParams.set("standby", "1");
+  return url.toString();
+}
+
+// What a closed connection should do next. 4409 always means "another
+// client is, or just became, the active station" -- go to (or stay in)
+// standby and retry in STANDBY_RETRY_MS, never the growing-backoff
+// reconnect (two stations reconnecting normally would just keep
+// superseding each other every ~0.5 s forever, mixing both microphones).
+// Anything else is an ordinary disconnect: the existing growing backoff.
+function nextStationAction(closeCode) {
+  return closeCode === 4409 ? "standby" : "reconnect";
+}
+
 (() => {
   "use strict";
 
@@ -27,7 +55,7 @@
   const FRAME_MS = 100;
   const RECONNECT_MIN_MS = 500;
   const RECONNECT_MAX_MS = 8000;
-  const REPLACED_CODE = 4409; // StationHub.connect: another client took over this room
+  const STANDBY_RETRY_MS = 10000; // Ruling 62: fixed interval while in standby, not exponential backoff
   const BUFFER_MAX_FRAMES = 50; // 5 s at 100 ms/frame
   const LEVEL_REPORT_MS = 1000;
   const MIN_DB = -60; // meter floor; EnergyVad's own floor (-96) is quieter than any UI needs
@@ -98,14 +126,35 @@
     if (badgeText) badgeText.textContent = text;
   }
 
-  // ---- replaced by another station (B-I4) ---------------------------------------
-  // Two stations open for the same room supersede each other every reconnect
-  // (~0.5s), mixing both microphones forever, so a 4409 close must NOT go
-  // through the normal reconnect path -- it needs a person to decide.
+  // ---- replaced by another station (B-I4, round 2: Ruling 62) -------------------
+  // Two stations open for the same room reconnecting *normally* would supersede
+  // each other every ~0.5s, mixing both microphones forever, so a 4409 close
+  // must NOT go through the normal reconnect path. Round 1 stopped there and
+  // waited for a person to click "Tomar el control". Round 2: instead of
+  // sitting dead, it retries every STANDBY_RETRY_MS as a *standby* attempt
+  // (?standby=1) -- the server only promotes it if the room has no active
+  // station, so this can never fight the winner; it just quietly recovers on
+  // its own once a transient replacer (e.g. an admin's preview tab) leaves.
+  // The manual button still does a normal (takeover) connect, unchanged.
+
+  let standbyTimer = null;
 
   function showReplaced() {
     if (replacedBlock) replacedBlock.hidden = false;
-    setBadge("degraded", T.station_replaced_title || "Replaced by another station");
+    setBadge("degraded", T.station_standby || "Standby: another station is active");
+  }
+
+  function scheduleStandbyRetry() {
+    if (standbyTimer) return;
+    standbyTimer = setTimeout(() => {
+      standbyTimer = null;
+      connectWs(true);
+    }, STANDBY_RETRY_MS);
+  }
+
+  function cancelStandbyRetry() {
+    if (standbyTimer) clearTimeout(standbyTimer);
+    standbyTimer = null;
   }
 
   function hideReplaced() {
@@ -168,12 +217,14 @@
     }
   }
 
-  function connectWs() {
+  function connectWs(standby = false) {
     if (!cfg.wsUrl) return;
-    setBadge("idle", T.station_audio_connecting || "Connecting…");
-    const url = new URL(cfg.wsUrl, location.href);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(url);
+    cancelStandbyRetry();
+    setBadge(
+      standby ? "degraded" : "idle",
+      standby ? (T.station_standby || "Standby: another station is active") : (T.station_audio_connecting || "Connecting…")
+    );
+    ws = new WebSocket(stationWsUrl(cfg.wsUrl, location.href, standby));
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -191,13 +242,15 @@
       if (msg && msg.type === "reload") location.reload();
     };
     ws.onclose = (event) => {
-      // B-I4: a 4409 means another client just took over this room's
-      // station -- reconnecting here would only supersede it right back,
-      // and the two clients would keep trading places every ~0.5s forever,
-      // each flushing its own buffered audio into the mix. Stop and let a
-      // person decide with the "take over" button instead.
-      if (event && event.code === REPLACED_CODE) {
+      // Ruling 62 (round 2): a 4409 means another client is (or just
+      // became) this room's active station -- reconnecting normally here
+      // would only supersede it right back, so instead of a growing
+      // backoff this goes to standby and retries every STANDBY_RETRY_MS,
+      // only ever promoted by the server once nobody else is active. The
+      // "take over" button still bypasses this with a normal connect.
+      if (nextStationAction(event && event.code) === "standby") {
         showReplaced();
+        scheduleStandbyRetry();
         return;
       }
       scheduleReconnect();
@@ -342,7 +395,7 @@
     retakeButton.addEventListener("click", () => {
       hideReplaced();
       reconnectDelay = 0;
-      connectWs(); // deliberate: closes the other client's socket in turn
+      connectWs(); // normal (non-standby) connect: deliberate, closes the other client's socket in turn
     });
   }
 

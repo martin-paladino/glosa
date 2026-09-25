@@ -20,8 +20,14 @@ screens -- all unattended, all day, reloadable from the admin panel.
     once and ``{"type": "level", "db": ...}` once a second; the server
     replies ``{"type": "ack"}`` and, for a remote reload, sends
     ``{"type": "reload"}`` unprompted. A missing/wrong ``key`` closes the
-    handshake with code 4401 (Ruling 38); a second connection for the same
-    room replaces the first, which is closed with 4409 (StationHub.connect).
+    handshake with code 4401 (Ruling 38); a second (normal) connection for
+    the same room replaces the first, which is closed with 4409
+    (StationHub.connect). ``?standby=1`` (Ruling 62, round 2): a station
+    that was just replaced retries as a standby attempt instead of sitting
+    dead -- accepted (promoted to active, normal flow) only if the room has
+    no active station right now, otherwise the standby attempt itself is
+    the one closed with 4409, leaving whatever is active untouched. The
+    manual "Tomar el control" button always does a normal connect.
   - ``POST /api/admin/rooms/{room_id}/station/reload`` (``api_router``:
     ``require_admin`` + ``require_csrf_header``, glosa/web/auth.py -- same
     dependencies as ``glosa/web/admin_api.py``'s ``api_router``, a separate
@@ -219,8 +225,15 @@ async def station_ws(websocket: WebSocket, room_id: str) -> None:
         await websocket.close(code=WS_INVALID_KEY)
         return
 
+    standby = websocket.query_params.get("standby") == "1"
     await websocket.accept()
-    generation = await hub.connect(room_id, websocket)
+    generation = await hub.connect(room_id, websocket, standby=standby)
+    if generation is None:
+        # Ruling 62: a standby attempt while another station is already
+        # active is closed (4409) by hub.connect() itself, above, without
+        # touching that active connection -- nothing to register or clean
+        # up here.
+        return
     buffer = bytearray()
     try:
         while True:

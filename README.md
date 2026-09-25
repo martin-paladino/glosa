@@ -41,7 +41,11 @@ in English and Spanish, each with a live translation into the other
 language. `make demo` / plain `docker compose up` run Gemini for real
 (costs about $0.10 for the two ~90s clips); `make demo-fake` /
 `GLOSA_CONFIG=config.demo-fake.yaml docker compose up` do the same with no
-API key and no cost, replaying a recorded session instead.
+API key and no cost, replaying a recorded session instead. `make demo`'s
+clips play once (~90s) and then the room goes idle; `make demo-fake`'s
+rooms loop their ~90s clip instead, so it keeps captioning if you take a
+minute to look around. Either way, `/admin`'s room drawer has
+**"Probar con audio"** to replay a clip (or an uploaded one) on demand.
 
 To run your own event instead of the demo:
 
@@ -195,6 +199,13 @@ flowchart LR
   only accepts a room's QR link (`/s/{token}`), for an event that doesn't
   want its room list guessable or public — in this mode nothing public
   reveals a room's slug↔token mapping or its captions without the token.
+- **"¿Qué me perdí?" ("What did I miss?")** (room page, while a talk is
+  live): a rolling 3-5 bullet recap of the last few minutes of captions
+  per language, refreshed every 3 min (`GET /api/summary/{slug}/{lang}`,
+  `gemini-3.5-flash-lite`) — for someone who just sat down.
+- **Picture-in-Picture captions** (desktop, Chrome/Edge): a small
+  always-on-top window with the last few caption lines, so captions stay
+  visible while reading something else in another window.
 - **Overlay for OBS/vMix** (`/overlay/{room}?lang=es&lines=2&size=48`, add
   `&logo=1` for the event logo): a transparent, chrome-less page a vMix
   browser input or an OBS browser source reads, burning translated
@@ -216,6 +227,15 @@ flowchart LR
   estación"**. See
   [`docs/operator-guide.md`](docs/operator-guide.md) for the full button
   reference.
+- **Jev talk-mismatch suggestion** ("¿Pasar a manual?", admin only, needs
+  `TYPESAFE_API_KEY`): a panel notice — never automatic — when the last
+  minute of an auto-mode room's captions stops matching the scheduled
+  agenda talk.
+- **The silence gate** stops billing audio between talks and during long
+  pauses — see [Scaling](#scaling).
+- **Local mode** runs captioning and translation 100% on-device with no
+  cloud API (Apple silicon only) — see [Local mode
+  (no cloud)](#local-mode-no-cloud).
 - **Docker**: `docker-compose.yml` builds the same app, mounts `.env` and
   persists `data/` (the SQLite database: agenda, captions, events, cost)
   across restarts.

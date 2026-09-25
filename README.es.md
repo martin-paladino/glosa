@@ -42,7 +42,12 @@ velocidad real, en inglés y español, cada una con una traducción en vivo al
 otro idioma. `make demo` / `docker compose up` a secas corren Gemini de
 verdad (cuesta unos US$0,10 por los dos clips de ~90 s); `make demo-fake` /
 `GLOSA_CONFIG=config.demo-fake.yaml docker compose up` hacen lo mismo sin
-API key y sin costo, repitiendo una sesión grabada en su lugar.
+API key y sin costo, repitiendo una sesión grabada en su lugar. Los clips
+de `make demo` se reproducen una sola vez (~90 s) y después la sala queda
+inactiva; las salas de `make demo-fake` repiten su clip de ~90 s en loop,
+así que siguen subtitulando aunque te tomes un minuto en mirar todo. En
+cualquier caso, el panel de `/admin` tiene **"Probar con audio"** para
+volver a reproducir un clip (o uno subido) cuando quieras.
 
 Para correr tu propio evento en vez de la demo:
 
@@ -204,6 +209,14 @@ flowchart LR
   sala (`/s/{token}`), para un evento que no quiere su lista de salas
   adivinable o pública — en este modo nada público revela la
   correspondencia sala→token ni sus subtítulos sin el token.
+- **"¿Qué me perdí?"** (página de la sala, mientras hay una charla en
+  vivo): un resumen rotativo de 3 a 5 puntos de los últimos minutos de
+  subtítulos por idioma, actualizado cada 3 min (`GET
+  /api/summary/{slug}/{lang}`, `gemini-3.5-flash-lite`) — para quien
+  recién se sentó.
+- **Subtítulos en Picture-in-Picture** (escritorio, Chrome/Edge): una
+  ventanita siempre-arriba con los últimos subtítulos, para seguir
+  leyéndolos mientras mirás otra cosa en otra ventana.
 - **Overlay para OBS/vMix** (`/overlay/{sala}?lang=es&lines=2&size=48`,
   agregá `&logo=1` para el logo del evento): una página transparente, sin
   chrome, que una entrada de navegador de vMix o una fuente de navegador
@@ -225,6 +238,15 @@ flowchart LR
   estación de sala — su estado de conexión, link, código QR y **"Recargar
   estación"**. Ver [`docs/operator-guide.md`](docs/operator-guide.md) (en
   inglés) para la referencia completa de botones.
+- **Sugerencia de Jev de charla no coincidente** ("¿Pasar a manual?", solo
+  admin, necesita `TYPESAFE_API_KEY`): un aviso en el panel — nunca
+  automático — cuando el último minuto de subtítulos de una sala en modo
+  auto deja de corresponder a la charla agendada.
+- **El silence gate** deja de facturar audio entre charlas y durante
+  silencios largos — ver [Escala](#escala).
+- **El modo local** subtitula y traduce 100% en el dispositivo, sin API en
+  la nube (solo Apple silicon) — ver [Modo local
+  (sin nube)](#modo-local-sin-nube).
 - **Docker**: `docker-compose.yml` construye la misma app, monta `.env` y
   persiste `data/` (la base SQLite: agenda, subtítulos, eventos, costo) a
   través de reinicios.

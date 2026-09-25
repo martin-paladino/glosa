@@ -1,0 +1,250 @@
+{"t": 0.009, "lang": "en", "type": "talk", "data": {"talk_id": "en_clip-fast", "title": "Bench en_clip (fast)", "speakers": [], "language": "en"}}
+{"t": 0.009, "lang": "es", "type": "talk", "data": {"talk_id": "en_clip-fast", "title": "Bench en_clip (fast)", "speakers": [], "language": "en"}}
+{"t": 0.533, "lang": "en", "type": "status", "data": {"state": "green"}}
+{"t": 0.533, "lang": "es", "type": "status", "data": {"state": "green"}}
+{"t": 2.63, "lang": "en", "type": "append", "seg": 0, "text": "So, what does that then"}
+{"t": 2.816, "lang": "es", "type": "append", "seg": 0, "text": "Entonces, \u00bfqu\u00e9"}
+{"t": 3.269, "lang": "en", "type": "append", "seg": 0, "text": " actually mean?"}
+{"t": 3.269, "lang": "en", "type": "close", "seg": 0}
+{"t": 3.269, "lang": "en", "type": "append", "seg": 1, "text": " Like,"}
+{"t": 3.514, "lang": "es", "type": "append", "seg": 0, "text": " significa eso realmente?"}
+{"t": 3.514, "lang": "es", "type": "close", "seg": 0}
+{"t": 4.263, "lang": "en", "type": "append", "seg": 1, "text": " what do we"}
+{"t": 4.513, "lang": "es", "type": "append", "seg": 1, "text": " O sea,"}
+{"t": 5.28, "lang": "en", "type": "append", "seg": 1, "text": " need in order to"}
+{"t": 5.523, "lang": "es", "type": "append", "seg": 1, "text": " \u00bfqu\u00e9 necesitamos"}
+{"t": 6.342, "lang": "en", "type": "append", "seg": 1, "text": " build that kind of world where"}
+{"t": 6.52, "lang": "es", "type": "append", "seg": 1, "text": " para construir ese"}
+{"t": 7.29, "lang": "en", "type": "append", "seg": 1, "text": " we can tap into the"}
+{"t": 7.533, "lang": "es", "type": "append", "seg": 1, "text": " tipo de mundo donde"}
+{"t": 8.341, "lang": "en", "type": "append", "seg": 1, "text": " power from these kind of"}
+{"t": 8.533, "lang": "es", "type": "append", "seg": 1, "text": " podamos aprovechar"}
+{"t": 9.291, "lang": "en", "type": "append", "seg": 1, "text": " agents."}
+{"t": 9.291, "lang": "en", "type": "close", "seg": 1}
+{"t": 9.291, "lang": "en", "type": "append", "seg": 2, "text": " So"}
+{"t": 9.523, "lang": "es", "type": "append", "seg": 1, "text": " el poder de este tipo"}
+{"t": 10.269, "lang": "en", "type": "append", "seg": 2, "text": " agents,"}
+{"t": 10.525, "lang": "es", "type": "append", "seg": 1, "text": " de agentes."}
+{"t": 10.525, "lang": "es", "type": "close", "seg": 1}
+{"t": 10.525, "lang": "es", "type": "append", "seg": 2, "text": " Entonces,"}
+{"t": 11.339, "lang": "en", "type": "append", "seg": 2, "text": " requirements are fundamentally"}
+{"t": 11.528, "lang": "es", "type": "append", "seg": 2, "text": " los requisitos"}
+{"t": 12.29, "lang": "en", "type": "append", "seg": 2, "text": " different from humans."}
+{"t": 12.29, "lang": "en", "type": "close", "seg": 2}
+{"t": 12.525, "lang": "es", "type": "append", "seg": 2, "text": " son fundamentalmente"}
+{"t": 13.262, "lang": "en", "type": "append", "seg": 3, "text": " I think we can"}
+{"t": 13.516, "lang": "es", "type": "append", "seg": 2, "text": " diferentes a los"}
+{"t": 14.199, "lang": "en", "type": "append", "seg": 3, "text": " maybe intuitively"}
+{"t": 14.543, "lang": "es", "type": "append", "seg": 2, "text": " de los humanos."}
+{"t": 14.543, "lang": "es", "type": "close", "seg": 2}
+{"t": 15.293, "lang": "en", "type": "append", "seg": 3, "text": " realize that."}
+{"t": 15.293, "lang": "en", "type": "close", "seg": 3}
+{"t": 15.293, "lang": "en", "type": "append", "seg": 4, "text": " Like"}
+{"t": 15.521, "lang": "es", "type": "append", "seg": 3, "text": " Creo que tal vez intuitivamente"}
+{"t": 16.218, "lang": "en", "type": "append", "seg": 4, "text": " agents are"}
+{"t": 16.53, "lang": "es", "type": "append", "seg": 3, "text": " nos damos cuenta"}
+{"t": 17.292, "lang": "en", "type": "append", "seg": 4, "text": " different than humans."}
+{"t": 17.292, "lang": "en", "type": "close", "seg": 4}
+{"t": 17.527, "lang": "es", "type": "append", "seg": 3, "text": " de eso."}
+{"t": 17.527, "lang": "es", "type": "close", "seg": 3}
+{"t": 17.527, "lang": "es", "type": "append", "seg": 4, "text": " Como"}
+{"t": 18.353, "lang": "en", "type": "append", "seg": 5, "text": " AI is different than humans."}
+{"t": 18.353, "lang": "en", "type": "close", "seg": 5}
+{"t": 18.524, "lang": "es", "type": "append", "seg": 4, "text": " que los agentes son diferentes"}
+{"t": 19.258, "lang": "en", "type": "append", "seg": 6, "text": " But like what does"}
+{"t": 19.53, "lang": "es", "type": "append", "seg": 4, "text": " a los humanos."}
+{"t": 19.53, "lang": "es", "type": "close", "seg": 4}
+{"t": 20.33, "lang": "en", "type": "append", "seg": 6, "text": " it actually mean"}
+{"t": 20.523, "lang": "es", "type": "append", "seg": 5, "text": " La IA es diferente"}
+{"t": 21.278, "lang": "en", "type": "append", "seg": 6, "text": " in practice?"}
+{"t": 21.278, "lang": "en", "type": "close", "seg": 6}
+{"t": 21.53, "lang": "es", "type": "append", "seg": 5, "text": " a los humanos."}
+{"t": 21.53, "lang": "es", "type": "close", "seg": 5}
+{"t": 21.53, "lang": "es", "type": "append", "seg": 6, "text": " Pero,"}
+{"t": 22.259, "lang": "en", "type": "append", "seg": 7, "text": " Like we obviously"}
+{"t": 22.528, "lang": "es", "type": "append", "seg": 6, "text": " \u00bfqu\u00e9 significa eso"}
+{"t": 23.321, "lang": "en", "type": "append", "seg": 7, "text": " know, you know, I'm"}
+{"t": 23.528, "lang": "es", "type": "append", "seg": 6, "text": " en la pr\u00e1ctica?"}
+{"t": 23.528, "lang": "es", "type": "close", "seg": 6}
+{"t": 24.276, "lang": "en", "type": "append", "seg": 7, "text": " all flesh and blood"}
+{"t": 24.532, "lang": "es", "type": "append", "seg": 7, "text": " Como obviamente sabemos,"}
+{"t": 25.3, "lang": "en", "type": "append", "seg": 7, "text": " and you know, I can I can"}
+{"t": 25.528, "lang": "es", "type": "append", "seg": 7, "text": " ya sabes, soy"}
+{"t": 26.283, "lang": "en", "type": "append", "seg": 7, "text": " go here, interact with"}
+{"t": 26.553, "lang": "es", "type": "append", "seg": 7, "text": " de carne y hueso"}
+{"t": 27.297, "lang": "en", "type": "append", "seg": 7, "text": " people and so forth and"}
+{"t": 27.529, "lang": "es", "type": "append", "seg": 7, "text": " y, ya sabes, puedo"}
+{"t": 28.316, "lang": "en", "type": "append", "seg": 7, "text": " agent, AI agent"}
+{"t": 28.526, "lang": "es", "type": "append", "seg": 7, "text": " ir aqu\u00ed, interactuar"}
+{"t": 29.33, "lang": "en", "type": "append", "seg": 7, "text": " is not"}
+{"t": 29.517, "lang": "es", "type": "append", "seg": 7, "text": " con la gente y dem\u00e1s,"}
+{"t": 30.295, "lang": "en", "type": "append", "seg": 7, "text": " that."}
+{"t": 30.295, "lang": "en", "type": "close", "seg": 7}
+{"t": 30.514, "lang": "es", "type": "append", "seg": 7, "text": " y el agente, el agente"}
+{"t": 31.298, "lang": "en", "type": "append", "seg": 8, "text": " Um, they are"}
+{"t": 31.515, "lang": "es", "type": "append", "seg": 7, "text": " de IA no es eso."}
+{"t": 31.515, "lang": "es", "type": "close", "seg": 7}
+{"t": 32.315, "lang": "en", "type": "append", "seg": 8, "text": " differences."}
+{"t": 32.315, "lang": "en", "type": "close", "seg": 8}
+{"t": 32.315, "lang": "en", "type": "append", "seg": 9, "text": " Some of"}
+{"t": 32.517, "lang": "es", "type": "append", "seg": 8, "text": " Este, hay"}
+{"t": 33.26, "lang": "en", "type": "append", "seg": 9, "text": " them are"}
+{"t": 33.522, "lang": "es", "type": "append", "seg": 8, "text": " diferencias."}
+{"t": 33.522, "lang": "es", "type": "close", "seg": 8}
+{"t": 33.522, "lang": "es", "type": "append", "seg": 9, "text": " Algunas"}
+{"t": 34.266, "lang": "en", "type": "append", "seg": 9, "text": " agents and"}
+{"t": 34.523, "lang": "es", "type": "append", "seg": 9, "text": " son agentes"}
+{"t": 35.287, "lang": "en", "type": "append", "seg": 9, "text": " humans are"}
+{"t": 35.52, "lang": "es", "type": "append", "seg": 9, "text": " y los humanos son"}
+{"t": 36.249, "lang": "en", "type": "append", "seg": 9, "text": " built or"}
+{"t": 36.538, "lang": "es", "type": "append", "seg": 9, "text": " construidos o"}
+{"t": 37.388, "lang": "en", "type": "append", "seg": 9, "text": " better at certain"}
+{"t": 37.515, "lang": "es", "type": "append", "seg": 9, "text": " mejores en ciertas"}
+{"t": 38.303, "lang": "en", "type": "append", "seg": 9, "text": " tasks and that's"}
+{"t": 38.516, "lang": "es", "type": "append", "seg": 9, "text": " tareas y eso"}
+{"t": 39.334, "lang": "en", "type": "append", "seg": 9, "text": " something that we have to take"}
+{"t": 39.524, "lang": "es", "type": "append", "seg": 9, "text": " es algo que tenemos que"}
+{"t": 40.289, "lang": "en", "type": "append", "seg": 9, "text": " into account"}
+{"t": 40.529, "lang": "es", "type": "append", "seg": 9, "text": " tener en cuenta"}
+{"t": 41.33, "lang": "en", "type": "append", "seg": 9, "text": " when we're thinking about"}
+{"t": 41.522, "lang": "es", "type": "append", "seg": 9, "text": " cuando pensamos"}
+{"t": 42.287, "lang": "en", "type": "append", "seg": 9, "text": " what type of agents"}
+{"t": 42.521, "lang": "es", "type": "append", "seg": 9, "text": " en qu\u00e9 tipo de agentes"}
+{"t": 43.339, "lang": "en", "type": "append", "seg": 9, "text": " and how do we build"}
+{"t": 43.518, "lang": "es", "type": "append", "seg": 9, "text": " y c\u00f3mo construimos"}
+{"t": 44.29, "lang": "en", "type": "append", "seg": 9, "text": " "}
+{"t": 44.29, "lang": "en", "type": "close", "seg": 9}
+{"t": 44.29, "lang": "en", "type": "append", "seg": 10, "text": "agents and how do we"}
+{"t": 44.515, "lang": "es", "type": "append", "seg": 9, "text": " agentes y c\u00f3mo"}
+{"t": 45.288, "lang": "en", "type": "append", "seg": 10, "text": " manage agents."}
+{"t": 45.288, "lang": "en", "type": "close", "seg": 10}
+{"t": 45.528, "lang": "es", "type": "append", "seg": 9, "text": " "}
+{"t": 45.528, "lang": "es", "type": "close", "seg": 9}
+{"t": 45.528, "lang": "es", "type": "append", "seg": 10, "text": "gestionamos agentes."}
+{"t": 45.528, "lang": "es", "type": "close", "seg": 10}
+{"t": 46.255, "lang": "en", "type": "append", "seg": 11, "text": " in an infrastructure"}
+{"t": 46.524, "lang": "es", "type": "append", "seg": 11, "text": " en un espacio"}
+{"t": 47.311, "lang": "en", "type": "append", "seg": 11, "text": " specifically."}
+{"t": 47.311, "lang": "en", "type": "close", "seg": 11}
+{"t": 47.523, "lang": "es", "type": "append", "seg": 11, "text": " de infraestructura espec\u00edficamente."}
+{"t": 47.523, "lang": "es", "type": "close", "seg": 11}
+{"t": 48.283, "lang": "en", "type": "append", "seg": 12, "text": " Um,"}
+{"t": 48.529, "lang": "es", "type": "append", "seg": 12, "text": " Este,"}
+{"t": 49.302, "lang": "en", "type": "append", "seg": 12, "text": " so what are like the"}
+{"t": 49.525, "lang": "es", "type": "append", "seg": 12, "text": " entonces, \u00bfcu\u00e1les"}
+{"t": 50.248, "lang": "en", "type": "append", "seg": 12, "text": " capabilities of"}
+{"t": 50.523, "lang": "es", "type": "append", "seg": 12, "text": " son las capacidades"}
+{"t": 51.255, "lang": "en", "type": "append", "seg": 12, "text": " humans versus"}
+{"t": 51.52, "lang": "es", "type": "append", "seg": 12, "text": " de los humanos frente"}
+{"t": 52.266, "lang": "en", "type": "append", "seg": 12, "text": " agents?"}
+{"t": 52.266, "lang": "en", "type": "close", "seg": 12}
+{"t": 52.266, "lang": "en", "type": "append", "seg": 13, "text": " Because again, as I"}
+{"t": 52.516, "lang": "es", "type": "append", "seg": 12, "text": " a los agentes?"}
+{"t": 52.516, "lang": "es", "type": "close", "seg": 12}
+{"t": 52.517, "lang": "es", "type": "append", "seg": 13, "text": " Porque"}
+{"t": 53.28, "lang": "en", "type": "append", "seg": 13, "text": " said, both do"}
+{"t": 53.515, "lang": "es", "type": "append", "seg": 13, "text": " de nuevo, como dije,"}
+{"t": 54.263, "lang": "en", "type": "append", "seg": 13, "text": " something really well and both"}
+{"t": 54.519, "lang": "es", "type": "append", "seg": 13, "text": " ambos hacen algo"}
+{"t": 55.252, "lang": "en", "type": "append", "seg": 13, "text": " do something"}
+{"t": 55.523, "lang": "es", "type": "append", "seg": 13, "text": " muy bien y ambos"}
+{"t": 56.244, "lang": "en", "type": "append", "seg": 13, "text": " not so well in some"}
+{"t": 56.527, "lang": "es", "type": "append", "seg": 13, "text": " hacen algo no tan bien"}
+{"t": 57.243, "lang": "en", "type": "append", "seg": 13, "text": " ways as well."}
+{"t": 57.243, "lang": "en", "type": "close", "seg": 13}
+{"t": 57.524, "lang": "es", "type": "append", "seg": 13, "text": " en algunos aspectos."}
+{"t": 57.524, "lang": "es", "type": "close", "seg": 13}
+{"t": 58.258, "lang": "en", "type": "append", "seg": 14, "text": " So here I have a"}
+{"t": 58.523, "lang": "es", "type": "append", "seg": 14, "text": " As\u00ed que aqu\u00ed"}
+{"t": 59.263, "lang": "en", "type": "append", "seg": 14, "text": " nice handy little"}
+{"t": 59.538, "lang": "es", "type": "append", "seg": 14, "text": " tengo una peque\u00f1a"}
+{"t": 60.176, "lang": "en", "type": "append", "seg": 14, "text": " um"}
+{"t": 60.514, "lang": "es", "type": "append", "seg": 14, "text": " este"}
+{"t": 61.282, "lang": "en", "type": "append", "seg": 14, "text": " highlight, so you"}
+{"t": 61.531, "lang": "es", "type": "append", "seg": 14, "text": " destacado, as\u00ed"}
+{"t": 62.282, "lang": "en", "type": "append", "seg": 14, "text": " have a human"}
+{"t": 62.515, "lang": "es", "type": "append", "seg": 14, "text": " que tienes una capacidad"}
+{"t": 63.238, "lang": "en", "type": "append", "seg": 14, "text": " capability for example,"}
+{"t": 63.515, "lang": "es", "type": "append", "seg": 14, "text": " humana, por ejemplo,"}
+{"t": 64.267, "lang": "en", "type": "append", "seg": 14, "text": " humans, we are"}
+{"t": 64.527, "lang": "es", "type": "append", "seg": 14, "text": " los humanos,"}
+{"t": 65.264, "lang": "en", "type": "append", "seg": 14, "text": " really, really good at"}
+{"t": 65.524, "lang": "es", "type": "append", "seg": 14, "text": " somos muy, muy"}
+{"t": 66.291, "lang": "en", "type": "append", "seg": 14, "text": " navigating ambiguity."}
+{"t": 66.291, "lang": "en", "type": "close", "seg": 14}
+{"t": 66.525, "lang": "es", "type": "append", "seg": 14, "text": " buenos navegando la ambig\u00fcedad."}
+{"t": 66.525, "lang": "es", "type": "close", "seg": 14}
+{"t": 67.56, "lang": "en", "type": "append", "seg": 15, "text": " If someone tells"}
+{"t": 67.774, "lang": "es", "type": "append", "seg": 15, "text": " Si alguien"}
+{"t": 68.662, "lang": "en", "type": "append", "seg": 15, "text": " you, oh,"}
+{"t": 69.026, "lang": "es", "type": "append", "seg": 15, "text": " te dice, oh,"}
+{"t": 69.59, "lang": "en", "type": "append", "seg": 15, "text": " just go abroad about"}
+{"t": 69.773, "lang": "es", "type": "append", "seg": 15, "text": " solo ve al extranjero"}
+{"t": 70.711, "lang": "en", "type": "append", "seg": 15, "text": " there, just, you know, follow"}
+{"t": 71.015, "lang": "es", "type": "append", "seg": 15, "text": " por ah\u00ed, solo,"}
+{"t": 71.684, "lang": "en", "type": "append", "seg": 15, "text": " along and whatever."}
+{"t": 71.684, "lang": "en", "type": "close", "seg": 15}
+{"t": 71.684, "lang": "en", "type": "append", "seg": 16, "text": " You can"}
+{"t": 72.019, "lang": "es", "type": "append", "seg": 15, "text": " ya sabes, sigue la corriente"}
+{"t": 72.69, "lang": "en", "type": "append", "seg": 16, "text": " kind of figure it"}
+{"t": 73.016, "lang": "es", "type": "append", "seg": 15, "text": " y lo que sea."}
+{"t": 73.016, "lang": "es", "type": "close", "seg": 15}
+{"t": 73.674, "lang": "en", "type": "append", "seg": 16, "text": " out, you understand what that"}
+{"t": 74.031, "lang": "es", "type": "append", "seg": 16, "text": " Puedes m\u00e1s o menos"}
+{"t": 74.602, "lang": "en", "type": "append", "seg": 16, "text": " means."}
+{"t": 74.602, "lang": "en", "type": "close", "seg": 16}
+{"t": 74.602, "lang": "en", "type": "append", "seg": 17, "text": " If someone tells"}
+{"t": 74.778, "lang": "es", "type": "append", "seg": 16, "text": " entenderlo, entiendes"}
+{"t": 75.614, "lang": "en", "type": "append", "seg": 17, "text": " you, oh,"}
+{"t": 75.784, "lang": "es", "type": "append", "seg": 16, "text": " lo que eso significa."}
+{"t": 75.784, "lang": "es", "type": "close", "seg": 16}
+{"t": 76.668, "lang": "en", "type": "append", "seg": 17, "text": " Black Friday is coming"}
+{"t": 76.766, "lang": "es", "type": "append", "seg": 17, "text": " Si alguien te dice,"}
+{"t": 77.604, "lang": "en", "type": "append", "seg": 17, "text": " up, you understand,"}
+{"t": 77.768, "lang": "es", "type": "append", "seg": 17, "text": " oh, se acerca"}
+{"t": 78.623, "lang": "en", "type": "append", "seg": 17, "text": " oh, a lot of"}
+{"t": 78.767, "lang": "es", "type": "append", "seg": 17, "text": " el Black Friday,"}
+{"t": 79.69, "lang": "en", "type": "append", "seg": 17, "text": " sale, a lot of things"}
+{"t": 80.015, "lang": "es", "type": "append", "seg": 17, "text": " entiendes, oh,"}
+{"t": 80.601, "lang": "en", "type": "append", "seg": 17, "text": " happening and so"}
+{"t": 80.767, "lang": "es", "type": "append", "seg": 17, "text": " muchas ofertas,"}
+{"t": 81.59, "lang": "en", "type": "append", "seg": 17, "text": " forth."}
+{"t": 81.59, "lang": "en", "type": "close", "seg": 17}
+{"t": 81.59, "lang": "en", "type": "append", "seg": 18, "text": " But"}
+{"t": 81.766, "lang": "es", "type": "append", "seg": 17, "text": " muchas cosas pasando"}
+{"t": 82.602, "lang": "en", "type": "append", "seg": 18, "text": " agents, they"}
+{"t": 82.767, "lang": "es", "type": "append", "seg": 17, "text": " y as\u00ed sucesivamente."}
+{"t": 82.767, "lang": "es", "type": "close", "seg": 17}
+{"t": 83.558, "lang": "en", "type": "append", "seg": 18, "text": " really need"}
+{"t": 83.772, "lang": "es", "type": "append", "seg": 18, "text": " Pero los agentes,"}
+{"t": 84.58, "lang": "en", "type": "append", "seg": 18, "text": " explicit"}
+{"t": 84.777, "lang": "es", "type": "append", "seg": 18, "text": " ellos realmente"}
+{"t": 85.569, "lang": "en", "type": "append", "seg": 18, "text": " structural information."}
+{"t": 85.569, "lang": "en", "type": "close", "seg": 18}
+{"t": 85.778, "lang": "es", "type": "append", "seg": 18, "text": " necesitan informaci\u00f3n"}
+{"t": 86.6, "lang": "en", "type": "append", "seg": 19, "text": " There is"}
+{"t": 86.774, "lang": "es", "type": "append", "seg": 18, "text": " estructural expl\u00edcita."}
+{"t": 86.774, "lang": "es", "type": "close", "seg": 18}
+{"t": 87.593, "lang": "en", "type": "append", "seg": 19, "text": " no, oh, I'll"}
+{"t": 87.767, "lang": "es", "type": "append", "seg": 19, "text": " No hay,"}
+{"t": 88.671, "lang": "en", "type": "append", "seg": 19, "text": " wing it, there's no,"}
+{"t": 89.016, "lang": "es", "type": "append", "seg": 19, "text": " oh, lo improvisar\u00e9,"}
+{"t": 89.611, "lang": "en", "type": "append", "seg": 19, "text": " oh, I'll I'll feel"}
+{"t": 89.764, "lang": "es", "type": "append", "seg": 19, "text": " no hay,"}
+{"t": 90.634, "lang": "en", "type": "append", "seg": 19, "text": " it out as we go."}
+{"t": 90.634, "lang": "en", "type": "close", "seg": 19}
+{"t": 90.766, "lang": "es", "type": "append", "seg": 19, "text": " oh, lo ir\u00e9 sintiendo"}
+{"t": 91.315, "lang": "en", "type": "append", "seg": 20, "text": " Because that doesn't"}
+{"t": 91.525, "lang": "es", "type": "append", "seg": 19, "text": " sobre la marcha."}
+{"t": 91.525, "lang": "es", "type": "close", "seg": 19}
+{"t": 91.525, "lang": "es", "type": "append", "seg": 20, "text": " Porque"}
+{"t": 92.334, "lang": "en", "type": "append", "seg": 20, "text": " exist as a"}
+{"t": 92.629, "lang": "es", "type": "append", "seg": 20, "text": " eso no existe como"}
+{"t": 93.341, "lang": "en", "type": "append", "seg": 20, "text": " concept really."}
+{"t": 93.341, "lang": "en", "type": "close", "seg": 20}
+{"t": 93.531, "lang": "es", "type": "append", "seg": 20, "text": " concepto realmente."}
+{"t": 93.531, "lang": "es", "type": "close", "seg": 20}
+{"t": 97.243, "lang": "en", "type": "status", "data": {"state": "yellow"}}
+{"t": 97.243, "lang": "es", "type": "status", "data": {"state": "yellow"}}
+{"t": 97.799, "lang": "en", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}
+{"t": 97.799, "lang": "es", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}

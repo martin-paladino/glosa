@@ -172,7 +172,18 @@ def overlay_page(slug: str, request: Request):
 @router.get("/qr/{slug}", include_in_schema=False)
 def qr_page(slug: str, request: Request):
     """`/qr/{room}`: a printable/projectable page with the room's QR --
-    `/s/{slug}`, or `/s/{token}` in `qr_only` mode (plan case 14.1)."""
+    `/s/{slug}`, or `/s/{token}` in `qr_only` mode (plan case 14.1).
+
+    Deliberately public, no admin session required, both to print this from
+    a kiosk browser and because the brief's own interface lists it as a
+    plain page (not one of the `/api/admin/*` routes). One consequence in
+    `qr_only` mode worth flagging for anyone tightening the threat model
+    later: this route is still keyed by the room's plain `slug`, so a
+    caller who can guess or already knows a room's slug (its config.yaml
+    id, not usually treated as secret) gets straight to that room's
+    unguessable `public_token` here -- `qr_only`'s guarantee is "not
+    listed and not guessable from the room's own link", not "the token
+    is unobtainable by anyone who knows the room exists"."""
     ui, forced = _ui_lang(request)
     worker = _find_worker(request, slug)
     base = _base_context(request, ui, forced)

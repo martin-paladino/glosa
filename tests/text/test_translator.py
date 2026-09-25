@@ -109,8 +109,8 @@ async def test_system_instruction_includes_glossary_and_last_two_segments() -> N
     await translator.translate("Segment four.", "es", GLOSSARY, context)
 
     system_instruction = client.models.calls[0]["config"].system_instruction
-    assert "Kubernetes → keep" in system_instruction
-    assert "control plane → plano de control" in system_instruction
+    assert '"Kubernetes": leave it as is, untranslated' in system_instruction
+    assert '"control plane": translate it as "plano de control"' in system_instruction
     assert "Segment two." in system_instruction
     assert "Segment three." in system_instruction
     assert "Segment one." not in system_instruction  # only the last 2 of context
@@ -126,7 +126,17 @@ def test_the_glossary_applies_only_to_terms_in_the_segment() -> None:
     assert "only when" in rules and "appears in the segment" in rules and "inflection" in rules
     assert "never add" in rules and "not in the segment" in rules
     assert "apply exactly; do not deviate" not in text  # the old, unscoped wording
-    assert text.index("Kubernetes → keep") > text.index("Glossary")
+    assert text.index('"Kubernetes"') > text.index("Glossary")
+
+
+def test_a_term_kept_in_english_is_never_written_as_keep() -> None:
+    """Live run 5: with "Kubernetes → keep" in the prompt, "en este particular
+    cluster" came out as "in this particular keep". No entry reads as a
+    translation into the word "keep" any more."""
+    text = _build_system_instruction("en", GLOSSARY, [])
+
+    assert "→ keep" not in text and "-> keep" not in text
+    assert '"Kubernetes": leave it as is, untranslated' in text
 
 
 async def test_thinking_level_is_minimal() -> None:

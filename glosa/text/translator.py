@@ -57,8 +57,10 @@ def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context
             "noun into a glossary term):"
         )
         for term in glossary:
-            rhs = "keep" if term.keep_in_english else (term.translation or "")
-            lines.append(f"{term.term} → {rhs}")
+            if term.keep_in_english or not term.translation:
+                lines.append(f'- "{term.term}": leave it as is, untranslated')
+            else:
+                lines.append(f'- "{term.term}": translate it as "{term.translation}"')
     previous = context[-2:] if context else []
     if previous:
         lines.append("")

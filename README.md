@@ -331,6 +331,77 @@ negotiated rate on either side. Full breakdown (event-scale estimates,
 this build's own spend, server cost, the budget cap): see
 [`docs/costs.md`](docs/costs.md).
 
+## Local mode (no cloud)
+
+`engine_mode: local` runs captions + translation entirely on-device on an
+Apple-silicon Mac — no Gemini, no internet, no API key spent. It's a
+**demo/fallback mode** ("no internet at the venue"), honest about its
+limits: **1–2 rooms per machine**, and neither the transcription nor the
+translation applies the talk's glossary (see the limits below). It uses
+[Parakeet](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3)
+(`parakeet-mlx`) for speech-to-text and
+[TranslateGemma](https://huggingface.co/mlx-community/translategemma-4b-it-4bit)
+(`mlx-lm`) for translation, both via [MLX](https://github.com/ml-explore/mlx).
+
+```bash
+uv sync --extra local   # Apple silicon only; downloads mlx, mlx-lm, parakeet-mlx
+make demo-local          # PORT=8014; downloads ~4.5 GB of model weights on first run
+```
+
+`glosa/engines/local.py` (`LocalParakeetEngine`) and
+`glosa/text/local_translator.py` (`LocalTranslator`) implement the same
+`Engine`/`Translator` contracts as the cloud engines, so the rest of the
+pipeline (glossary lane, segmenter, captions, exports) is unchanged; local
+mode coerces every talk to the glossary-engine *path* (there is no local
+Live Translate), whatever the talk's own `engine` setting.
+
+**Measured** (2026-09-25, the build machine — Apple M4, 16 GB — real-time
+runs of the bundled `samples/en_clip.opus`/`es_clip.opus`, ~93 s each,
+`bench/bench_local.py`, reusing `bench/json3.py`'s progress-lag metric):
+
+| Rooms | Clip | Source latency p50/p90 | Translation lag p50/p90 | CPU% avg/max | RSS MB avg/max | MLX peak memory |
+|---|---|---|---|---|---|---|
+| 1 | en→es | 1.6 s / 2.6 s | 3.7 s / 5.5 s | — | — | 6.0 GB |
+| 2 | en→es | 3.8 s / 6.2 s | 6.6 s / 10.3 s | 44% / 101% | 571 / 1333 | 5.8 GB |
+| 2 | es→en | 5.3 s / 7.6 s | 7.2 s / 9.1 s | (same process) | (same process) | (same process) |
+
+Both models stay loaded once per process (one shared instance, one lock,
+behind a dedicated thread — MLX's compute streams are thread-local, a
+known issue across the MLX ecosystem as of mlx 0.31+); a second room roughly
+doubles the latency because it now waits its turn on that one lock. Both
+1- and 2-room runs kept up with real time (total wall time ≈ the clip's own
+length): the bottleneck is per-call latency under load, not throughput.
+CPU/RSS are this process's own (`ps`, sampled every 0.5 s); "MLX peak
+memory" is `mlx.core.get_peak_memory()`, the models' own unified-memory
+high-water mark, not the same figure as process RSS (Metal/unified memory
+isn't fully reflected in RSS on Apple silicon). Ten translated segments per
+clip, and the full run output, are in this build's task report
+(`.superpowers/sdd/2026-09-24-glosa/task-16-report.md`).
+
+**Limits, honestly:**
+- **1–2 rooms per machine** — see the numbers above; a third concurrent
+  room would queue behind the same lock and push latency well past what a
+  live audience can read comfortably.
+- **The glossary is not applied**, to either the transcription or the
+  translation. Parakeet has no custom-vocabulary hook (unlike
+  transcribe-live's `customVocabulary`); TranslateGemma's prompt format
+  (verified against its own `chat_template.jinja`) has no slot for extra
+  instructions beyond the segment and its source/target language codes.
+- **No cross-segment context** for translation (Translator normally passes
+  the last couple of segments for continuity; local mode translates each
+  segment independently).
+- **Rolling-window transcription, not true streaming.** `parakeet-mlx`
+  does offer a real streaming decoder, but it wasn't judged worth the
+  added lifecycle complexity (a stateful KV-cache/attention-mode context
+  per room, shared carefully across a process-wide model) for a
+  lowest-priority hackathon fallback; instead it re-transcribes the open
+  utterance's buffered audio with the plain batch decode path, which the
+  numbers above show is fast enough at this scale.
+- **Packaging:** the `local` extra (`pyproject.toml`) is gated on
+  `sys_platform == 'darwin' and platform_machine == 'arm64'`, so a
+  Linux/Docker install is unaffected; unit tests inject fake
+  transcribe/generate callables and never need mlx installed.
+
 ## Alternatives evaluated
 
 Glosa's two engines were chosen after benchmarking them against each

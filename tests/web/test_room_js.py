@@ -5,6 +5,7 @@ Node is not installed."""
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -17,6 +18,13 @@ from glosa.i18n import STRINGS
 NODE = shutil.which("node")
 HARNESS = Path(__file__).with_name("room_js_harness.js")
 CLAMP_HARNESS = Path(__file__).with_name("room_clamp_harness.js")
+TEMPLATES = Path(__file__).resolve().parents[2] / "glosa" / "web" / "templates"
+
+
+def _page_scripts(template: str) -> list[str]:
+    """The template's own static/js scripts, in load order: the harness runs
+    the ones it knows (theme.js, room.js) exactly as the page would."""
+    return re.findall(r'<script src="/static/js/([\w.-]+\.js)"', (TEMPLATES / template).read_text())
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="needs Node.js to run room.js")
 
@@ -54,6 +62,7 @@ def _draw(
         payload["resize"] = resize
     if station:
         payload["station"] = True
+    payload["scripts"] = _page_scripts("station.html" if station else "room.html")
     done = subprocess.run(
         [NODE, str(HARNESS)], input=json.dumps(payload),
         capture_output=True, text=True, check=True, timeout=30,

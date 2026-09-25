@@ -160,6 +160,20 @@ def test_station_page_200_with_a_valid_key() -> None:
     assert "Sala Uno" in response.text
 
 
+def test_station_page_loads_theme_js_before_room_js() -> None:
+    # room.js calls window.GlosaTheme (static/js/theme.js) at startup, right
+    # before it opens the caption stream: without theme.js the script throws
+    # there and the station never shows a caption.
+    client = _client(_make_app())
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    html = client.get(f"/station/r1?key={key}").text
+
+    scripts = re.findall(r'<script src="/static/js/([\w.-]+\.js)"', html)
+    assert "theme.js" in scripts
+    assert scripts.index("theme.js") < scripts.index("room.js")
+
+
 def test_station_streambase_uses_the_room_public_token_not_the_slug() -> None:
     # B-I2: the station page's streamBase must resolve in qr_only too --
     # /api/stream/{slug}/... 404s there (public_api._resolve_worker only

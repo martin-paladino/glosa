@@ -7,9 +7,9 @@ Task 5's create_app() includes `router` and provides on app.state:
     (now/next: {"talk_id", "title", "speakers", "language"}, next also "start": "HH:MM");
   - branding: {"event_name", "primary", "accent", "logo_url"};
   - workers: room id -> RoomWorker (Task 14b: the overlay, the QR page's
-    `?token=` in `qr_only` mode, and the room page's admin-only "Escuchar
-    el audio" flag all need the worker directly, not just its audience-safe
-    `view()`). Accessed defensively (``getattr``/``or {}``): a handful of
+    `/s/{token}` link in `qr_only` mode, and the room page's admin-only
+    "Escuchar el audio" flag all need the worker directly, not just its
+    audience-safe `view()`). Accessed defensively (``getattr``/``or {}``): a handful of
     older, narrower test fixtures (tests/web/test_pages.py) build a bare
     app with only ``rooms_view`` and ``branding`` set, and must keep working
     unchanged -- with no ``workers``, this module just falls back to the

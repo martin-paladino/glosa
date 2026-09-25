@@ -47,7 +47,10 @@ Events:
 
   - an interim that is only (a start of) the closed segment's last
     interim or final is dropped;
-  - one that starts with all of either (``STALE_MIN_WORDS`` or more words)
+  - one that starts with the closed segment's text (word by word, each
+    word the one at that position in the last interim or the final, at
+    least as far as the shorter of the two and ``STALE_MIN_WORDS`` words:
+    the server may repeat an interim newer than the last one it sent us)
     loses that start, and so does the final of that segment if it starts
     the same way;
   - a final that only repeats the closed segment (``STALE_MIN_WORDS`` or
@@ -305,51 +308,63 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
     """Where the closed segment's text ends at the start of ``text``: None
     if ``text`` does not start with it; ``len(text)`` if ``text`` is only (a
     start of) its last interim or final, possibly ending mid-word; else the
-    index where the new words start, after the longer of the two that
-    ``text`` starts with in full (``STALE_MIN_WORDS`` or more words), and
-    after any punctuation. Works on the raw text, since the server glues
-    the old text to the new words ("…de teams,the labels", "cluster?O")."""
+    index where the new words start, past any punctuation.
+
+    ``text`` starts with the closed segment's text when, word by word, each
+    of its words is the word at that position in the last interim or in the
+    final, at least as far as the shorter of the two, and at least
+    ``STALE_MIN_WORDS`` words: a stale text can be an interim between the
+    last one the engine sent and the final. The match reads the raw text,
+    since the server glues the old text to the new words ("…de
+    teams,the labels", "cluster?O")."""
     norms = [n for n in map(_norm, text.split()) if n]
     if not norms:
         return len(text)  # only punctuation
-    best: int | None = None
-    for prev in closed:
-        old = [n for n in map(_norm, prev.split()) if n]
-        if not old:
-            continue
-        k = len(norms)
+    refs = [ref for ref in ([n for n in map(_norm, prev.split()) if n] for prev in closed) if ref]
+    if not refs:
+        return None
+    k = len(norms)
+    for old in refs:
         if k <= len(old) and norms[: k - 1] == old[: k - 1] and old[k - 1].startswith(norms[-1]):
             return len(text)
-        if len(old) >= STALE_MIN_WORDS:
-            end = _consume_words(text, old)
-            if end is not None:
-                best = max(best or 0, end)
-    if best is None:
+    full = max(min(len(ref) for ref in refs), STALE_MIN_WORDS)
+    i, matched, end = 0, 0, None
+    while True:
+        nxt = None
+        for word in dict.fromkeys(ref[matched] for ref in refs if matched < len(ref)):
+            nxt = _consume_word(text, i, word)
+            if nxt is not None:
+                break
+        if nxt is None:
+            break
+        i, matched = nxt, matched + 1
+        if matched >= full:
+            end = i
+    if end is None:
         return None
-    while best < len(text) and not text[best].isalnum():
-        best += 1
-    return best
+    while end < len(text) and not text[end].isalnum():
+        end += 1
+    return end
 
 
-def _consume_words(text: str, words: list[str]) -> int | None:
-    """The index in ``text`` right after ``words`` (``_norm``ed), read in
-    order from its start: case and punctuation between or inside words are
-    skipped, a space inside a word or a longer word ("clustering" for
+def _consume_word(text: str, i: int, word: str) -> int | None:
+    """The index in ``text`` right after ``word`` (``_norm``ed) read from
+    ``i``: punctuation before it or inside it ("k8s.io") and case are
+    skipped; a space inside it or a longer word ("clustering" for
     "cluster") is no match (None)."""
-    i, n = 0, len(text)
-    for word in words:
-        while i < n and not text[i].isalnum():
-            i += 1
-        j = 0
-        while j < len(word):
-            if i >= n or text[i].isspace():
-                return None
-            folded = text[i].casefold()
-            if text[i].isalnum():
-                if not word.startswith(folded, j):
-                    return None
-                j += len(folded)
-            i += 1  # a letter of the word, or punctuation inside it ("k8s.io")
-        if i < n and text[i].isalnum():
+    n = len(text)
+    while i < n and not text[i].isalnum():
+        i += 1
+    j = 0
+    while j < len(word):
+        if i >= n or text[i].isspace():
             return None
+        if text[i].isalnum():
+            folded = text[i].casefold()
+            if not word.startswith(folded, j):
+                return None
+            j += len(folded)
+        i += 1
+    if i < n and text[i].isalnum():
+        return None
     return i

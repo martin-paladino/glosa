@@ -255,6 +255,23 @@ def test_the_closed_segments_text_glued_to_the_new_words_is_cut(final: str, stal
     assert (ev.kind, ev.text) == ("source_delta", fresh)
 
 
+def test_a_stale_text_between_the_last_interim_and_the_final_is_cut_whole() -> None:
+    """Live run 3, verbatim: the last interim the engine sent lacked
+    "cluster?", the final said "esta" where the interims said "este", and
+    the stale text was a later interim glued to the new words."""
+    last = "¿Qué ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular"
+    final = "¿Qué ha ocurrido con que ha habido esta disparada de costos desde el mes pasado en este particular cluster?"
+    engine = _engine()
+    _map_all(engine, [_interim(last), {"serverContent": {"inputTranscription": {"text": final}}}])
+
+    events = _map_all(engine, [
+        _interim(last + " cluster?O"),
+        _interim(last + " cluster?O dentro de este"),
+    ])
+
+    assert [ev.text for ev in events] == ["O", "O dentro de este"]
+
+
 def test_a_longer_word_is_not_the_closed_segments_word() -> None:
     engine = _engine()
     _map_all(engine, [_interim("en este particular cluster"), {"serverContent": {"inputTranscription": {

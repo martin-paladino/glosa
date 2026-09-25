@@ -180,7 +180,12 @@ def _room_js_config(worker: RoomWorker, ui: Lang, key: str) -> dict:
     default_lang = ui if ui in langs else (langs[0] if langs else ui)
     return {
         "slug": worker.room.slug,
-        "streamBase": f"/api/stream/{worker.room.slug}/",
+        # B-I2: public_api._resolve_worker only accepts a room's slug in
+        # "all" mode -- in qr_only, /api/stream/{slug}/... 404s. The
+        # public_token resolves in both modes, so use it unconditionally
+        # (the station is a stage screen, not the audience UI, so there's
+        # no reason to prefer the prettier slug the way pages.py does).
+        "streamBase": f"/api/stream/{worker.room.public_token}/",
         "wsUrl": f"/ws/station/{worker.room.id}?key={key}",
         "langs": langs,
         "defaultLang": default_lang,

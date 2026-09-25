@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -42,14 +44,23 @@ def _settings(**overrides) -> Settings:
     return Settings(**values)
 
 
-def _worker(room_id: str = "r1", slug: str | None = None, name: str = "Sala Uno") -> MagicMock:
+def _worker(
+    room_id: str = "r1", slug: str | None = None, name: str = "Sala Uno", public_token: str | None = None
+) -> MagicMock:
     worker = MagicMock()
     worker.room.id = room_id
     worker.room.slug = slug or room_id
     worker.room.name = name
+    worker.room.public_token = public_token or f"tok-{room_id}"
     worker.langs.return_value = ["en", "es"]
     worker.view.return_value = {"now": None}
     return worker
+
+
+def _room_config(html: str) -> dict:
+    match = re.search(r'<script type="application/json" id="glosa-room">(.*?)</script>', html, re.S)
+    assert match, "expected a #glosa-room JSON script tag"
+    return json.loads(match.group(1))
 
 
 def _make_app(workers: dict | None = None, settings: Settings | None = None) -> FastAPI:
@@ -147,6 +158,23 @@ def test_station_page_200_with_a_valid_key() -> None:
 
     assert response.status_code == 200
     assert "Sala Uno" in response.text
+
+
+def test_station_streambase_uses_the_room_public_token_not_the_slug() -> None:
+    # B-I2: the station page's streamBase must resolve in qr_only too --
+    # /api/stream/{slug}/... 404s there (public_api._resolve_worker only
+    # accepts a room's public_token in that mode), which left the stage
+    # screens stuck retrying "Reconectando" forever. The token resolves in
+    # "all" mode as well, so this is unconditional, not mode-dependent.
+    worker = _worker(public_token="tok-r1-secret")
+    client = _client(_make_app(workers={"r1": worker}))
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    response = client.get(f"/station/r1?key={key}")
+
+    assert response.status_code == 200
+    config = _room_config(response.text)
+    assert config["streamBase"] == "/api/stream/tok-r1-secret/"
 
 
 def test_station_page_403_without_a_key() -> None:

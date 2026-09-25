@@ -580,5 +580,5 @@ def test_each_drawer_metric_has_an_accessible_explanation() -> None:
     for key in ("metric_audio", "metric_latency", "metric_quality", "metric_cost"):
         assert f'aria-describedby="hint-{key}"' in es and f'id="hint-{key}"' in es
     assert 'role="tooltip"' in es
-    assert "Jev compara un fragmento original con su traducción" in es
-    assert "Jev compares an original fragment with its translation" in en
+    assert "Qué tan fiel es la traducción al original, de 0 a 1." in es and "Jev" not in es.split("hint-metric_quality")[1][:400]
+    assert "How faithful the translation is to the original, from 0 to 1." in en

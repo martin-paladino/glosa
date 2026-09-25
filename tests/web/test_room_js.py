@@ -29,6 +29,7 @@ def _draw(
     fetch: dict | None = None,
     click: str | list[str] | None = None,
     keys: list[str] | None = None,
+    pip: bool = False,
 ) -> dict:
     numbered = [{"id": i, **m} for i, m in enumerate([TALK, *msgs], start=1)]
     payload = {"lang": lang, "i18n": STRINGS["es"], "msgs": numbered}
@@ -38,6 +39,8 @@ def _draw(
         payload["click"] = click
     if keys is not None:
         payload["keys"] = keys
+    if pip:
+        payload["pip"] = True
     done = subprocess.run(
         [NODE, str(HARNESS)], input=json.dumps(payload),
         capture_output=True, text=True, check=True, timeout=30,
@@ -156,3 +159,58 @@ def test_the_close_button_also_dismisses_the_panel() -> None:
     assert out["panelOpen"] is False
     assert out["scrimOpen"] is False
     assert out["ariaExpanded"] == "false"
+
+
+# ---- Picture-in-Picture captions (Task 20) -------------------------------------------
+
+
+def test_pip_button_stays_hidden_without_the_documentpictureinpicture_api() -> None:
+    """No `window.documentPictureInPicture` faked (input.pip omitted): the
+    same as a phone, Safari or Firefox today -- no broken button."""
+    out = _draw([])["pip"]
+    assert out["hidden"] is True
+    assert out["opened"] == 0
+
+
+def test_clicking_pip_opens_the_window_with_the_current_captions() -> None:
+    out = _draw(
+        [
+            {"type": "set", "seg": 0, "text": "Hola a"},
+            {"type": "set", "seg": 0, "text": "Hola a todos."},
+            {"type": "close", "seg": 0},
+            {"type": "set", "seg": 1, "text": "Bienvenidos"},
+            {"type": "set", "seg": 1, "text": "Bienvenidos a Nerdearla"},
+        ],
+        pip=True,
+        click="pip",
+    )["pip"]
+
+    assert out["hidden"] is False
+    assert out["opened"] == 1
+    assert out["closed"] is False
+    assert out["ariaPressed"] == "true"
+    assert out["lines"], "the mirror should show the live caption line"
+    assert "Hola a todos. Bienvenidos a Nerdearla" in out["lines"][-1]
+
+
+def test_closing_the_pip_window_restores_the_page_and_flips_aria_pressed() -> None:
+    """Clicking the button again closes the pop-out (pipWindow.close(), which
+    fires "pagehide" the same way the reader closing it via the OS chrome
+    would) -- no second window is opened, and the main transcript was never
+    moved out of the page in the first place, so there is nothing to put
+    back."""
+    out = _draw([], pip=True, click=["pip", "pip"])["pip"]
+
+    assert out["opened"] == 1  # the second click closed the same window, it did not open another
+    assert out["closed"] is True
+    assert out["ariaPressed"] == "false"
+    assert out["mainTranscriptIntact"] is True
+
+
+def test_pip_mirrors_the_reader_theme_onto_the_pop_out_document() -> None:
+    """Theme/text size "follow the main page" (spec): a theme picked before
+    the pop-out opens is mirrored onto its own document's root, since it
+    carries its own copy of the stylesheet ([data-theme] selectors)."""
+    out = _draw([], pip=True, click=["theme", "pip"])["pip"]
+
+    assert out["theme"] == "light"   # cycleTheme(): system -> light

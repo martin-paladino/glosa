@@ -67,6 +67,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "fullscreen": "Pantalla completa",
         "shortcut_fullscreen": "pantalla completa",
         "shortcut_size": "tamaño de letra",
+        "pip": "Ventana flotante",
         # Footer
         "colophon_word": "glosa",
         "colophon_def": "(f.): nota que explica o traduce un texto.",
@@ -151,6 +152,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "fullscreen": "Full screen",
         "shortcut_fullscreen": "full screen",
         "shortcut_size": "text size",
+        "pip": "Pop-out captions",
         # Footer
         "colophon_word": "glosa",
         "colophon_def": "(Spanish, f.): a note that explains or translates a text.",

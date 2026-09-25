@@ -132,6 +132,13 @@
     <button class="control control--fullscreen" type="button" data-action="fullscreen" aria-label="{{ tr('fullscreen') }} (F)" title="{{ tr('fullscreen') }} (F)">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7.5V3h4.5M12.5 3H17v4.5M17 12.5V17h-4.5M7.5 17H3v-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
+    {#- Task 20: Picture-in-Picture captions. Server-rendered visible (no way
+        to feature-detect on the server); room.js hides it right away unless
+        'documentPictureInPicture' in window (Chrome/Edge desktop only). #}
+    <button class="control control--pip" type="button" data-action="pip" aria-pressed="false" aria-label="{{ tr('pip') }}" title="{{ tr('pip') }}">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2" y="4" width="16" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="10.5" y="10" width="6.5" height="4.5" rx="1" fill="currentColor"/></svg>
+      <span class="control__word">{{ tr('pip') }}</span>
+    </button>
   </nav>
   {#- En escritorio el reloj va a la derecha de las teclas; en celular, en la fila de la sala. #}
   <time class="clock room__clock" data-clock hidden></time>

@@ -174,6 +174,7 @@ const html = h("html", {},
     select,
     h("button", { "data-action": "theme" }),
     h("button", { "data-action": "fullscreen" }),
+    h("button", { "data-action": "pip", "aria-pressed": "false" }),
     h("main", { "data-stage": "" }, transcript),
     h("button", { "data-action": "live", hidden: "" }),
     summaryToggle, summaryScrim, summaryPanel,
@@ -217,6 +218,33 @@ async function fetchStub(url) {
   };
 }
 
+// Task 20: window.documentPictureInPicture.requestWindow(), faked only when
+// input.pip is truthy (its absence is how the "no API here" tests -- phones,
+// Safari, Firefox -- check the button stays hidden). Each opened window gets
+// its own tiny fake document (head/body/documentElement); requestWindow's
+// caller (room.js) clones the main page's <link>/<style> nodes into its head
+// and mirrors data-theme/--caption-scale onto its root -- none of which the
+// main fake `document` above has any of, so those calls are no-ops here.
+class FakePipWindow {
+  constructor() {
+    this.document = {
+      documentElement: h("html", {}),
+      head: h("head", {}),
+      body: h("body", {}),
+      createElement: (tag) => new FakeElement(tag),
+    };
+    this._listeners = {};
+    this.closed = false;
+  }
+  addEventListener(type, fn) { (this._listeners[type] ??= []).push(fn); }
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    for (const fn of this._listeners.pagehide || []) fn();
+  }
+}
+const pipWindows = [];
+
 const storage = new Map();
 const context = {
   document,
@@ -241,6 +269,17 @@ const context = {
   clearTimeout,
   console,
 };
+context.window = context;   // 'x' in window, same object as the vm's globals
+if (input.pip) {
+  context.documentPictureInPicture = {
+    requestWindow: (opts) => {
+      const win = new FakePipWindow();
+      win.opts = opts;
+      pipWindows.push(win);
+      return Promise.resolve(win);
+    },
+  };
+}
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(ROOM_JS, "utf8"), context, { filename: "room.js" });
 
@@ -281,6 +320,9 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     open: span.hasAttribute("data-open"),
   }));
   const live = page.querySelector("[data-live]");
+  const pipButton = html.querySelector('[data-action="pip"]');
+  const pipWin = pipWindows[pipWindows.length - 1] || null;
+  const pipMirror = pipWin ? pipWin.document.body.children[0] || null : null;
   process.stdout.write(JSON.stringify({
     url: source.url,
     phrases,
@@ -295,6 +337,16 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
       scrimOpen: summaryScrim.classList.contains("summary-scrim--open"),
       bullets: summaryBullets.querySelectorAll("li").map((li) => li.textContent),
       ago: summaryAgo.textContent,
+    },
+    pip: {
+      hidden: pipButton.hidden,
+      ariaPressed: pipButton.getAttribute("aria-pressed"),
+      opened: pipWindows.length,
+      closed: pipWin ? pipWin.closed : null,
+      lines: pipMirror ? pipMirror.children.map((p) => p.textContent) : [],
+      theme: pipWin ? pipWin.document.documentElement.getAttribute("data-theme") : null,
+      scale: pipWin ? pipWin.document.documentElement.style.getPropertyValue("--caption-scale") : null,
+      mainTranscriptIntact: Boolean(transcript.parentNode),
     },
   }));
 })();

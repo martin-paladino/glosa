@@ -1,4 +1,4 @@
-.PHONY: test run demo demo-fake bench load samples
+.PHONY: test run demo demo-fake demo-local bench load samples
 
 # Fast, free test suite (no live API calls). See pytest.ini: `live` tests are
 # excluded by default.
@@ -23,6 +23,16 @@ demo:
 # smoke-testing Docker.
 demo-fake:
 	GLOSA_CONFIG=config.demo-fake.yaml uv run python -m glosa.web.app
+
+# Task 16: same 2 sample clips with engine_mode: local (Parakeet +
+# TranslateGemma via MLX, 100% on-device, no cloud API -- Apple silicon
+# only). Needs `uv sync --extra local` first (downloads ~4.5 GB of model
+# weights from Hugging Face on first run, cached under
+# ~/.cache/huggingface after that -- see README.md's "Local mode (no
+# cloud)" section for the measured numbers and limits). Runs on PORT=8014
+# so it can run alongside `make demo`/`make demo-fake` (PORT 8000).
+demo-local:
+	GLOSA_CONFIG=config.local.yaml PORT=8014 uv run python -m glosa.web.app
 
 # Compare the "fast" and "glossary" engines on the same audio: latency,
 # quality and glossary-term accuracy (Task 15c, bench/bench.py). Runs both

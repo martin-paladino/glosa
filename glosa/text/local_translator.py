@@ -48,6 +48,7 @@ LocalTranslator shares ONE loaded model + one asyncio.Lock.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from typing import Callable
 
@@ -114,11 +115,17 @@ def _load_generate_fn() -> GenerateFn:
 
 class _SharedTranslateModel:
     """Process-wide: the one loaded model (or an injected fake) and the one
-    lock serializing every call into it."""
+    lock serializing every call into it.
+
+    Same MLX thread-affinity fix as glosa/engines/local.py's
+    _SharedParakeetModel (see its docstring): one dedicated single-worker
+    ``ThreadPoolExecutor`` instead of ``asyncio.to_thread``'s shared pool,
+    so the model is loaded and ever after called from one fixed OS thread."""
 
     def __init__(self, generate_fn: GenerateFn | None) -> None:
         self._generate_fn = generate_fn  # None: real model, loaded lazily on first use
         self._call_lock = asyncio.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="translategemma-mlx")
         self.calls_in_flight = 0
         self.max_calls_in_flight = 0
 
@@ -126,10 +133,11 @@ class _SharedTranslateModel:
         async with self._call_lock:
             self.calls_in_flight += 1
             self.max_calls_in_flight = max(self.max_calls_in_flight, self.calls_in_flight)
+            loop = asyncio.get_running_loop()
             try:
                 if self._generate_fn is None:
-                    self._generate_fn = await asyncio.to_thread(_load_generate_fn)
-                return await asyncio.to_thread(self._generate_fn, text, source_lang, target_lang)
+                    self._generate_fn = await loop.run_in_executor(self._executor, _load_generate_fn)
+                return await loop.run_in_executor(self._executor, self._generate_fn, text, source_lang, target_lang)
             finally:
                 self.calls_in_flight -= 1
 

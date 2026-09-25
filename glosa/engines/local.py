@@ -51,6 +51,7 @@ model itself loads lazily -- once -- on the first real call.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from typing import AsyncIterator, Callable
 
@@ -112,11 +113,24 @@ def _load_transcribe_fn() -> TranscribeFn:
 
 class _SharedParakeetModel:
     """Process-wide: the one loaded model (or an injected fake) and the one
-    lock serializing every call into it."""
+    lock serializing every call into it.
+
+    MLX's compute streams are thread-local as of mlx 0.31+ (confirmed
+    2026-09-25 against this repo's own pinned version, and a known issue
+    across the MLX ecosystem -- mlx-lm #1181/#1256, mlx-vlm #1049, among
+    others): a stream created on one OS thread cannot be used from another,
+    so ``asyncio.to_thread`` (which borrows worker threads from a shared,
+    unbounded pool -- a different one on every call) crashes with
+    "RuntimeError: There is no Stream(cpu, 1) in current thread" the moment
+    two calls land on different threads. The fix used here (also the
+    community's documented workaround): one dedicated single-worker
+    ``ThreadPoolExecutor``, so the model is BOTH loaded AND ever after
+    called from the exact same OS thread for the whole process's life."""
 
     def __init__(self, transcribe_fn: TranscribeFn | None) -> None:
         self._transcribe_fn = transcribe_fn  # None: real model, loaded lazily on first use
         self._call_lock = asyncio.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="parakeet-mlx")
         # Test-observable: how many transcribe() calls were inside the lock
         # at once (must never exceed 1 -- see tests/engines/test_local.py).
         self.calls_in_flight = 0
@@ -126,10 +140,11 @@ class _SharedParakeetModel:
         async with self._call_lock:
             self.calls_in_flight += 1
             self.max_calls_in_flight = max(self.max_calls_in_flight, self.calls_in_flight)
+            loop = asyncio.get_running_loop()
             try:
                 if self._transcribe_fn is None:
-                    self._transcribe_fn = await asyncio.to_thread(_load_transcribe_fn)
-                return await asyncio.to_thread(self._transcribe_fn, pcm)
+                    self._transcribe_fn = await loop.run_in_executor(self._executor, _load_transcribe_fn)
+                return await loop.run_in_executor(self._executor, self._transcribe_fn, pcm)
             finally:
                 self.calls_in_flight -= 1
 

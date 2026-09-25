@@ -1,0 +1,43 @@
+# Task 16: engine_mode "local" -- 100% on-device captioning + translation,
+# no cloud API, no API key spent (Parakeet + TranslateGemma via MLX, Apple
+# silicon only -- `uv sync --extra local` first). `make demo-local` runs
+# this on PORT=8014 so it can run side by side with `make demo`/`make
+# demo-fake` (PORT default 8000).
+#
+# Same 2 sample clips as config.demo.yaml/config.demo-fake.yaml. Demo-en's
+# own Talk.engine is "fast" on purpose: glosa/room.py coerces every talk to
+# the glossary-engine path in local mode (there is no local Live Translate),
+# so this also proves that coercion happens, not just the Spanish room's
+# already-"glossary" default.
+#
+# Limits (see README.md's "Local mode (no cloud)" section and
+# docs/alternatives.md for the measured numbers): 1-2 rooms per machine;
+# the glossary is not applied to either the transcription or the
+# translation in this mode (Parakeet has no custom-vocabulary hook either,
+# and TranslateGemma's prompt format has no slot for extra instructions);
+# each segment is translated independently, with no cross-segment context.
+
+event_name: Glosa demo (local mode)
+timezone: UTC
+
+branding:
+  logo_url: /static/branding/nerdearla/nerdearla-logo.svg
+  primary: "#FFBA00"
+  accent: "#00ACA8"
+
+rooms:
+  - id: local-en
+    name: "Local demo: English to Spanish"
+    source_type: file
+    source_url: samples/en_clip.opus
+    language: en
+    default_targets: [es]
+  - id: local-es
+    name: "Local demo: Spanish to English"
+    source_type: file
+    source_url: samples/es_clip.opus
+    language: es
+    default_targets: [en]
+
+engine_mode: local
+db_path: data/demo-local.db

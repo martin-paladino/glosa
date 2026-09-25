@@ -12,7 +12,9 @@ by the relay (glosa/engines/relay.py):
 - 429, 503 and any 5xx: retryable;
 - websocket 1008 whose reason mentions GoAway: retryable (the server kills a
   session kept past its GoAway, observed at 591 s in the T0.5 run; a fresh
-  session works);
+  session works), and 1008 "The operation was aborted." (seen 5 times on
+  transcribe-live, each while no audio reached the session -- station gone,
+  silence gate closed; a new session worked at once);
 - any other 4xx, 1007 (invalid argument) and 1008 (model not found, config
   rejected): hard, retrying would only loop;
 - anything else (1011 internal error, 1006 abnormal closure, network, 0 =
@@ -36,6 +38,7 @@ NORMAL_CLOSE = 1000
 # bidiGenerateContent, config rejected). Exception: see GOAWAY_ABORT.
 NON_RETRYABLE_WS = frozenset({1007, 1008})
 GOAWAY_ABORT = 1008
+RETRYABLE_1008_HINTS = ("goaway", "operation was aborted")  # a 1008 a fresh session gets past
 PAYMENT_HINTS = ("prepayment", "credits are depleted", "payment required", "payment_required")
 
 
@@ -57,7 +60,7 @@ def error_meta(exc: BaseException) -> dict:
         return {"code": 402, "retryable": False, "payment": True}
     if code in (429, 503) or 500 <= code < 600:
         return {"code": code, "retryable": True}
-    if code == GOAWAY_ABORT and "goaway" in reason:
+    if code == GOAWAY_ABORT and any(hint in reason for hint in RETRYABLE_1008_HINTS):
         return {"code": code, "retryable": True}
     if 400 <= code < 500 or code in NON_RETRYABLE_WS:
         return {"code": code, "retryable": False}

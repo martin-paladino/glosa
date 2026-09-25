@@ -38,6 +38,9 @@ from glosa.engines._gemini_live import classify_error, duration_s, error_code, v
             ),
             {"code": 1008, "retryable": True},
         ),
+        # The server's own close, seen 5 times on sala-estacion (transcribe-live), each time while no
+        # audio was being sent (station gone or silence gate closed): a fresh session worked at once.
+        (errors.APIError(1008, "The operation was aborted.", None), {"code": 1008, "retryable": True}),
         # Any other 1008 (model not found / not supported for bidiGenerateContent, config rejected)
         # is a hard failure: retrying would just loop.
         (
@@ -51,7 +54,7 @@ from glosa.engines._gemini_live import classify_error, duration_s, error_code, v
         ),
         (ConnectionResetError("reset by peer"), {"code": 0, "retryable": True}),
     ],
-    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-other", "network"],
+    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-aborted", "ws-1008-other", "network"],
 )
 def test_classify_error(exc: Exception, expected_meta: dict) -> None:
     ev = classify_error(exc, t_recv=3.0)

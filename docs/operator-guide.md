@@ -209,8 +209,13 @@ these, they're what the person plugging in the mic sees.
   `samples/{en,es}_clip.opus`) or upload a file (max 50 MB). This calls
   `POST /api/admin/rooms/<id>/test-audio` (multipart form, `sample: en|es`
   or `file: <upload>`), which plays the clip at real-time speed as the
-  room's audio via `RoomWorker.play_file()` — a running talk keeps its
-  engine session, an idle room starts its free session. While a room plays
+  room's audio via `RoomWorker.play_file()`, as a test session: it is
+  refused (409, with the reason in the drawer) while an agenda talk is
+  open in the room or, in auto mode, due within the autopilot's 60-s lead,
+  so a test never ends or pollutes a talk; a running free session switches
+  back to its own source when the clip ends, an idle room gets a session
+  of its own, and the autopilot leaves it alone until the clip ends (a
+  talk that comes due still takes over). While a room plays
   a test file, an admin can also click **Escuchar el audio**/**Listen to
   the audio** to hear that same audio synchronized with the live captions
   (`GET /api/admin/listen/<id>`; Ruling 51: admin-only, and only while the

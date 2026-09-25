@@ -614,8 +614,19 @@ class RoomWorker:
         quality = self._quality.avg() if self._quality is not None and self.talk is not None else None  # M6
         if quality is not None:
             quality = round(quality, 2)
+        waiting_for_station = (
+            self.talk is not None
+            and is_free_talk(self.talk.id)
+            and self.room.source_type == "emitter"
+            and self._station_hub is not None
+            and not self._station_hub.info(self.room.id).connected
+        )
         if self.talk is None:
             state, detail = "idle", "no talk in progress"
+        elif waiting_for_station:
+            # A free session with no station connected yet is waiting, not
+            # broken: idle, not red. With an agenda talk live it IS red.
+            state, detail = "idle", "waiting for the room station"
         else:
             now = self._clock.now()
             peak = max(run.levels) if run is not None and run.levels else level
@@ -1403,7 +1414,9 @@ class RoomWorker:
             reason = stale()
             if reason != self._source_down:
                 self._source_down = reason
-                if reason:
+                if reason and self.talk is not None and is_free_talk(self.talk.id):
+                    await self._log("info", "station_waiting", reason)  # no agenda talk: not an alert
+                elif reason:
                     await self._log("error", "source_down", reason)
                 else:
                     await self._log("info", "source_recovered", "station reconnected")

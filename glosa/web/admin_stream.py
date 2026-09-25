@@ -558,6 +558,10 @@ def _room_texts(room: dict[str, Any], lang: Lang, zone: tzinfo, today: Any) -> d
         texts["state_word"] = admin_t(f"state_{room['state']}", lang)
         said = texts["state_word"].lower() in texts["what"].lower()  # "Fuente caída: ..." already says it
         texts["state_line"] = texts["what"] if said else f"{texts['state_word']}. {texts['what']}"
+    elif room["state"] == "idle" and "waiting for the room station" in ((room.get("status") or {}).get("detail") or ""):
+        texts["state_word"] = admin_t("waiting_station", lang)
+        texts["wait"] = admin_t("waiting_station_hint", lang)
+        texts["state_line"] = admin_t("waiting_station_hint", lang)
     elif room["state"] == "idle":
         next_today = nxt is not None and datetime.fromisoformat(nxt["start"]).astimezone(zone).date() == today
         if next_today:

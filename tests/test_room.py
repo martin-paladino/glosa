@@ -2804,3 +2804,23 @@ async def test_an_emitter_room_has_a_source_without_a_source_url(db) -> None:
     await worker.start(None)  # no "has no audio source" error
     assert worker.talk is not None
     await worker.stop()
+
+
+async def test_an_emitter_free_session_without_a_station_is_waiting_not_down(db) -> None:
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    class NoStation:
+        def info(self, room_id):
+            return SimpleNamespace(connected=False, device=None, level_db=None, last_audio_age_s=None)
+
+    clock = DrivenClock()
+    room = replace(_room(), source_type="emitter", source_url="")
+    worker = _worker(room, _settings(), CaptionBus(clock=clock), db, clock, Factory(clock, FAKE_LT), IngestFactory(),
+                     station_hub=NoStation())
+    await worker.start(None)
+
+    status = worker.status()
+    assert status.state == "idle"
+    assert "waiting for the room station" in status.detail
+    await worker.stop()

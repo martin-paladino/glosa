@@ -218,13 +218,16 @@ flowchart LR
   budget at 80%, a silence alarm); a room's row carries a one-click
   reconnect/reopen-source button. Also: the spend meter, the event log,
   today's agenda with the next automatic
-  change, and a side drawer per room (click it or press 1–9; Esc closes)
-  with auto/manual, start/end talk, reconnect, **"Probar con audio"**
-  (play a sample or an uploaded clip through the room to judge quality
-  without a live talk), **"Escuchar el audio"** (an admin can listen to
-  that test clip synchronized with the captions), an exports list, every
-  metric against its limit and the room's history, and — for a room
-  station — its connection state, link, QR code and **"Recargar
+  change, the same light/dark/high-contrast theme toggle (**Tema**) and a
+  **Shortcuts** button as the audience pages, tooltips on the engine/mode/
+  drawer buttons, and a side drawer per room (click it or press 1–9; Esc
+  closes) with auto/manual, start/end talk, reconnect, **"Probar con
+  audio"** (play a sample or an uploaded clip through the room to judge
+  quality without a live talk — refused while an agenda talk is open or
+  due), **"Escuchar el audio"** (an admin can listen to that test clip
+  synchronized with the captions), an exports list (finished free sessions
+  included), every metric against its limit and the room's history, and —
+  for a room station — its connection state, link, QR code and **"Recargar
   estación"**. See
   [`docs/operator-guide.md`](docs/operator-guide.md) for the full button
   reference.

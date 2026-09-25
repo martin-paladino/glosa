@@ -179,6 +179,31 @@ async def test_status_goes_through_pending_before_the_final_status(db) -> None:
     assert seen == ["pending", "ready"]
 
 
+async def test_a_failing_initial_pending_write_is_reported_as_failed_not_raised(db) -> None:
+    """task-11r-fix1.md item 2: the initial set_export_status("pending")
+    call used to sit outside the try/except, so a DB error there
+    propagated uncaught instead of being handled like every other failure
+    in this function (logged, reported as "failed")."""
+    await db.insert_talks([_talk()])
+    await db.save_segment("t1", "r1", "en", "source", "live", "Hello.", 0.0, 1.0)
+    real_set = db.set_export_status
+    calls: list[str] = []
+
+    async def flaky(talk_id: str, lang: str, status: str) -> None:
+        calls.append(status)
+        if status == "pending":
+            raise RuntimeError("db is locked")
+        await real_set(talk_id, lang, status)
+
+    db.set_export_status = flaky  # type: ignore[method-assign]
+
+    status = await build_corrected("t1", "es", db=db, api_key="unused", client=FakeGenAIClient([]))
+
+    assert status == "failed"
+    assert calls == ["pending", "failed"]
+    assert await db.get_export_status("t1", "es") == "failed"
+
+
 @pytest.mark.live
 async def test_live_builds_a_corrected_export_for_20_real_segments(db) -> None:
     """Runs once against the real gemini-3.8-flash API: 20 EN source

@@ -323,8 +323,8 @@ async def build_corrected(
     glosa/text/glossary.py's "an optional, background nicety must never
     break its caller").
     """
-    await db.set_export_status(talk_id, lang, "pending")
     try:
+        await db.set_export_status(talk_id, lang, "pending")
         talk = await db.get_talk(talk_id)
         if talk is None:
             raise LookupError(f"no talk {talk_id!r}")

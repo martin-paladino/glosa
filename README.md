@@ -41,6 +41,8 @@ or add the same volume line to a local `docker-compose.override.yml` (Compose me
 | `ADMIN_PASSWORD` | yes | The single password for `/admin` (start/stop rooms). At least 8 characters — Glosa refuses to start otherwise. Use a long random one, e.g. `openssl rand -base64 18`; it's the only thing standing between the internet and your rooms' start/stop controls. |
 | `TYPESAFE_API_KEY` | no | Enables the Jev quality meter. Leave blank to skip it — everything else works without it. |
 
+With a key set, the meter scores one caption pair every 15 s per room, English↔Spanish only (Jev's question is fixed to that pair); other language pairs, and rooms without a key, keep the "quality" reading as "—".
+
 Secrets live only in `.env` (gitignored) and are read from that file directly, never from the shell/container environment (so a stray exported variable, or `docker inspect`, can't leak them — see `docker-compose.yml`'s comment). Never put them in `config.yaml` or commit them.
 
 ## What's in the box

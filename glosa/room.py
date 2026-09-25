@@ -724,6 +724,8 @@ class RoomWorker:
         realtime: bool,
     ) -> None:
         """Start ``talk`` (or the free session) on ``source_url``."""
+        if not source_url and source_type == "emitter":
+            source_url = self.room.id  # the station brings the audio; the "url" is just a label
         if not source_url:
             raise ValueError(f"room {self.room.id!r} has no audio source")
         if self._run is not None:

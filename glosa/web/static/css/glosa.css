@@ -393,8 +393,13 @@
   .btn--compact { min-block-size: 32px; padding: 0 16px; letter-spacing: 0.01em; font-stretch: 88%; }
   .btn--degraded { background: var(--warn); border-color: var(--warn); color: var(--on-warn); font-weight: 700; }
   .btn--down     { background: var(--fault); border-color: var(--fault); color: var(--on-fault); font-weight: 700; }
+  /* Task 18: talk_mismatch -- a suggestion, not a health problem, but still
+     yellow (same --warn as degraded); it never actually renders (its issue
+     has no action), kept for symmetry with the other severities. */
+  .btn--info     { background: var(--warn); border-color: var(--warn); color: var(--on-warn); font-weight: 700; }
   .btn--degraded:hover { background: var(--warn); filter: brightness(1.08); }
   .btn--down:hover     { background: var(--fault); filter: brightness(1.08); }
+  .btn--info:hover     { background: var(--warn); filter: brightness(1.08); }
   .btn--link {
     min-block-size: 0;
     padding: 4px 0;
@@ -1149,6 +1154,9 @@
   .attn__row + .attn__row { border-block-start: var(--border-w) solid var(--line); }
   .attn__row--degraded { --s: var(--warn); }
   .attn__row--down     { --s: var(--fault); }
+  /* Task 18: talk_mismatch's "info" severity -- a soft, yellow suggestion,
+     never a room's own LED (RoomStatus.state is untouched). */
+  .attn__row--info     { --s: var(--warn); }
   .attn__room { font: 700 15px/1 var(--font-label); font-stretch: 82%; }
   .attn__what { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .attn__what em { font-style: normal; color: var(--ink-2); }

@@ -401,6 +401,45 @@ async def test_a_long_silence_raises_the_alarm_once_and_logs_it(panel) -> None:
     assert len(silences) == 1 and silences[0].level == "warning" and silences[0].room_id == "r1"
 
 
+async def test_a_talk_mismatch_suggestion_shows_as_an_info_issue_never_a_health_one(panel) -> None:
+    """Task 18: TalkMismatchStore is read only when the room has no real
+    health issue (a green room can still get the suggestion), never
+    touches the room's own LED (RoomStatus.state stays green/"live"), and
+    is picked up as an "info" Atención row -- last in severity order,
+    behind any real down/degraded issue."""
+    from glosa.talk_check import TalkMismatchStore, TalkMismatchSuggestion
+
+    fine = FakeWorker("r1", "Sala Uno", talk=_talk("a", "r1", -5, 30),
+                       status=_status(state="green", level_db=-20.0, talk_id="a", detail="ok"))
+    p = panel(fine)
+    p.app.state.talk_mismatches = TalkMismatchStore()
+    p.app.state.talk_mismatches.set("r1", TalkMismatchSuggestion(talk_id="a", guess="next", next_title="Charla B"))
+
+    view = localize(await AdminMonitor(p.app).snapshot(), "es")
+
+    room = view["rooms"][0]
+    assert room["state"] == "live"  # the LED is untouched
+    assert room["issue"]["kind"] == "talk_mismatch" and room["issue"]["severity"] == "info"
+    assert room["issue"]["action"] is None
+    assert room["text"]["what"] == "Parece que ya empezó «Charla B»."
+    assert view["attention"][0]["severity"] == "info" and view["attention"][0]["action_label"] == ""
+
+    # cleared the moment the store no longer names this talk (talk change,
+    # agreement, or manual -- TalkCheckScheduler's job; here just simulated)
+    p.app.state.talk_mismatches.clear("r1")
+    calm = localize(await AdminMonitor(p.app).snapshot(), "es")
+    assert calm["rooms"][0]["issue"] is None
+
+    # a real health issue always wins the room's one Atención slot
+    down = FakeWorker("r2", "Sala Dos", talk=_talk("b", "r2", -5, 30),
+                       status=_status(state="red", talk_id="b", detail="source is down: boom"))
+    p2 = panel(down)
+    p2.app.state.talk_mismatches = TalkMismatchStore()
+    p2.app.state.talk_mismatches.set("r2", TalkMismatchSuggestion(talk_id="b", guess="break", next_title=None))
+    view2 = localize(await AdminMonitor(p2.app).snapshot(), "es")
+    assert view2["rooms"][0]["issue"]["kind"] == "source_down"
+
+
 async def test_the_budget_warns_at_80_percent_and_when_payment_is_refused(panel) -> None:
     ok = FakeWorker("r1", "Sala Uno")
     p = panel(ok, budget_usd=1.0)

@@ -342,6 +342,20 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "issue_other_title": "{detail}",
         "issue_other_note": "",
         "issue_other_hint": "",
+        # Task 18: la sugerencia "¿pasar a manual?" de Jev -- info/amarillo,
+        # no un problema de salud, asi que nunca toca el LED de la sala. Dos
+        # variantes del mismo tipo de issue (talk_mismatch), segun lo que
+        # haya adivinado Jev.
+        "issue_talk_mismatch_next_what": "Parece que ya empezó «{next_title}».",
+        "issue_talk_mismatch_next_em": "¿Pasar la sala a manual?",
+        "issue_talk_mismatch_next_title": "¿Pasar a manual?",
+        "issue_talk_mismatch_next_note": "Según los últimos subtítulos.",
+        "issue_talk_mismatch_next_hint": "Es solo una sugerencia de Jev: no cambia el modo ni la charla por su cuenta.",
+        "issue_talk_mismatch_break_what": "Los últimos subtítulos parecen un corte (silencio, aplausos o cambio de charla).",
+        "issue_talk_mismatch_break_em": "¿Pasar la sala a manual?",
+        "issue_talk_mismatch_break_title": "¿Pasar a manual?",
+        "issue_talk_mismatch_break_note": "Según los últimos subtítulos.",
+        "issue_talk_mismatch_break_hint": "Es solo una sugerencia de Jev: no cambia el modo ni la charla por su cuenta.",
         # Agenda
         "agenda": "Agenda",
         "agenda_of_today": "Agenda de hoy",
@@ -632,6 +646,20 @@ ADMIN_STRINGS: dict[str, dict[str, str]] = {
         "issue_other_title": "{detail}",
         "issue_other_note": "",
         "issue_other_hint": "",
+        # Task 18: Jev's "switch to manual?" suggestion -- an info/yellow
+        # suggestion, not a health problem, so it never touches the room's
+        # LED. Two variants of the same issue kind (talk_mismatch), picked
+        # by the guess Jev made.
+        "issue_talk_mismatch_next_what": "It looks like «{next_title}» already started.",
+        "issue_talk_mismatch_next_em": "Switch the room to manual?",
+        "issue_talk_mismatch_next_title": "Switch to manual?",
+        "issue_talk_mismatch_next_note": "Based on the latest captions.",
+        "issue_talk_mismatch_next_hint": "Just a Jev suggestion: it never changes the mode or the talk by itself.",
+        "issue_talk_mismatch_break_what": "The latest captions look like a break (silence, applause, or a talk change).",
+        "issue_talk_mismatch_break_em": "Switch the room to manual?",
+        "issue_talk_mismatch_break_title": "Switch to manual?",
+        "issue_talk_mismatch_break_note": "Based on the latest captions.",
+        "issue_talk_mismatch_break_hint": "Just a Jev suggestion: it never changes the mode or the talk by itself.",
         # Agenda
         "agenda": "Agenda",
         "agenda_of_today": "Today's agenda",

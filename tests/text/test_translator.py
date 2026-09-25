@@ -22,7 +22,7 @@ from google.genai.errors import ClientError, ServerError
 from glosa.clock import FakeClock
 from glosa.config import Settings
 from glosa.models import GlossaryTerm
-from glosa.text.translator import Translation, Translator
+from glosa.text.translator import Translation, Translator, _build_system_instruction
 
 ENV_PATH = "/Users/mpaladino/repos/glosa/.env"
 
@@ -114,6 +114,19 @@ async def test_system_instruction_includes_glossary_and_last_two_segments() -> N
     assert "Segment two." in system_instruction
     assert "Segment three." in system_instruction
     assert "Segment one." not in system_instruction  # only the last 2 of context
+
+
+def test_the_glossary_applies_only_to_terms_in_the_segment() -> None:
+    """Live run 4: "en este particular cluster" came out as "in this
+    particular Kubernetes control plane": the model put glossary terms where
+    the segment had none. The instruction scopes every entry to the segment."""
+    text = _build_system_instruction("en", GLOSSARY, [])
+
+    rules = text.split("Glossary")[1].lower()
+    assert "only when" in rules and "appears in the segment" in rules and "inflection" in rules
+    assert "never add" in rules and "not in the segment" in rules
+    assert "apply exactly; do not deviate" not in text  # the old, unscoped wording
+    assert text.index("Kubernetes → keep") > text.index("Glossary")
 
 
 async def test_thinking_level_is_minimal() -> None:

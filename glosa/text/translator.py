@@ -50,7 +50,12 @@ def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context
     ]
     if glossary:
         lines.append("")
-        lines.append("Glossary (apply exactly; do not deviate):")
+        lines.append(
+            "Glossary. Use an entry only when its term, or an obvious inflection of it, appears in the "
+            "segment you are translating; then apply it exactly. Never add a glossary term that is not "
+            "in the segment, and never use one to replace a different word (e.g. do not turn a plain "
+            "noun into a glossary term):"
+        )
         for term in glossary:
             rhs = "keep" if term.keep_in_english else (term.translation or "")
             lines.append(f"{term.term} → {rhs}")

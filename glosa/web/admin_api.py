@@ -767,7 +767,26 @@ async def list_exports(request: Request) -> list[dict]:
                 }
             exports.append(entry)
         out.append({"talk_id": talk.id, "room_id": talk.room_id, "title": talk.title, "exports": exports})
+    # Free sessions (no agenda talk): live version only, no corrected build.
+    zone = _zone_of(request)
+    for talk in await db.get_done_free_talks_with_captions():
+        langs = [talk.language, *[lang for lang in talk.targets if lang != talk.language]]
+        started = talk.actual_start.astimezone(zone).strftime("%H:%M") if talk.actual_start else ""
+        out.append({
+            "talk_id": talk.id, "room_id": talk.room_id, "title": talk.title, "free": True,
+            "started_at_text": started,
+            "exports": [{"lang": lang, "live": _export_links(talk.id, lang, "live"), "corrected": None} for lang in langs],
+        })
     return out
+
+
+def _zone_of(request: Request):
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        return ZoneInfo(request.app.state.settings.timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo("UTC")
 
 
 def _export_links(talk_id: str, lang: str, version: str) -> dict[str, str]:

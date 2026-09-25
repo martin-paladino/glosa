@@ -116,7 +116,7 @@ async def test_exports_lists_a_done_talks_languages_with_links_and_status(admin)
     assert by_lang["pt"]["corrected"] == {"status": "pending", "links": None}  # unaffected
 
 
-async def test_exports_excludes_free_sessions_and_unfinished_talks(admin) -> None:
+async def test_exports_excludes_unfinished_talks_and_live_free_sessions(admin) -> None:
     app, client = admin
     await app.state.db.insert_talks([_talk("scheduled-t", status="scheduled"), _talk("free-r1-x", status="live")])
 
@@ -198,3 +198,16 @@ async def test_suggest_glossary_404s_for_an_unknown_talk(admin) -> None:
     _, client = admin
     response = await client.post("/api/admin/talks/nope/suggest-glossary")
     assert response.status_code == 404
+
+
+async def test_a_finished_free_session_with_captions_lists_its_live_exports_only(admin) -> None:
+    app, client = admin
+    await app.state.db.insert_talks([_talk("free-r1-a"), _talk("free-r1-empty")])
+    await app.state.db.save_segment("free-r1-a", "r1", "en", "source", "live", "Hi.", 0.0, 1.0)
+
+    listed = (await client.get("/api/admin/exports")).json()
+
+    assert [entry["talk_id"] for entry in listed] == ["free-r1-a"]  # no captions, nothing to export
+    entry = listed[0]
+    assert entry["free"] is True and entry["started_at_text"]
+    assert all(row["corrected"] is None and row["live"]["srt"].endswith(".srt") for row in entry["exports"])

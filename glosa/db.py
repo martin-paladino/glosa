@@ -333,6 +333,16 @@ class Database:
         rows = await self._run(lambda con: con.execute(sql, (f"{FREE_TALK_PREFIX}%",)).fetchall())
         return [_talk_from_row(r) for r in rows]
 
+    async def get_done_free_talks_with_captions(self) -> list[Talk]:
+        """Finished free sessions that have at least one saved segment,
+        newest first: the admin lists their live exports too."""
+        sql = (
+            "SELECT * FROM talks WHERE status = 'done' AND id LIKE ? AND EXISTS "
+            "(SELECT 1 FROM segments s WHERE s.talk_id = talks.id) ORDER BY actual_start DESC"
+        )
+        rows = await self._run(lambda con: con.execute(sql, (f"{FREE_TALK_PREFIX}%",)).fetchall())
+        return [_talk_from_row(r) for r in rows]
+
     async def get_last_started_talk(self, room_id: str) -> Talk | None:
         """The room's talk (free sessions included) with the latest
         ``actual_start``, or None if none ever started."""

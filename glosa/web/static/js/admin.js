@@ -948,7 +948,9 @@
       title.lang = talk.language;
       $("[data-d-who]", d).textContent = talk.speakers.join(", ");
       $("[data-d-dir]", d).textContent = `${talk.language.toUpperCase()} ▸ ${talk.target.toUpperCase()}`;
-      $("[data-d-engine]", d).textContent = talk.engine === "glossary" ? plural("glossary_terms", talk.glossary) : T.engine_fast;
+      const engineEl = $("[data-d-engine]", d);
+      engineEl.textContent = talk.engine === "glossary" ? plural("glossary_terms", talk.glossary) : T.engine_fast;
+      engineEl.title = talk.engine === "glossary" ? T.tip_engine_glossary : T.tip_engine_fast;
       $("[data-d-slot]", d).textContent = talk.free ? "" : `${isoHm(talk.start)}–${isoHm(talk.end)}`;
       $("[data-d-tc]", d).dataset.start = room.talk && room.state !== "idle" ? room.talk.actual_start || "" : "";
     }
@@ -1054,8 +1056,10 @@
   }
 
   function exportItem(entry) {
+    const title = entry.free ? `${entry.title} · ${entry.started_at_text || ""}`.replace(/ · $/, "") : entry.title;
     return el("li", { class: "exports__item" },
-      el("b", { class: "exports__title" }, entry.title),
+      el("b", { class: "exports__title" }, title),
+      ...(entry.free ? [el("span", { class: "drawer__hint", text: T.export_free_note })] : []),
       ...entry.exports.map(exportLangRow));
   }
 

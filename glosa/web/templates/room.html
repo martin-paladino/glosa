@@ -16,6 +16,12 @@
 {% block head %}
   <script src="/static/js/room.js" defer></script>
   <script src="/static/js/clock.js" defer></script>
+  {%- if listen %}
+  {#- Task 14b, Ruling 5: admin-only, test-mode-only. Without a session (or
+      not in test mode), pages.py leaves both this script tag and the
+      button below out of the page entirely -- not merely hidden. #}
+  <script src="/static/js/listen.js" defer></script>
+  {%- endif %}
 {%- endblock %}
 
 {% block body %}
@@ -53,6 +59,17 @@
       <span data-talk-speakers></span>
       {{ direction_badge(direction) }}
     </p>
+    {%- endif %}
+    {%- if listen %}
+    {#- Task 14b, Ruling 5: "Escuchar el audio" -- admin-only, test-mode-only.
+        The widget's own poll against GET /api/admin/listen/{room} decides
+        whether it shows at all (glosa/web/static/js/listen.js); it starts
+        `hidden` so there's no flash before that first poll resolves. #}
+    <div class="room-listen" data-listen data-listen-room="{{ room.slug }}" data-listen-preparing="{{ tr('listen_preparing') }}" hidden>
+      <button class="btn btn--compact" type="button" data-listen-button>{{ tr("listen_audio") }}</button>
+      <audio data-listen-audio preload="none" controls hidden></audio>
+      <span class="room-listen__status" data-listen-status hidden></span>
+    </div>
     {%- endif %}
   </header>
 

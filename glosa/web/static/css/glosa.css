@@ -846,6 +846,19 @@
   .stage-agenda .slot__what .talk-title { font-size: var(--step-3); }
   .stage-agenda .slot__what .talk-meta { font-size: var(--step-0); }
 
+  /* ---- "Escuchar el audio" (Tarea 14b, Ruling 5): admin y solo en modo
+     prueba -- discreto a propósito, una fila gris más del encabezado, no un
+     llamado a la acción. */
+  .room-listen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-block-start: 10px;
+  }
+  .room-listen audio { inline-size: min(100%, 22rem); block-size: 32px; }
+  .room-listen__status { font-size: 12.5px; color: var(--ink-3); }
+
   /* ---- Salas al costado (escritorio) ---------------------------------------- */
   /* Las otras salas como filas de agenda: luz, nombre, lo que pasa ahí. */
   .room-nav {
@@ -1885,5 +1898,57 @@
     place-items: end center;
     padding: 0 5vw 5.5vw;
     background: transparent;
+  }
+  .overlay-logo {
+    position: fixed;
+    inset-block-start: 4vh;
+    inset-inline-end: 4vw;
+    block-size: 64px;
+    inline-size: auto;
+  }
+
+  /* ---- Página del QR (Tarea 14b): imprimible o proyectable ------------------------- */
+  /* Único lugar de la audiencia donde se permite un acento de marca (Ruling de
+     branding): una sola raya sobre el nombre de la sala, con moderación. */
+  .qr-page {
+    min-block-size: 100dvh;
+    margin: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    justify-items: center;
+    gap: 28px;
+    padding: 28px 20px 32px;
+    text-align: center;
+    background: var(--room);
+    color: var(--ink);
+  }
+  .qr-page__brand { justify-self: start; display: flex; align-items: center; gap: var(--space-3); }
+  .qr-page__body { display: grid; justify-items: center; gap: 18px; align-self: center; max-inline-size: 26rem; }
+  .qr-page__rule { inline-size: 64px; block-size: 3px; margin: 0; background: var(--brand-primary, var(--ink-3)); }
+  .qr-page__room {
+    font: 750 var(--step-5)/1.05 var(--font-label);
+    font-stretch: var(--narrow-3);
+    letter-spacing: -0.005em;
+  }
+  .qr-page__code {
+    padding: 20px;
+    background: #FFFFFF;   /* un QR necesita zona en blanco alrededor, en cualquier tema */
+    border: var(--border-w) solid var(--line);
+  }
+  .qr-page__code img { display: block; inline-size: min(64vw, 20rem); block-size: auto; }
+  .qr-page__lede { font-size: var(--step-2); line-height: 1.4; color: var(--ink-2); }
+  .qr-page__url { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+  .qr-page__foot { font-size: var(--step--1); color: var(--ink-3); }
+
+  @container glosa (min-width: 48rem) {
+    .qr-page__room { font-size: var(--step-6); }
+    .qr-page__code img { inline-size: min(36vw, 26rem); }
+    .qr-page__lede { font-size: var(--step-3); }
+  }
+
+  @media print {
+    .qr-page { background: #FFFFFF; color: #000000; }
+    .qr-page__lede, .qr-page__foot { color: #000000; }
+    .qr-page__code { border-color: #000000; }
   }
 }

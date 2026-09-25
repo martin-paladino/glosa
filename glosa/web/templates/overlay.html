@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{#- Not the audience's page, but the same rule applies (glosa/web/app.py's
+    ReferrerPolicyMiddleware covers the header side of this). #}
+<meta name="referrer" content="same-origin">
+<meta name="robots" content="noindex">
+<title>Overlay | Glosa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+{#- Only the caption face: this page has no labels or times to set in the other two. #}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&display=swap">
+<link rel="stylesheet" href="/static/css/glosa.css">
+{%- if brand_css %}
+<style>:root { {% for name, value in brand_css %}{{ name }}: {{ value }}; {% endfor %}}</style>
+{%- endif %}
+</head>
+<body class="overlay-page">
+{%- if show_logo and logo_url %}
+<img class="overlay-logo" src="{{ logo_url }}" alt="">
+{%- endif %}
+<div class="overlay" lang="{{ lang }}" data-overlay style="--overlay-lines: {{ lines }}; --overlay-size: {{ size }}px;" hidden>
+  <div class="overlay__window">
+    <p class="overlay__text" data-overlay-text></p>
+  </div>
+</div>
+<script type="application/json" id="glosa-overlay">{{ config | tojson }}</script>
+<script src="/static/js/overlay.js" defer></script>
+</body>
+</html>

@@ -15,7 +15,10 @@ WORKDIR /app
 # itself, so this layer needs nothing else) so editing the app afterwards
 # doesn't invalidate it.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# --extra jev: the optional Jev quality meter (typesafe-sdk); harmless to
+# install even without a TYPESAFE_API_KEY -- glosa/room_quality.py only
+# imports it once a key is actually configured.
+RUN uv sync --frozen --no-dev --extra jev
 
 # Explicit runtime paths, not `COPY . .` (Ruling 30): keeps anything
 # unanticipated -- a stray .env, config.yaml, data/, .git, tests/ -- out of

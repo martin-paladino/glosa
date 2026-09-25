@@ -21,6 +21,8 @@ import math
 import os
 import struct
 import subprocess
+import sys
+import types
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -202,6 +204,40 @@ class FakeTranslate:
         return Translation(text=text, latency_s=0.0, usd=self.usd)
 
 
+class FakeQualityMeter:
+    """glosa.room_quality.MeterLike stand-in for RoomWorker-level tests: the
+    QualityFeed/QualityMeter internals (pairing, rate limits, en<->es
+    mapping) are unit-tested against a fake in tests/test_room_quality.py;
+    here we only check that RoomWorker wires pairing, per-talk reset and
+    status().quality through to a meter built by quality_factory."""
+
+    def __init__(self, result: float | None = 0.9) -> None:
+        self.result = result
+        self.calls: list[tuple[str, str]] = []
+        self.scores: list[float] = []
+        self.reset_calls = 0
+        self.closed = 0
+
+    async def score(self, src: str, tgt: str) -> float | None:
+        self.calls.append((src, tgt))
+        await asyncio.sleep(0)
+        return self.result
+
+    def add(self, p: float | None) -> None:
+        if p is not None:
+            self.scores.append(p)
+
+    def avg(self) -> float | None:
+        return sum(self.scores) / len(self.scores) if self.scores else None
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+        self.scores.clear()
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
 class FakeIngest:
     """AudioIngest stand-in: 2 s of voice, 0.6 s of silence, repeating."""
 
@@ -381,6 +417,39 @@ def db(tmp_path: Path):
     database = init_db(tmp_path / "glosa.db")
     yield database
     database.close()
+
+
+@pytest.fixture
+def fake_typesafe_sdk():
+    """A minimal stub of typesafe_sdk (Task 13w's optional "jev" extra,
+    deliberately not installed in this dev environment), so glosa.quality --
+    which imports it at module level -- can actually be imported here. Only
+    needed by tests that hand RoomWorker a quality_factory of their own
+    (bypassing glosa.room_quality.build_quality_meter's own lazy import):
+    QualityFeed.on_target still reaches for glosa.quality.find_matching_source
+    lazily, and that needs the real module to import cleanly. No network:
+    QualityMeter itself is never used here, always a FakeQualityMeter."""
+    stub = types.ModuleType("typesafe_sdk")
+
+    class AsyncTypeSafeClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def aclose(self) -> None:
+            pass
+
+    class Noul:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+    stub.AsyncTypeSafeClient = AsyncTypeSafeClient
+    stub.Noul = Noul
+    sys.modules["typesafe_sdk"] = stub
+    try:
+        yield
+    finally:
+        sys.modules.pop("typesafe_sdk", None)
+        sys.modules.pop("glosa.quality", None)
 
 
 def _worker(room, settings, bus, db, clock, factory, ingests, **kw) -> RoomWorker:
@@ -1970,3 +2039,108 @@ async def test_the_hot_engine_swap_keeps_the_station_ingest(tmp_path: Path, db) 
     assert worker.talk is not None and worker.talk.id == "f1"
     await worker.stop()
     assert not _live_tasks()
+
+
+# ------------------------------------------------------------------- quality
+
+
+async def test_no_typesafe_key_means_quality_factory_is_never_called(db) -> None:  # Task 13w
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    calls: list[str] = []
+
+    def factory(api_key: str) -> FakeQualityMeter:
+        calls.append(api_key)
+        return FakeQualityMeter()
+
+    worker = _worker(_room(), _settings(), bus, db, clock, Factory(clock, FAKE_LT), IngestFactory(),
+                     quality_factory=factory)
+
+    await worker.start(None)
+    await run_for(clock, 10.0)
+
+    assert calls == []  # no TYPESAFE_API_KEY: the lazy builder is never reached
+    assert worker.status().quality is None
+    await worker.stop()
+
+
+async def test_quality_feed_scores_fast_track_pairs_and_status_surfaces_the_average(
+    db, fake_typesafe_sdk
+) -> None:  # Task 13w
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    meter = FakeQualityMeter(result=0.42)
+    worker = _worker(_room(), _settings(typesafe_api_key="fake-key"), bus, db, clock, Factory(clock, FAKE_LT),
+                     IngestFactory(), quality_factory=lambda key: meter)
+
+    await worker.start(None)  # a free session: en source, es target (default_targets)
+    await run_for(clock, 10.0)
+
+    assert meter.calls  # at least one en->es pair, from the fast engine's tracks via _save
+    english, spanish = meter.calls[0]
+    assert english == "Great starting scenario, for sure."
+    assert spanish == "Un gran escenario de inicio, sin duda."
+    assert worker.status().quality == pytest.approx(round(meter.avg(), 2))
+    assert worker.status().quality == pytest.approx(0.42)
+    assert worker.status().state == "yellow"  # below the 0.5 quality threshold; latency/level otherwise green
+    await worker.stop()
+    assert meter.closed == 1  # stop() closes the meter's HTTP client after any in-flight score
+
+
+async def test_quality_feed_scores_glossary_lane_pairs_es_to_en(db, fake_typesafe_sdk) -> None:  # Task 13w
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    meter = FakeQualityMeter()
+    translate = FakeTranslate()
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es"), typesafe_api_key="fake-key"), bus, db, clock,
+                     Factory(clock, TR_ES), IngestFactory(), translate=translate, quality_factory=lambda key: meter)
+
+    await worker.start(_talk("g1"))  # es source, en target, glossary engine (_on_translation)
+    await run_for(clock, 62.0)
+    await worker.stop()
+
+    assert meter.calls  # the glossary lane's es->en translations were paired and scored
+    for english, spanish in meter.calls:
+        assert english.startswith("[en] ")  # es->en swaps: english=target text, spanish=source text
+
+
+async def test_a_key_with_typesafe_sdk_unimportable_warns_once_and_the_room_runs_unmetered(
+    db, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:  # Task 13w
+    """glosa.room must never import glosa.quality (and so typesafe_sdk) at
+    module level: with a key set but the 'jev' extra unimportable, the room
+    still starts and runs, quality just stays unmeasured."""
+    monkeypatch.setitem(__import__("sys").modules, "typesafe_sdk", None)
+    monkeypatch.delitem(__import__("sys").modules, "glosa.quality", raising=False)
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    worker = _worker(_room(), _settings(typesafe_api_key="fake-key"), bus, db, clock, Factory(clock, FAKE_LT),
+                     IngestFactory())  # default (lazy) quality_factory: glosa.room.build_quality_meter
+
+    with caplog.at_level(logging.WARNING, logger="glosa.room_quality"):
+        await worker.start(None)
+        await run_for(clock, 10.0)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and r.name == "glosa.room_quality"]
+    assert len(warnings) == 1 and "jev" in warnings[0].message
+    assert worker.status().quality is None
+    await worker.stop()
+
+
+async def test_quality_resets_for_each_new_talk(db, fake_typesafe_sdk) -> None:  # Task 13w
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    meter = FakeQualityMeter()
+    worker = _worker(_room(), _settings(typesafe_api_key="fake-key"), bus, db, clock,
+                     Factory(clock, FAKE_LT, FAKE_LT), IngestFactory(), quality_factory=lambda key: meter)
+
+    await worker.start(_talk("t1", language="en", targets=("es",), engine="fast"))
+    assert meter.reset_calls == 1  # a fresh talk starts with an empty window
+    await run_for(clock, 10.0)
+    assert worker.status().quality is not None
+
+    await worker.start(_talk("t2", language="en", targets=("es",), engine="fast"))  # t1's run ends here
+    assert meter.reset_calls == 2
+    assert worker.status().quality is None  # the new talk's window starts empty again
+
+    await worker.stop()

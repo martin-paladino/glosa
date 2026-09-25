@@ -58,6 +58,7 @@ from glosa.i18n import SUPPORTED, Lang, admin_plural, admin_t, detect_lang
 from glosa.metrics import CostTracker
 from glosa.models import CaptionMsg, RoomStatus, Talk
 from glosa.room import is_free_talk, target_lang
+from glosa.talk_check import TalkMismatchSuggestion
 from glosa.web.auth import is_authenticated, require_admin
 
 log = logging.getLogger(__name__)
@@ -80,7 +81,9 @@ SILENCE_ALARM_S = 30.0
 # RoomStatus.state -> the four words of glosa.css (.led--*, .monitor--*...).
 STATE_CSS = {"green": "live", "yellow": "degraded", "red": "down", "idle": "idle"}
 STATE_ORDER = ("live", "degraded", "down", "idle")
-SEVERITY_ORDER = {"down": 0, "degraded": 1}
+# "info" (Task 18: Jev's talk_mismatch suggestion) is deliberately last: a
+# real health problem always outranks a soft suggestion in the Atención list.
+SEVERITY_ORDER = {"down": 0, "degraded": 1, "info": 2}
 
 stream_router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
 
@@ -137,6 +140,23 @@ def classify(status: RoomStatus) -> Issue | None:
     if "recent reconnect" in detail:
         return Issue("reconnected", severity, "open")
     return Issue("other", severity, "reconnect" if severity == "down" else "open", {"detail": detail})
+
+
+def _talk_mismatch_issue(state: Any, room_id: str, talk: Talk | None) -> Issue | None:
+    """Task 18: Jev's "switch to manual?" suggestion (TalkMismatchStore),
+    read only when the room has no real health issue -- a genuine problem
+    always wins the room's one Atención slot. ``info`` severity: yellow,
+    but never the room's LED (STATE_CSS/RoomStatus.state is untouched).
+    Also guards against reading a suggestion that outlived its talk by one
+    beat (TalkCheckScheduler clears it on the next tick, up to
+    TALK_CHECK_EVERY_S later; this is instant)."""
+    store = getattr(state, "talk_mismatches", None)
+    if store is None or talk is None:
+        return None
+    suggestion: TalkMismatchSuggestion | None = store.get(room_id)
+    if suggestion is None or suggestion.talk_id != talk.id:
+        return None
+    return Issue("talk_mismatch", "info", None, {"guess": suggestion.guess, "next_title": suggestion.next_title or ""})
 
 
 _FFMPEG_PREFIX = re.compile(r"^(?:\[[^\]]*\]\s*)+")
@@ -296,6 +316,8 @@ class AdminMonitor:
             issue = await self._silence(room_id, issue, now)
             css = STATE_CSS.get(status.state, "idle")
             talk: Talk | None = worker.talk
+            if issue is None:
+                issue = _talk_mismatch_issue(state, room_id, talk)
             try:
                 nxt = await state.autopilot.next_talk(room_id)
             except Exception:
@@ -441,6 +463,10 @@ def _hhmm(iso: str | None, zone: tzinfo) -> str:
 def issue_texts(issue: dict[str, Any], lang: Lang) -> dict[str, str]:
     values = issue.get("values") or {}
     kind = issue["kind"]
+    # Task 18: talk_mismatch has two message variants (which agenda talk
+    # Jev's last check guessed), not one -- issue_{key}_{part} picks the
+    # right one; every other kind's key is just its own kind.
+    key = f"talk_mismatch_{values.get('guess', 'break')}" if kind == "talk_mismatch" else kind
     limit = {"latency": LATENCY_LIMIT_S, "quality": QUALITY_MIN, "level": LEVEL_MIN_DB}.get(kind)
     fill = {
         "latency": fmt_num(values["latency"], 1, lang) if values.get("latency") is not None else "?",
@@ -450,8 +476,9 @@ def issue_texts(issue: dict[str, Any], lang: Lang) -> dict[str, str]:
         "seconds": values.get("seconds", int(SILENCE_ALARM_S)),
         "error": str(values.get("error", "")).rstrip("."),
         "detail": values.get("detail", ""),
+        "next_title": values.get("next_title", ""),
     }
-    texts = {part: admin_t(f"issue_{kind}_{part}", lang).format(**fill) for part in ("what", "em", "title", "note", "hint")}
+    texts = {part: admin_t(f"issue_{key}_{part}", lang).format(**fill) for part in ("what", "em", "title", "note", "hint")}
     action = issue.get("action")
     texts["action_label"] = admin_t(f"action_{action}", lang) if action else ""
     return texts

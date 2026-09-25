@@ -75,7 +75,7 @@ or add the same volume line to a local `docker-compose.override.yml`
 |---|---|---|
 | `GEMINI_API_KEY` | yes | Drives live captioning/translation (Gemini Live). Get one at [Google AI Studio](https://aistudio.google.com/). Billed per minute of audio (see [Costs](#costs)); `make demo-fake` needs no key at all. |
 | `ADMIN_PASSWORD` | yes | The single password for `/admin`. At least 8 characters — Glosa refuses to start otherwise. Use a long random one, e.g. `openssl rand -base64 18`; it's the only thing standing between the internet and your rooms' controls and the room stations' capture keys. |
-| `TYPESAFE_API_KEY` | no | Enables the Jev quality meter. Leave blank to skip it — everything else works without it. With a key set, the meter scores one caption pair every 15 s per room, English↔Spanish only; other language pairs, and rooms without a key, keep the "quality" reading as "—". |
+| `TYPESAFE_API_KEY` | no | Enables the Jev quality meter and the "switch to manual?" talk-check suggestion. Leave blank to skip both — everything else works without it. With a key set, the quality meter scores one caption pair every 15 s per room, English↔Spanish only; the talk check asks, every 30 s per auto-mode room with a talk live, whether the last minute of captions still matches the scheduled talk, and suggests manual mode (an admin panel notice, never automatic) after two mismatches in a row. Rooms without a key keep the "quality" reading as "—" and never get the suggestion. |
 
 Secrets live only in `.env` (gitignored) and are read from that file
 directly, never from the shell/container environment (so a stray exported

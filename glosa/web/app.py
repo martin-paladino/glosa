@@ -117,6 +117,7 @@ from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
 from glosa.summary import FakeSummarizer, Summarizer, SummaryScheduler, SummaryStore
+from glosa.talk_check import TalkCheckerLike, TalkCheckScheduler, TalkMismatchStore, build_talk_checker
 from glosa.text.corrector import build_corrected
 from glosa.web import admin_api, admin_listen, admin_stream, pages, public_api, station, test_audio
 from glosa.web.admin_events import AdminEvents
@@ -207,6 +208,20 @@ def make_summarizer(settings: Settings) -> FakeSummarizer | Summarizer:
     return Summarizer(
         settings.gemini_api_key, price_in_per_m=prices.flash_lite_in_per_m, price_out_per_m=prices.flash_lite_out_per_m
     )
+
+
+def make_talk_checker(settings: Settings) -> TalkCheckerLike | None:
+    """Task 18: the talk-check poller's Jev client, one shared instance for
+    the whole process (every room's TalkCheckScheduler calls it -- it is
+    just an HTTP client wrapper, safe to share the way Summarizer's genai
+    client already is). None -- feature off, no calls -- with
+    ``engine_mode: fake`` (a demo must never spend real Jev budget just
+    because a stray key sits in .env) or with no TYPESAFE_API_KEY at all;
+    build_talk_checker() itself covers a third off-switch, the "jev" extra
+    not being installed."""
+    if settings.engine_mode == "fake" or not settings.typesafe_api_key:
+        return None
+    return build_talk_checker(settings.typesafe_api_key)
 
 
 class ReferrerPolicyMiddleware:
@@ -316,6 +331,11 @@ def create_app(
     # room, mirroring the autopilot task).
     summaries = SummaryStore()
     summarizer = make_summarizer(settings)
+    # Task 18: same shape -- one TalkMismatchStore for the process, one
+    # shared talk_checker (or None: feature off) for every room's
+    # TalkCheckScheduler (started below, one task per room).
+    talk_mismatches = TalkMismatchStore()
+    talk_checker = make_talk_checker(settings)
 
     async def talk_ended(talk: Talk) -> None:
         """Every room's RoomWorker.on_talk_end: tell the admin panel, then
@@ -339,6 +359,7 @@ def create_app(
         app.state.db = db
         pilot: asyncio.Task | None = None
         summary_tasks: list[asyncio.Task] = []
+        talk_check_tasks: list[asyncio.Task] = []
         boot_hooks: set[asyncio.Task] = set()
         try:
             known = {room.id: room for room in await db.get_rooms()}
@@ -371,6 +392,13 @@ def create_app(
                 )
                 for room_id, worker in workers.items()
             ]
+            talk_check_tasks = [
+                asyncio.create_task(
+                    TalkCheckScheduler(worker, autopilot, talk_mismatches, talk_checker, db, clock).run(),
+                    name=f"talk-check-{room_id}",
+                )
+                for room_id, worker in workers.items()
+            ]
             yield
         finally:
             if pilot is not None:  # first, so no tick starts a room while they stop
@@ -388,6 +416,15 @@ def create_app(
             aclose_summarizer = getattr(summarizer, "aclose", None)
             if aclose_summarizer is not None:
                 await aclose_summarizer()
+            for task in talk_check_tasks:
+                task.cancel()
+            if talk_check_tasks:
+                results = await asyncio.gather(*talk_check_tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                        log.error("talk check loop failed", exc_info=result)
+            if talk_checker is not None:
+                await talk_checker.aclose()
             rooms = list(workers.values())
             results = await asyncio.gather(*(w.stop() for w in rooms), return_exceptions=True)
             for worker, result in zip(rooms, results, strict=True):
@@ -406,6 +443,7 @@ def create_app(
     app.state.admin_events = admin_events
     app.state.workers = workers
     app.state.summaries = summaries
+    app.state.talk_mismatches = talk_mismatches
     app.state.station_hub = station_hub
     # A fresh key per process (glosa/web/auth.py, Ruling 36): a restart
     # invalidates every outstanding admin session cookie.

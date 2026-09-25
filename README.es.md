@@ -76,7 +76,7 @@ local (Compose lo combina automáticamente) para que el simple
 |---|---|---|
 | `GEMINI_API_KEY` | sí | Impulsa el subtitulado/traducción en vivo (Gemini Live). Conseguí una en [Google AI Studio](https://aistudio.google.com/). Se factura por minuto de audio (ver [Costos](#costos)); `make demo-fake` no necesita ninguna key. |
 | `ADMIN_PASSWORD` | sí | La única contraseña para `/admin`. Al menos 8 caracteres — Glosa se niega a arrancar si no. Usá una larga y aleatoria, p. ej. `openssl rand -base64 18`; es lo único que separa a internet de los controles de tus salas y de las claves de captura de las estaciones. |
-| `TYPESAFE_API_KEY` | no | Habilita el medidor de calidad Jev. Dejala vacía para omitirlo — todo lo demás funciona sin ella. Con una key configurada, el medidor puntúa un par de subtítulos cada 15 s por sala, solo inglés↔español; otros pares de idiomas, y las salas sin key, mantienen la lectura de "calidad" en "—". |
+| `TYPESAFE_API_KEY` | no | Habilita el medidor de calidad Jev y la sugerencia "¿pasar a manual?" de chequeo de charla. Dejala vacía para omitir ambas — todo lo demás funciona sin ella. Con una key configurada, el medidor de calidad puntúa un par de subtítulos cada 15 s por sala, solo inglés↔español; el chequeo de charla pregunta, cada 30 s por cada sala en modo auto con una charla en vivo, si el último minuto de subtítulos sigue correspondiendo a la charla agendada, y sugiere pasar a manual (un aviso en el panel, nunca automático) después de dos discrepancias seguidas. Las salas sin key mantienen la lectura de "calidad" en "—" y nunca reciben la sugerencia. |
 
 Los secretos viven solo en `.env` (ignorado por git) y se leen directamente
 de ese archivo, nunca del entorno del shell/contenedor (así una variable

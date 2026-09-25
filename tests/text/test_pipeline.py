@@ -35,7 +35,7 @@ class Call:
     segment: str
     target: str
     glossary: list[GlossaryTerm]
-    context: list[str]
+    context: list[tuple[str, str | None]]
 
 
 class FakeTranslate:
@@ -73,7 +73,7 @@ class FakeTranslate:
         self._gate(segment, target).set()
 
     async def __call__(
-        self, segment: str, target: str, glossary: list[GlossaryTerm], context: list[str]
+        self, segment: str, target: str, glossary: list[GlossaryTerm], context: list[tuple[str, str | None]]
     ) -> Translation:
         self.calls.append(Call(segment, target, glossary, list(context)))
         self.active += 1
@@ -506,9 +506,12 @@ async def test_max_inflight_bounds_concurrent_translations() -> None:
 
 async def test_context_is_the_previous_source_segments_and_glossary_is_passed_as_is() -> None:
     clock = FakeClock()
+    # max_inflight=1: one segment's translation is always done before the next is requested,
+    # so context always carries the previous segments' translations too (see the "never waits"
+    # test below for what happens when it is NOT done yet).
     tr, sink = FakeTranslate(clock), Sink()
     glossary = [GlossaryTerm(term="control plane", keep_in_english=False, translation="plano de control")]
-    pipe = make_pipeline(clock, tr, sink, glossary=glossary)
+    pipe = make_pipeline(clock, tr, sink, glossary=glossary, max_inflight=1)
 
     pipe.interim("Uno. Dos.", t=0.0)
     pipe.final("Uno. Dos. Tres.", t=0.5)
@@ -517,11 +520,32 @@ async def test_context_is_the_previous_source_segments_and_glossary_is_passed_as
 
     assert [(c.segment, c.context) for c in tr.calls] == [
         ("Uno.", []),
-        ("Dos.", ["Uno."]),
-        ("Tres.", ["Uno.", "Dos."]),
-        ("Cuatro.", ["Dos.", "Tres."]),
+        ("Dos.", [("Uno.", "[es] Uno.")]),
+        ("Tres.", [("Uno.", "[es] Uno."), ("Dos.", "[es] Dos.")]),
+        ("Cuatro.", [("Dos.", "[es] Dos."), ("Tres.", "[es] Tres.")]),
     ]
     assert all(c.glossary is glossary for c in tr.calls)
+
+
+async def test_context_never_waits_for_a_still_running_translation() -> None:
+    """"use the most recent already-completed context available at request
+    time; never wait for it" (task-16q-brief.md): a segment whose predecessor
+    hasn't finished translating yet is sent with that predecessor's
+    translation missing, not delayed."""
+    clock = FakeClock()
+    tr, sink = FakeTranslate(clock, gated=True), Sink()
+    pipe = make_pipeline(clock, tr, sink, max_inflight=2)
+
+    pipe.final("Uno.", t=0.0)
+    pipe.final("Dos.", t=0.5)
+    await settle()  # both jobs dispatched; "Uno." -> es is still gated (running)
+
+    dos_call = next(c for c in tr.calls if c.segment == "Dos.")
+    assert dos_call.context == [("Uno.", None)]
+
+    tr.release("Uno.", "es")
+    tr.release("Dos.", "es")
+    await pipe.drain()
 
 
 async def test_context_n_is_configurable() -> None:

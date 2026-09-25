@@ -49,31 +49,47 @@ class Translation:
     usd: float
 
 
-def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context: list[str]) -> str:
+def _build_system_instruction(
+    target: str, glossary: list[GlossaryTerm], context: list[tuple[str, str | None]]
+) -> str:
     lines = [
         f"You are a real-time interpreter for a live conference caption feed. "
         f"Translate the user's message into {target}. "
         "Reply with ONLY the translation: no quotes, no notes, no explanations.",
     ]
-    if glossary:
+    # keep_in_english=True: never translated (a customVocabulary term the caption keeps verbatim).
+    # translation set (keep_in_english=False): translated to that exact term.
+    # translation=None and not keep_in_english: vocabulary for the transcriber only (recognize and
+    # spell the term correctly); it is not listed below, so the Translator translates it normally.
+    listed_terms = [term for term in glossary if term.keep_in_english or term.translation]
+    if listed_terms:
         lines.append("")
         lines.append(
             "Glossary. Use an entry only when its term, or an obvious inflection of it, appears in the "
-            "segment you are translating; then apply it exactly. Never add a glossary term that is not "
-            "in the segment, and never use one to replace a different word (e.g. do not turn a plain "
-            "noun into a glossary term):"
+            "segment you are translating; then use its translation, inflected (number, gender, article "
+            "agreement) to fit the sentence -- never paste it in verbatim. Never add a glossary term "
+            "that is not in the segment, and never use one to replace a different word (e.g. do not "
+            "turn a plain noun into a glossary term):"
         )
-        for term in glossary:
-            if term.keep_in_english or not term.translation:
+        for term in listed_terms:
+            if term.keep_in_english:
                 lines.append(f'- "{term.term}": leave it as is, untranslated')
             else:
                 lines.append(f'- "{term.term}": translate it as "{term.translation}"')
     previous = context[-2:] if context else []
     if previous:
         lines.append("")
-        lines.append("Previous segments (context/continuity only; do not re-translate them):")
-        for segment in previous:
-            lines.append(f"- {segment}")
+        lines.append(
+            f"Previous segments and their {target} translation so far, for context/continuity only "
+            "(do not translate them again). The segment you are translating now may be a sentence "
+            "fragment that continues the last one below: if so, translate it as a continuation, adding "
+            "no capitalization or punctuation that the source segment does not have:"
+        )
+        for source, translation in previous:
+            if translation:
+                lines.append(f'- "{source}" -> "{translation}"')
+            else:
+                lines.append(f'- "{source}"')
     return "\n".join(lines)
 
 
@@ -122,7 +138,7 @@ class Translator:
         segment: str,
         target: str,
         glossary: list[GlossaryTerm],
-        context: list[str],
+        context: list[tuple[str, str | None]],
     ) -> Translation:
         config = types.GenerateContentConfig(
             system_instruction=_build_system_instruction(target, glossary, context),
@@ -172,7 +188,7 @@ class FakeTranslator:
         segment: str,
         target: str,
         glossary: list[GlossaryTerm],
-        context: list[str],
+        context: list[tuple[str, str | None]],
     ) -> Translation:
         await asyncio.sleep(0)
         return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)

@@ -107,15 +107,50 @@ async def test_translate_returns_text_latency_and_cost_from_usage_metadata() -> 
 async def test_system_instruction_includes_glossary_and_last_two_segments() -> None:
     translator, client = _translator([_FakeResponse(text="ok")])
 
-    context = ["Segment one.", "Segment two.", "Segment three."]
+    context = [("Segment one.", "Uno."), ("Segment two.", "Dos."), ("Segment three.", None)]
     await translator.translate("Segment four.", "es", GLOSSARY, context)
 
     system_instruction = client.models.calls[0]["config"].system_instruction
     assert '"Kubernetes": leave it as is, untranslated' in system_instruction
     assert '"control plane": translate it as "plano de control"' in system_instruction
-    assert "Segment two." in system_instruction
-    assert "Segment three." in system_instruction
+    assert '"Segment two." -> "Dos."' in system_instruction  # source + its translation
+    assert '"Segment three."' in system_instruction  # no translation yet: source only
     assert "Segment one." not in system_instruction  # only the last 2 of context
+
+
+def test_glossary_translations_are_inflected_to_fit_the_sentence() -> None:
+    """Live run: a glossary target pasted verbatim gave "los agente", "las
+    capacidad" (task-16q-brief.md). The rule now tells the model to inflect
+    the translation (number, gender, article agreement) instead."""
+    text = _build_system_instruction("es", GLOSSARY, [])
+
+    rules = text.split("Glossary")[1].lower()
+    assert "inflected" in rules
+    assert "number" in rules and "gender" in rules and "agreement" in rules
+    assert '"control plane": translate it as "plano de control"' in text  # still names the term
+
+
+def test_a_term_with_no_translation_and_not_kept_in_english_is_translated_normally() -> None:
+    """translation=None + keep_in_english=False means "vocabulary for the
+    transcriber only" (customVocabulary): the bench found it was treated
+    like "keep as is" instead. It must not be listed as keep-verbatim (or
+    at all) in the translation prompt."""
+    glossary = [GlossaryTerm(term="agents", keep_in_english=False, translation=None)]
+    text = _build_system_instruction("es", glossary, [])
+
+    assert '"agents"' not in text
+    assert "Glossary" not in text  # nothing left to list: transcriber-only vocabulary
+
+
+def test_the_prompt_flags_a_segment_may_be_a_sentence_fragment() -> None:
+    """Short fragments ("Puedo ir aquí,", "No eso.") read choppy translated
+    in isolation; the prompt now says a segment may continue the previous
+    one and to translate it as a continuation."""
+    text = _build_system_instruction("es", [], [("Previous segment.", "Segmento anterior.")])
+
+    lower = text.lower()
+    assert "fragment" in lower and "continu" in lower
+    assert "capital" in lower and "punctuation" in lower
 
 
 def test_the_glossary_applies_only_to_terms_in_the_segment() -> None:
@@ -235,12 +270,12 @@ async def test_live_translates_three_technical_phrases_en_to_es() -> None:
         "Our ingress controller terminates TLS at the edge.",
     ]
 
-    context: list[str] = []
+    context: list[tuple[str, str | None]] = []
     results: list[Translation] = []
     for phrase in phrases:
         result = await translator.translate(phrase, "es", glossary, context)
         results.append(result)
-        context.append(phrase)
+        context.append((phrase, result.text))
 
     for phrase, result in zip(phrases, results):
         assert result.text, f"empty translation for: {phrase}"

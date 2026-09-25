@@ -195,6 +195,23 @@ async def test_a_talk_whose_source_ended_is_not_reopened_in_its_slot(db) -> None
     assert worker.talk is None and worker.starts() == ["A"]
 
 
+
+async def test_a_running_talk_closed_by_a_previous_process_keeps_running(db) -> None:
+    """A restart overlap: the old process's late shutdown writes the talk
+    done after this one reopened it. The room still runs it: keep it."""
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")], at_time=at("14:30"))
+    worker = workers["r1"]
+    await pilot.tick()
+    assert worker.talk is not None and worker.talk.id == "A"
+    await db.update_talk("A", status="done", actual_end=at("14:30"))  # the old process's shutdown
+
+    move_to(clock, at("14:31"))
+    await pilot.tick()
+
+    assert worker.talk is not None and worker.talk.id == "A"
+    assert worker.starts() == ["A"] and not [c for c in worker.calls if c[0] in ("stop", "end")]
+    assert (await db.get_talk("A")).status == "live"
+
 # ------------------------------------------------------------ who's in charge (Ruling 33)
 
 

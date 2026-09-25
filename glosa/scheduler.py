@@ -181,7 +181,8 @@ class Autopilot:
             return False
         now = self._clock.wall()
         agenda = await self._agenda(room_id, now)
-        return self._owns(worker, agenda, now, self._due(agenda, now))
+        running = worker.talk.id if worker.talk is not None else None
+        return self._owns(worker, agenda, now, self._due(agenda, now, running))
 
     async def next_talk(self, room_id: str) -> Talk | None:
         """The room's next agenda talk (the one to preselect for "start
@@ -285,13 +286,16 @@ class Autopilot:
                 if self.mode(room_id) != "auto":
                     return
                 agenda = await self._agenda(room_id, now)
-                due = self._due(agenda, now)
+                current = worker.talk
+                due = self._due(agenda, now, current.id if current is not None else None)
                 if not self._owns(worker, agenda, now, due):
                     return
-                current = worker.talk
                 if due is not None:
                     if current is None or current.id != due.id:
                         await self._open(worker, due, by="autopilot")
+                    elif due.status == "done":  # closed under us: a previous process's late shutdown
+                        await self._db.update_talk(due.id, status="live", actual_end=None)
+                        await self._log(room_id, "autopilot", f"{due.id} was closed by another process: kept running")
                 elif getattr(worker, "testing", False):
                     pass  # C1: a "Probar con audio" clip plays until it ends
                 elif current is not None and not self._early_next(current, agenda, now):
@@ -333,16 +337,21 @@ class Autopilot:
         current = worker.talk
         return current is not None and not is_free_talk(current.id)  # an agenda talk left running
 
-    def _due(self, agenda: list[Talk], now: datetime) -> Talk | None:
+    def _due(self, agenda: list[Talk], now: datetime, running: str | None = None) -> Talk | None:
+        # ``running``: the room's own running talk stays due whatever its row
+        # says (a previous process's late shutdown may have written it done).
         due = [
             t
             for t in agenda
             if t.start - self._lead <= now < t.end
-            and not (
-                t.status == "done"
-                and t.id in self._opened
-                and t.actual_end is not None
-                and t.actual_end >= t.start - self._lead
+            and (
+                t.id == running
+                or not (
+                    t.status == "done"
+                    and t.id in self._opened
+                    and t.actual_end is not None
+                    and t.actual_end >= t.start - self._lead
+                )
             )
         ]
         return max(due, key=lambda t: (t.start, t.id), default=None)

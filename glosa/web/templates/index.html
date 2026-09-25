@@ -27,6 +27,25 @@
 {%- endif %}
 {%- endmacro %}
 
+{#- The next talk in full, its start time the biggest thing on the card:
+    a room between talks, or a free session with a talk coming up. #}
+{% macro upcoming(f, id) -%}
+<p class="room-card__when">
+  <span class="room-card__label">{{ tr("next_talk") }}</span>
+  {{ direction_badge(f.direction) }}
+</p>
+<p class="room-card__at">
+  {%- if f.day %}<span class="room-card__day">{{ f.day }}</span> {% endif -%}
+  <time datetime="{{ f.starts_at }}">{{ f.start }}</time>
+  {%- if f.soon_text %} <span class="room-card__soon" data-soon data-start="{{ f.starts_at }}" data-soon-template="{{ tr('starts_in') }}">{{ f.soon_text }}</span>{% endif %}
+</p>
+<h3 class="room-card__title talk-title" lang="{{ f.language }}">{{ f.title }}</h3>
+{%- if f.speakers_text %}
+<p class="room-card__who">{{ f.speakers_text }}</p>
+{%- endif %}
+{{ abstract(f, id) }}
+{%- endmacro %}
+
 {% block body %}
 <div class="index">
   <header class="index__head">
@@ -90,20 +109,7 @@
         {{ abstract(f, "about-" ~ n) }}
 
         {%- elif room.state == "between" %}
-        <p class="room-card__when">
-          <span class="room-card__label">{{ tr("next_talk") }}</span>
-          {{ direction_badge(f.direction) }}
-        </p>
-        <p class="room-card__at">
-          {%- if f.day %}<span class="room-card__day">{{ f.day }}</span> {% endif -%}
-          <time datetime="{{ f.starts_at }}">{{ f.start }}</time>
-          {%- if f.soon_text %} <span class="room-card__soon" data-soon data-start="{{ f.starts_at }}" data-soon-template="{{ tr('starts_in') }}">{{ f.soon_text }}</span>{% endif %}
-        </p>
-        <h3 class="room-card__title talk-title" lang="{{ f.language }}">{{ f.title }}</h3>
-        {%- if f.speakers_text %}
-        <p class="room-card__who">{{ f.speakers_text }}</p>
-        {%- endif %}
-        {{ abstract(f, "about-" ~ n) }}
+        {{ upcoming(f, "about-" ~ n) }}
 
         {%- elif room.state == "free" %}
         <p class="room-card__when">
@@ -112,13 +118,18 @@
         </p>
         <h3 class="room-card__title talk-title">{{ room.now.title }}</h3>
         <p class="room-card__note">{{ tr("free_session_note") }}</p>
+        {%- if f %}
+        <div class="room-card__then">
+          {{ upcoming(f, "about-" ~ n) }}
+        </div>
+        {%- endif %}
 
         {%- else %}
         <p class="room-card__note">{{ tr("no_more_talks") }}</p>
         {%- endif %}
       </div>
 
-      {%- if room.state in ("live", "free") and room.next %}
+      {%- if room.state == "live" and room.next %}
       <p class="room-card__next">
         <span class="room-card__label">{{ tr("next") }}</span>
         <span class="room-card__time">{% if room.next.day %}{{ room.next.day }} {% endif %}<time datetime="{{ room.next.starts_at }}">{{ room.next.start }}</time></span>

@@ -336,7 +336,8 @@ def _room_summary(room: dict, ui: Lang, forced: Lang | None) -> dict:
     ``state``: "live" (an agenda talk is on), "free" (a free session: live,
     no agenda talk), "between" (nothing on, a next talk is scheduled) or
     "closed" (nothing on, nothing next). ``feature`` is the talk the card
-    shows in full (with its abstract): the one on now, else the next one."""
+    shows in full (with its abstract): the agenda talk on now, else the next
+    one (between talks, or during a free session)."""
     langs = list(room.get("langs") or [])
     now, nxt = room.get("now"), room.get("next")
     clock = _now()
@@ -354,7 +355,7 @@ def _room_summary(room: dict, ui: Lang, forced: Lang | None) -> dict:
         "state": state,
         "now": now_view,
         "next": next_view,
-        "feature": now_view if state == "live" else next_view if state == "between" else None,
+        "feature": now_view if state == "live" else next_view,
     }
 
 

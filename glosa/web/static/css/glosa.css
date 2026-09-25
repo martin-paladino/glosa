@@ -1003,7 +1003,7 @@
     --segs: 40;
     flex: 1;
     block-size: 10px;
-    background: linear-gradient(to right, var(--ink-2) calc(var(--progress) * 100%), var(--line-2) 0);
+    background: linear-gradient(to right, var(--ink-2) calc(var(--progress) * 100%), var(--sel) 0);   /* 5,7:1 y 6,5:1 entre lleno y vacío */
     mask: repeating-linear-gradient(to right, #000 0 calc(100% / var(--segs) - 2px), transparent 0 calc(100% / var(--segs)));
   }
   .room-card__left {
@@ -1049,8 +1049,8 @@
   .room-card__about[data-clamp]:not([data-open]) .room-card__abstract {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
+    -webkit-line-clamp: var(--clamp, 2);
+    line-clamp: var(--clamp, 2);
     overflow: hidden;
   }
   .room-card__more {
@@ -1068,7 +1068,21 @@
   .room-card__more:hover { text-decoration-color: currentColor; }
 
   .room-card__note { max-inline-size: 34em; font-size: var(--step-0); line-height: 1.45; color: var(--ink-2); }
-  .room-card--free .room-card__title { color: var(--ink-2); }
+  .room-card--free .room-card__body > .room-card__title { color: var(--ink-2); }
+  /* Sin charlas: el monitor apagado, hundido en la sala. */
+  .room-card--closed { background: var(--room); }
+  .room-card--closed:hover { background: var(--panel); }
+  /* Sesión libre con una charla por venir: la próxima debajo de un filete. */
+  .room-card__then {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    align-self: stretch;
+    gap: 6px;
+    margin-block-start: 10px;
+    padding-block-start: 14px;
+    border-block-start: var(--border-w) solid var(--line);
+  }
 
   /* La próxima, al pie: una fila chica, como en la agenda del panel. */
   .room-card__next {
@@ -1107,12 +1121,7 @@
     text-decoration: none;
   }
   .room-card__open::after { content: ""; position: absolute; inset: 0; }   /* toda la tarjeta abre la sala */
-  /* Hay algo para leer ahora: la tecla va en tinta (no en color: el color es estado). */
-  .room-card--live .room-card__open, .room-card--free .room-card__open {
-    background: var(--ink);
-    color: var(--panel);
-    border-color: var(--ink);
-  }
+  .room-card:hover .room-card__open { background: var(--key-hover); border-color: var(--ink-3); }
   .room-card__open:focus-visible { outline: none; }
   .room-card:has(.room-card__open:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
   .room-card:has(.room-card__open:focus-visible) .room-card__open { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -2134,6 +2143,7 @@
     .room-card__next { margin-inline: 20px; }
     .room-card__open { margin: 0 20px 20px; }
     .room-card__title { font-size: var(--step-3); }
+    .room-card__abstract { --clamp: 3; }
   }
 
   @container glosa (min-width: 64rem) {

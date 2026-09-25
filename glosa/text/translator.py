@@ -49,7 +49,9 @@ class Translation:
     usd: float
 
 
-def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context: list[str]) -> str:
+def _build_system_instruction(
+    target: str, glossary: list[GlossaryTerm], context: list[tuple[str, str | None]]
+) -> str:
     lines = [
         f"You are a real-time interpreter for a live conference caption feed. "
         f"Translate the user's message into {target}. "
@@ -77,9 +79,17 @@ def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context
     previous = context[-2:] if context else []
     if previous:
         lines.append("")
-        lines.append("Previous segments (context/continuity only; do not re-translate them):")
-        for segment in previous:
-            lines.append(f"- {segment}")
+        lines.append(
+            f"Previous segments and their {target} translation so far, for context/continuity only "
+            "(do not translate them again). The segment you are translating now may be a sentence "
+            "fragment that continues the last one below: if so, translate it as a continuation, adding "
+            "no capitalization or punctuation that the source segment does not have:"
+        )
+        for source, translation in previous:
+            if translation:
+                lines.append(f'- "{source}" -> "{translation}"')
+            else:
+                lines.append(f'- "{source}"')
     return "\n".join(lines)
 
 
@@ -128,7 +138,7 @@ class Translator:
         segment: str,
         target: str,
         glossary: list[GlossaryTerm],
-        context: list[str],
+        context: list[tuple[str, str | None]],
     ) -> Translation:
         config = types.GenerateContentConfig(
             system_instruction=_build_system_instruction(target, glossary, context),
@@ -178,7 +188,7 @@ class FakeTranslator:
         segment: str,
         target: str,
         glossary: list[GlossaryTerm],
-        context: list[str],
+        context: list[tuple[str, str | None]],
     ) -> Translation:
         await asyncio.sleep(0)
         return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)

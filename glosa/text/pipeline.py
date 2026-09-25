@@ -38,8 +38,13 @@ only punctuation (the Segmenter cuts "..." into "." pieces) are dropped.
 
 Translation: each segment gets the next ``index`` (0, 1, 2... for the life of
 the pipeline) and one job per target, with the ``context_n`` previous SOURCE
-segments as context. Jobs run FIFO on ``max_inflight`` worker tasks, so at
-most that many translations are in flight across all targets. A failure (an
+segments as context, paired with THEIR translation into that same target once
+it is done -- built at request time (when a worker is about to call
+``translate``, not when the segment was emitted) from whichever of those
+translations have already completed; a still-running one is never waited
+for, so the pairing may be ``(source, None)``. Jobs run FIFO on
+``max_inflight`` worker tasks, so at most that many translations are in
+flight across all targets. A failure (an
 exception, no answer within ``translate_timeout_s``, or an empty
 translation) yields ``text=None`` and does not hold back the next segment.
 A job still queued ``max_age_s`` (8 s) after its cut is not sent at all: it
@@ -76,7 +81,13 @@ from glosa.text.translator import Translation
 
 log = logging.getLogger(__name__)
 
-TranslateFn = Callable[[str, str, list[GlossaryTerm], list[str]], Awaitable[Translation]]
+TranslateFn = Callable[[str, str, list[GlossaryTerm], list[tuple[str, str | None]]], Awaitable[Translation]]
+
+# Per-target cache of recently completed translations, used to give the next
+# segment's context its predecessors' translations once they land (never
+# waited for, see _run). Far larger than context_n ever needs; it just bounds
+# memory over a long-running talk.
+_CONTEXT_CACHE_SIZE = 32
 
 
 @dataclass
@@ -96,7 +107,7 @@ class _Job:
     index: int
     target: str
     source: str
-    context: list[str]
+    context_sources: list[tuple[int, str]]  # (index, source) of the context_n segments before this one
     cut_at: float  # clock.now() when the segment was cut
     t_start: float  # caller's t, see TranslatedSegment
     t_end: float
@@ -143,8 +154,10 @@ class LivePipeline:
         self._last_t = 0.0
 
         # segments and translation jobs
+        self._context_n = context_n
         self._next_index = 0
-        self._recent_sources: deque[str] = deque(maxlen=context_n)
+        self._recent_sources: deque[tuple[int, str]] = deque(maxlen=context_n)
+        self._recent_translations: dict[str, dict[int, str]] = {t: {} for t in self._targets}
         self._queue: asyncio.Queue[_Job] = asyncio.Queue()
         self._workers: list[asyncio.Task] = []
         self._closed = False
@@ -335,11 +348,11 @@ class LivePipeline:
         index = self._next_index
         self._next_index += 1
         self._segments += 1
-        context = list(self._recent_sources)
-        self._recent_sources.append(source)
+        context_sources = list(self._recent_sources)
+        self._recent_sources.append((index, source))
         cut_at = self._clock.now()
         for target in self._targets:
-            self._queue.put_nowait(_Job(index, target, source, context, cut_at, t_start, t_end))
+            self._queue.put_nowait(_Job(index, target, source, context_sources, cut_at, t_start, t_end))
         self._ensure_workers()
 
     # --- translating and delivering ------------------------------------------------------
@@ -391,8 +404,12 @@ class LivePipeline:
             else:
                 self._inflight += 1
                 try:
+                    # built here, at request time, from whatever translations of the context
+                    # segments are already done -- never waited for (see module docstring)
+                    done = self._recent_translations[job.target]
+                    context = [(src, done.get(idx)) for idx, src in job.context_sources]
                     async with asyncio.timeout(self._translate_timeout_s):
-                        translation = await self._translate(job.source, job.target, self._glossary, job.context)
+                        translation = await self._translate(job.source, job.target, self._glossary, context)
                     usd = translation.usd
                     text = (translation.text or "").strip() or None
                 finally:
@@ -413,6 +430,10 @@ class LivePipeline:
             else:
                 self._translated += 1
                 self._latencies.append(latency_s)
+                cache = self._recent_translations[job.target]
+                cache[job.index] = text
+                while len(cache) > _CONTEXT_CACHE_SIZE:
+                    cache.pop(next(iter(cache)))
             self._ready[job.target][job.index] = TranslatedSegment(
                 target=job.target,
                 index=job.index,

@@ -107,38 +107,15 @@ async def test_translate_returns_text_latency_and_cost_from_usage_metadata() -> 
 async def test_system_instruction_includes_glossary_and_last_two_segments() -> None:
     translator, client = _translator([_FakeResponse(text="ok")])
 
-    context = ["Segment one.", "Segment two.", "Segment three."]
+    context = [("Segment one.", "Uno."), ("Segment two.", "Dos."), ("Segment three.", None)]
     await translator.translate("Segment four.", "es", GLOSSARY, context)
 
     system_instruction = client.models.calls[0]["config"].system_instruction
     assert '"Kubernetes": leave it as is, untranslated' in system_instruction
     assert '"control plane": translate it as "plano de control"' in system_instruction
-    assert "Segment two." in system_instruction
-    assert "Segment three." in system_instruction
+    assert '"Segment two." -> "Dos."' in system_instruction  # source + its translation
+    assert '"Segment three."' in system_instruction  # no translation yet: source only
     assert "Segment one." not in system_instruction  # only the last 2 of context
-
-
-def test_the_glossary_applies_only_to_terms_in_the_segment() -> None:
-    """Live run 4: "en este particular cluster" came out as "in this
-    particular Kubernetes control plane": the model put glossary terms where
-    the segment had none. The instruction scopes every entry to the segment."""
-    text = _build_system_instruction("en", GLOSSARY, [])
-
-    rules = text.split("Glossary")[1].lower()
-    assert "only when" in rules and "appears in the segment" in rules and "inflection" in rules
-    assert "never add" in rules and "not in the segment" in rules
-    assert "apply exactly; do not deviate" not in text  # the old, unscoped wording
-    assert text.index('"Kubernetes"') > text.index("Glossary")
-
-
-def test_a_term_kept_in_english_is_never_written_as_keep() -> None:
-    """Live run 5: with "Kubernetes → keep" in the prompt, "en este particular
-    cluster" came out as "in this particular keep". No entry reads as a
-    translation into the word "keep" any more."""
-    text = _build_system_instruction("en", GLOSSARY, [])
-
-    assert "→ keep" not in text and "-> keep" not in text
-    assert '"Kubernetes": leave it as is, untranslated' in text
 
 
 def test_glossary_translations_are_inflected_to_fit_the_sentence() -> None:
@@ -163,6 +140,40 @@ def test_a_term_with_no_translation_and_not_kept_in_english_is_translated_normal
 
     assert '"agents"' not in text
     assert "Glossary" not in text  # nothing left to list: transcriber-only vocabulary
+
+
+def test_the_prompt_flags_a_segment_may_be_a_sentence_fragment() -> None:
+    """Short fragments ("Puedo ir aquí,", "No eso.") read choppy translated
+    in isolation; the prompt now says a segment may continue the previous
+    one and to translate it as a continuation."""
+    text = _build_system_instruction("es", [], [("Previous segment.", "Segmento anterior.")])
+
+    lower = text.lower()
+    assert "fragment" in lower and "continu" in lower
+    assert "capital" in lower and "punctuation" in lower
+
+
+def test_the_glossary_applies_only_to_terms_in_the_segment() -> None:
+    """Live run 4: "en este particular cluster" came out as "in this
+    particular Kubernetes control plane": the model put glossary terms where
+    the segment had none. The instruction scopes every entry to the segment."""
+    text = _build_system_instruction("en", GLOSSARY, [])
+
+    rules = text.split("Glossary")[1].lower()
+    assert "only when" in rules and "appears in the segment" in rules and "inflection" in rules
+    assert "never add" in rules and "not in the segment" in rules
+    assert "apply exactly; do not deviate" not in text  # the old, unscoped wording
+    assert text.index('"Kubernetes"') > text.index("Glossary")
+
+
+def test_a_term_kept_in_english_is_never_written_as_keep() -> None:
+    """Live run 5: with "Kubernetes → keep" in the prompt, "en este particular
+    cluster" came out as "in this particular keep". No entry reads as a
+    translation into the word "keep" any more."""
+    text = _build_system_instruction("en", GLOSSARY, [])
+
+    assert "→ keep" not in text and "-> keep" not in text
+    assert '"Kubernetes": leave it as is, untranslated' in text
 
 
 async def test_thinking_level_is_minimal() -> None:
@@ -259,12 +270,12 @@ async def test_live_translates_three_technical_phrases_en_to_es() -> None:
         "Our ingress controller terminates TLS at the edge.",
     ]
 
-    context: list[str] = []
+    context: list[tuple[str, str | None]] = []
     results: list[Translation] = []
     for phrase in phrases:
         result = await translator.translate(phrase, "es", glossary, context)
         results.append(result)
-        context.append(phrase)
+        context.append((phrase, result.text))
 
     for phrase, result in zip(phrases, results):
         assert result.text, f"empty translation for: {phrase}"

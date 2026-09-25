@@ -90,7 +90,9 @@ class TranslationLane:
         segmenter: SegmenterCfg,
         on_segment: Callable[[TranslatedSegment], Awaitable[None]],
     ) -> None:
-        async def translate_now(segment: str, target: str, _: list[GlossaryTerm], context: list[str]) -> Translation:
+        async def translate_now(
+            segment: str, target: str, _: list[GlossaryTerm], context: list[tuple[str, str | None]]
+        ) -> Translation:
             return await translate(segment, target, glossary(), context)
 
         self.targets = list(targets)

@@ -1,0 +1,227 @@
+{"t": 0.003, "lang": "es", "type": "talk", "data": {"talk_id": "es_clip-fast", "title": "Bench es_clip (fast)", "speakers": [], "language": "es"}}
+{"t": 0.003, "lang": "en", "type": "talk", "data": {"talk_id": "es_clip-fast", "title": "Bench es_clip (fast)", "speakers": [], "language": "es"}}
+{"t": 0.526, "lang": "es", "type": "status", "data": {"state": "green"}}
+{"t": 0.526, "lang": "en", "type": "status", "data": {"state": "green"}}
+{"t": 2.652, "lang": "es", "type": "append", "seg": 0, "text": "cierto."}
+{"t": 2.652, "lang": "es", "type": "close", "seg": 0}
+{"t": 2.652, "lang": "es", "type": "append", "seg": 1, "text": " Cuando ustedes"}
+{"t": 2.827, "lang": "en", "type": "append", "seg": 0, "text": "Right."}
+{"t": 2.828, "lang": "en", "type": "close", "seg": 0}
+{"t": 3.294, "lang": "es", "type": "append", "seg": 1, "text": " reciben la factura de"}
+{"t": 3.532, "lang": "en", "type": "append", "seg": 1, "text": " When you receive the invoice"}
+{"t": 4.301, "lang": "es", "type": "append", "seg": 1, "text": " Cloud, les va a decir"}
+{"t": 4.527, "lang": "en", "type": "append", "seg": 1, "text": " from Cloud,"}
+{"t": 5.322, "lang": "es", "type": "append", "seg": 1, "text": " algo como, no s\u00e9,"}
+{"t": 5.535, "lang": "en", "type": "append", "seg": 1, "text": " it's going to say something"}
+{"t": 6.302, "lang": "es", "type": "append", "seg": 1, "text": " control plane de"}
+{"t": 6.525, "lang": "en", "type": "append", "seg": 1, "text": " like, I don't know,"}
+{"t": 7.294, "lang": "es", "type": "append", "seg": 1, "text": " Kubernetes ha salido"}
+{"t": 7.528, "lang": "en", "type": "append", "seg": 1, "text": " Kubernetes control"}
+{"t": 8.325, "lang": "es", "type": "append", "seg": 1, "text": " el mes pasado tanto."}
+{"t": 8.325, "lang": "es", "type": "close", "seg": 1}
+{"t": 8.542, "lang": "en", "type": "append", "seg": 1, "text": " plane was this much"}
+{"t": 9.284, "lang": "es", "type": "append", "seg": 2, "text": " El"}
+{"t": 9.537, "lang": "en", "type": "append", "seg": 1, "text": " last month."}
+{"t": 9.538, "lang": "en", "type": "close", "seg": 1}
+{"t": 10.268, "lang": "es", "type": "append", "seg": 2, "text": " nodo ten\u00e9s tantos"}
+{"t": 10.532, "lang": "en", "type": "append", "seg": 2, "text": " The node has"}
+{"t": 11.294, "lang": "es", "type": "append", "seg": 2, "text": " miles de d\u00f3lares"}
+{"t": 11.528, "lang": "en", "type": "append", "seg": 2, "text": " so many thousands"}
+{"t": 12.299, "lang": "es", "type": "append", "seg": 2, "text": " gastados."}
+{"t": 12.299, "lang": "es", "type": "close", "seg": 2}
+{"t": 12.53, "lang": "en", "type": "append", "seg": 2, "text": " of dollars spent."}
+{"t": 12.53, "lang": "en", "type": "close", "seg": 2}
+{"t": 13.335, "lang": "es", "type": "append", "seg": 3, "text": " Pero si lo"}
+{"t": 13.532, "lang": "en", "type": "append", "seg": 3, "text": " But if you think"}
+{"t": 14.294, "lang": "es", "type": "append", "seg": 3, "text": " pensamos en"}
+{"t": 14.532, "lang": "en", "type": "append", "seg": 3, "text": " about it,"}
+{"t": 15.294, "lang": "es", "type": "append", "seg": 3, "text": " realidad, la"}
+{"t": 15.533, "lang": "en", "type": "append", "seg": 3, "text": " actually, the"}
+{"t": 16.303, "lang": "es", "type": "append", "seg": 3, "text": " factura del proveedor de"}
+{"t": 16.538, "lang": "en", "type": "append", "seg": 3, "text": " invoice from the cloud"}
+{"t": 17.303, "lang": "es", "type": "append", "seg": 3, "text": " Cloud"}
+{"t": 17.528, "lang": "en", "type": "append", "seg": 3, "text": " provider comes"}
+{"t": 18.327, "lang": "es", "type": "append", "seg": 3, "text": " llega a un punto"}
+{"t": 18.529, "lang": "en", "type": "append", "seg": 3, "text": " to a point"}
+{"t": 19.352, "lang": "es", "type": "append", "seg": 3, "text": " y no entiende,"}
+{"t": 19.534, "lang": "en", "type": "append", "seg": 3, "text": " and doesn't understand,"}
+{"t": 20.371, "lang": "es", "type": "append", "seg": 3, "text": " voy a decir una obviedad,"}
+{"t": 20.532, "lang": "en", "type": "append", "seg": 3, "text": " I'm going to state the obvious,"}
+{"t": 21.36, "lang": "es", "type": "append", "seg": 3, "text": " no entiende de"}
+{"t": 21.531, "lang": "en", "type": "append", "seg": 3, "text": " it doesn't"}
+{"t": 22.309, "lang": "es", "type": "append", "seg": 3, "text": " namespaces, no"}
+{"t": 22.529, "lang": "en", "type": "append", "seg": 3, "text": " understand namespaces,"}
+{"t": 23.343, "lang": "es", "type": "append", "seg": 3, "text": " entiende de teams,"}
+{"t": 23.527, "lang": "en", "type": "append", "seg": 3, "text": " it doesn't "}
+{"t": 23.527, "lang": "en", "type": "close", "seg": 3}
+{"t": 23.527, "lang": "en", "type": "append", "seg": 4, "text": "understand"}
+{"t": 24.31, "lang": "es", "type": "append", "seg": 3, "text": " de"}
+{"t": 24.529, "lang": "en", "type": "append", "seg": 4, "text": " teams,"}
+{"t": 25.295, "lang": "es", "type": "append", "seg": 3, "text": " labels, de"}
+{"t": 25.532, "lang": "en", "type": "append", "seg": 4, "text": " labels,"}
+{"t": 26.377, "lang": "es", "type": "append", "seg": 3, "text": " workloads, "}
+{"t": 26.377, "lang": "es", "type": "close", "seg": 3}
+{"t": 26.377, "lang": "es", "type": "append", "seg": 4, "text": "que son las cosas"}
+{"t": 26.528, "lang": "en", "type": "append", "seg": 4, "text": " workloads,"}
+{"t": 27.459, "lang": "es", "type": "append", "seg": 4, "text": " que yo s\u00ed hablo con mi"}
+{"t": 27.539, "lang": "en", "type": "append", "seg": 4, "text": " which are the things I"}
+{"t": 28.337, "lang": "es", "type": "append", "seg": 4, "text": " equipo."}
+{"t": 28.337, "lang": "es", "type": "close", "seg": 4}
+{"t": 28.337, "lang": "es", "type": "append", "seg": 5, "text": " Yo"}
+{"t": 28.527, "lang": "en", "type": "append", "seg": 4, "text": " do talk about with my team."}
+{"t": 28.527, "lang": "en", "type": "close", "seg": 4}
+{"t": 29.285, "lang": "es", "type": "append", "seg": 5, "text": " puedo ir"}
+{"t": 29.561, "lang": "en", "type": "append", "seg": 5, "text": " I can"}
+{"t": 30.299, "lang": "es", "type": "append", "seg": 5, "text": " a mi equipo de"}
+{"t": 30.529, "lang": "en", "type": "append", "seg": 5, "text": " go to my team"}
+{"t": 31.266, "lang": "es", "type": "append", "seg": 5, "text": " alg\u00fan"}
+{"t": 31.529, "lang": "en", "type": "append", "seg": 5, "text": " of some backend"}
+{"t": 32.35, "lang": "es", "type": "append", "seg": 5, "text": " backend, qu\u00e9 s\u00e9 yo, de los que"}
+{"t": 32.528, "lang": "en", "type": "append", "seg": 5, "text": " developers, you know,"}
+{"t": 33.363, "lang": "es", "type": "append", "seg": 5, "text": " usamos en Grafana"}
+{"t": 33.53, "lang": "en", "type": "append", "seg": 5, "text": " the ones we use in Grafana"}
+{"t": 34.329, "lang": "es", "type": "append", "seg": 5, "text": " Loki, reci\u00e9n mencionaban"}
+{"t": 34.528, "lang": "en", "type": "append", "seg": 5, "text": " Loki, they just"}
+{"t": 35.34, "lang": "es", "type": "append", "seg": 5, "text": " Loki, el equipo de"}
+{"t": 35.526, "lang": "en", "type": "append", "seg": 5, "text": " mentioned Loki, the"}
+{"t": 36.353, "lang": "es", "type": "append", "seg": 5, "text": " backend de Loki y"}
+{"t": 36.525, "lang": "en", "type": "append", "seg": 5, "text": " backend team of Loki"}
+{"t": 37.302, "lang": "es", "type": "append", "seg": 5, "text": " decir, \u00bfqu\u00e9 ha"}
+{"t": 37.528, "lang": "en", "type": "append", "seg": 5, "text": " and say, what"}
+{"t": 38.297, "lang": "es", "type": "append", "seg": 5, "text": " ocurrido con"}
+{"t": 38.538, "lang": "en", "type": "append", "seg": 5, "text": " happened with"}
+{"t": 39.298, "lang": "es", "type": "append", "seg": 5, "text": " que ha habido este"}
+{"t": 39.53, "lang": "en", "type": "append", "seg": 5, "text": " this spike"}
+{"t": 40.326, "lang": "es", "type": "append", "seg": 5, "text": " "}
+{"t": 40.326, "lang": "es", "type": "close", "seg": 5}
+{"t": 40.326, "lang": "es", "type": "append", "seg": 6, "text": "disparada de costo"}
+{"t": 40.528, "lang": "en", "type": "append", "seg": 5, "text": " in cost that"}
+{"t": 41.311, "lang": "es", "type": "append", "seg": 6, "text": " desde el mes pasado"}
+{"t": 41.531, "lang": "en", "type": "append", "seg": 5, "text": " has "}
+{"t": 41.531, "lang": "en", "type": "close", "seg": 5}
+{"t": 41.531, "lang": "en", "type": "append", "seg": 6, "text": "happened since last"}
+{"t": 42.318, "lang": "es", "type": "append", "seg": 6, "text": " en este particular"}
+{"t": 42.545, "lang": "en", "type": "append", "seg": 6, "text": " month in this particular"}
+{"t": 43.298, "lang": "es", "type": "append", "seg": 6, "text": " cluster,"}
+{"t": 43.528, "lang": "en", "type": "append", "seg": 6, "text": " cluster,"}
+{"t": 44.366, "lang": "es", "type": "append", "seg": 6, "text": " o dentro de este cluster, en este"}
+{"t": 44.527, "lang": "en", "type": "append", "seg": 6, "text": " or within this cluster,"}
+{"t": 45.318, "lang": "es", "type": "append", "seg": 6, "text": " particular"}
+{"t": 45.54, "lang": "en", "type": "append", "seg": 6, "text": " in this particular"}
+{"t": 46.242, "lang": "es", "type": "append", "seg": 6, "text": " namespace."}
+{"t": 46.242, "lang": "es", "type": "close", "seg": 6}
+{"t": 46.526, "lang": "en", "type": "append", "seg": 6, "text": " namespace."}
+{"t": 46.526, "lang": "en", "type": "close", "seg": 6}
+{"t": 47.304, "lang": "es", "type": "append", "seg": 7, "text": " Esa visibilidad"}
+{"t": 47.531, "lang": "en", "type": "append", "seg": 7, "text": " That visibility"}
+{"t": 48.266, "lang": "es", "type": "append", "seg": 7, "text": " esa"}
+{"t": 48.532, "lang": "en", "type": "append", "seg": 7, "text": " that granularity"}
+{"t": 49.341, "lang": "es", "type": "append", "seg": 7, "text": " granularidad es lo que no me"}
+{"t": 49.53, "lang": "en", "type": "append", "seg": 7, "text": " is what"}
+{"t": 50.311, "lang": "es", "type": "append", "seg": 7, "text": " da el cloud"}
+{"t": 50.532, "lang": "en", "type": "append", "seg": 7, "text": " the cloud provider doesn't"}
+{"t": 51.341, "lang": "es", "type": "append", "seg": 7, "text": " provider, ni"}
+{"t": 51.553, "lang": "en", "type": "append", "seg": 7, "text": " give me, nor"}
+{"t": 52.354, "lang": "es", "type": "append", "seg": 7, "text": " hablar en el caso de"}
+{"t": 52.535, "lang": "en", "type": "append", "seg": 7, "text": " to mention in the case"}
+{"t": 53.351, "lang": "es", "type": "append", "seg": 7, "text": " Grafana, nosotros"}
+{"t": 53.53, "lang": "en", "type": "append", "seg": 7, "text": " of Grafana, we"}
+{"t": 54.353, "lang": "es", "type": "append", "seg": 7, "text": " corremos los tres main"}
+{"t": 54.528, "lang": "en", "type": "append", "seg": 7, "text": " run the three main"}
+{"t": 55.344, "lang": "es", "type": "append", "seg": 7, "text": " cloud providers, corremos en"}
+{"t": 55.558, "lang": "en", "type": "append", "seg": 7, "text": " cloud providers, we"}
+{"t": 56.37, "lang": "es", "type": "append", "seg": 7, "text": " AWS, en GCP, en"}
+{"t": 56.538, "lang": "en", "type": "append", "seg": 7, "text": " run on AWS,"}
+{"t": 57.365, "lang": "es", "type": "append", "seg": 7, "text": " Azure,"}
+{"t": 57.529, "lang": "en", "type": "append", "seg": 7, "text": " GCP, Azure,"}
+{"t": 58.369, "lang": "es", "type": "append", "seg": 7, "text": " que tienen "}
+{"t": 58.369, "lang": "es", "type": "close", "seg": 7}
+{"t": 58.369, "lang": "es", "type": "append", "seg": 8, "text": "todos su"}
+{"t": 58.539, "lang": "en", "type": "append", "seg": 7, "text": " which all have"}
+{"t": 59.345, "lang": "es", "type": "append", "seg": 8, "text": " propia"}
+{"t": 59.53, "lang": "en", "type": "append", "seg": 7, "text": " "}
+{"t": 59.53, "lang": "en", "type": "close", "seg": 7}
+{"t": 59.53, "lang": "en", "type": "append", "seg": 8, "text": "their own"}
+{"t": 60.317, "lang": "es", "type": "append", "seg": 8, "text": " su propia manera"}
+{"t": 60.532, "lang": "en", "type": "append", "seg": 8, "text": " their own way"}
+{"t": 61.298, "lang": "es", "type": "append", "seg": 8, "text": " de presentar"}
+{"t": 61.536, "lang": "en", "type": "append", "seg": 8, "text": " of presenting"}
+{"t": 62.311, "lang": "es", "type": "append", "seg": 8, "text": " la f\u00f3rmula, especialmente"}
+{"t": 62.538, "lang": "en", "type": "append", "seg": 8, "text": " the formula, especially"}
+{"t": 63.343, "lang": "es", "type": "append", "seg": 8, "text": " del lado derecho de la"}
+{"t": 63.527, "lang": "en", "type": "append", "seg": 8, "text": " on the right side"}
+{"t": 64.458, "lang": "es", "type": "append", "seg": 8, "text": " f\u00f3rmula, aunque el lado"}
+{"t": 64.786, "lang": "en", "type": "append", "seg": 8, "text": " of the formula, although"}
+{"t": 65.349, "lang": "es", "type": "append", "seg": 8, "text": " izquierdo tambi\u00e9n,"}
+{"t": 65.53, "lang": "en", "type": "append", "seg": 8, "text": " the left side too,"}
+{"t": 66.376, "lang": "es", "type": "append", "seg": 8, "text": " entonces, \u00bfc\u00f3mo"}
+{"t": 66.531, "lang": "en", "type": "append", "seg": 8, "text": " so, how"}
+{"t": 67.671, "lang": "es", "type": "append", "seg": 8, "text": " crear ese modelo de"}
+{"t": 67.782, "lang": "en", "type": "append", "seg": 8, "text": " do you create that data"}
+{"t": 68.645, "lang": "es", "type": "append", "seg": 8, "text": " datos com\u00fan con el"}
+{"t": 68.783, "lang": "en", "type": "append", "seg": 8, "text": " model that you can"}
+{"t": 69.738, "lang": "es", "type": "append", "seg": 8, "text": " cual "}
+{"t": 69.738, "lang": "es", "type": "close", "seg": 8}
+{"t": 69.738, "lang": "es", "type": "append", "seg": 9, "text": "si yo voy a hablar con"}
+{"t": 70.028, "lang": "en", "type": "append", "seg": 8, "text": " use if I'm going to talk"}
+{"t": 70.759, "lang": "es", "type": "append", "seg": 9, "text": " Loki y le digo, \"Ah, esto"}
+{"t": 71.03, "lang": "en", "type": "append", "seg": 8, "text": " "}
+{"t": 71.03, "lang": "en", "type": "close", "seg": 8}
+{"t": 71.03, "lang": "en", "type": "append", "seg": 9, "text": "to Loki and say,"}
+{"t": 71.91, "lang": "es", "type": "append", "seg": 9, "text": " es, cuando"}
+{"t": 72.034, "lang": "en", "type": "append", "seg": 9, "text": "\"Ah, this is,"}
+{"t": 72.814, "lang": "es", "type": "append", "seg": 9, "text": " hablamos de AWS, la"}
+{"t": 73.031, "lang": "en", "type": "append", "seg": 9, "text": " when we talk about AWS,"}
+{"t": 73.742, "lang": "es", "type": "append", "seg": 9, "text": " dimensi\u00f3n costo"}
+{"t": 74.049, "lang": "en", "type": "append", "seg": 9, "text": " the cost dimension"}
+{"t": 74.804, "lang": "es", "type": "append", "seg": 9, "text": " tiene esta"}
+{"t": 75.041, "lang": "en", "type": "append", "seg": 9, "text": " has this"}
+{"t": 75.805, "lang": "es", "type": "append", "seg": 9, "text": " etiqueta, pero cuando hablamos"}
+{"t": 76.042, "lang": "en", "type": "append", "seg": 9, "text": " tag, but when"}
+{"t": 76.78, "lang": "es", "type": "append", "seg": 9, "text": " de GCP tiene esta"}
+{"t": 77.041, "lang": "en", "type": "append", "seg": 9, "text": " we talk about GCP"}
+{"t": 77.845, "lang": "es", "type": "append", "seg": 9, "text": " otra, no, no, no."}
+{"t": 77.845, "lang": "es", "type": "close", "seg": 9}
+{"t": 78.041, "lang": "en", "type": "append", "seg": 9, "text": " it has this other one,"}
+{"t": 78.91, "lang": "es", "type": "append", "seg": 10, "text": " \u00bfC\u00f3mo puedo crear"}
+{"t": 79.037, "lang": "en", "type": "append", "seg": 9, "text": " no, no, no."}
+{"t": 79.037, "lang": "en", "type": "close", "seg": 9}
+{"t": 79.037, "lang": "en", "type": "append", "seg": 10, "text": " How"}
+{"t": 79.974, "lang": "es", "type": "append", "seg": 10, "text": " que el lado"}
+{"t": 80.292, "lang": "en", "type": "append", "seg": 10, "text": " can I create that the"}
+{"t": 81.061, "lang": "es", "type": "append", "seg": 10, "text": " final, el lado costo"}
+{"t": 81.286, "lang": "en", "type": "append", "seg": 10, "text": " final side, the"}
+{"t": 81.975, "lang": "es", "type": "append", "seg": 10, "text": " tenga un"}
+{"t": 82.29, "lang": "en", "type": "append", "seg": 10, "text": " cost side has"}
+{"t": 82.963, "lang": "es", "type": "append", "seg": 10, "text": " modelo de"}
+{"t": 83.287, "lang": "en", "type": "append", "seg": 10, "text": " a data model"}
+{"t": 83.97, "lang": "es", "type": "append", "seg": 10, "text": " datos, si ustedes"}
+{"t": 84.292, "lang": "en", "type": "append", "seg": 10, "text": " that, if you"}
+{"t": 85.012, "lang": "es", "type": "append", "seg": 10, "text": " no han visto"}
+{"t": 85.293, "lang": "en", "type": "append", "seg": 10, "text": " haven't seen"}
+{"t": 85.958, "lang": "es", "type": "append", "seg": 10, "text": " PromQL,"}
+{"t": 86.304, "lang": "en", "type": "append", "seg": 10, "text": " PromQL,"}
+{"t": 86.998, "lang": "es", "type": "append", "seg": 10, "text": " perfecto, si piensan en"}
+{"t": 87.297, "lang": "en", "type": "append", "seg": 10, "text": " perfect, if you"}
+{"t": 87.931, "lang": "es", "type": "append", "seg": 10, "text": " SQL,"}
+{"t": 88.29, "lang": "en", "type": "append", "seg": 10, "text": " think of SQL,"}
+{"t": 88.875, "lang": "es", "type": "append", "seg": 10, "text": " cu\u00e1les son las"}
+{"t": 89.039, "lang": "en", "type": "append", "seg": 10, "text": " what are the"}
+{"t": 89.871, "lang": "es", "type": "append", "seg": 10, "text": " columnas que hacen que tengamos"}
+{"t": 90.039, "lang": "en", "type": "append", "seg": 10, "text": " columns that make us"}
+{"t": 90.553, "lang": "es", "type": "append", "seg": 10, "text": " un mismo "}
+{"t": 90.553, "lang": "es", "type": "close", "seg": 10}
+{"t": 90.553, "lang": "es", "type": "append", "seg": 11, "text": "idioma,"}
+{"t": 90.787, "lang": "en", "type": "append", "seg": 10, "text": " have the same language,"}
+{"t": 91.312, "lang": "es", "type": "append", "seg": 11, "text": " \u00bfno?"}
+{"t": 91.312, "lang": "es", "type": "close", "seg": 11}
+{"t": 91.537, "lang": "en", "type": "append", "seg": 10, "text": " right?"}
+{"t": 91.537, "lang": "en", "type": "close", "seg": 10}
+{"t": 92.365, "lang": "es", "type": "append", "seg": 12, "text": " Eso es un"}
+{"t": 92.539, "lang": "en", "type": "append", "seg": 11, "text": " That's a"}
+{"t": 93.369, "lang": "es", "type": "append", "seg": 12, "text": " desaf\u00edo."}
+{"t": 93.369, "lang": "es", "type": "close", "seg": 12}
+{"t": 93.548, "lang": "en", "type": "append", "seg": 11, "text": " challenge."}
+{"t": 93.548, "lang": "en", "type": "close", "seg": 11}
+{"t": 97.059, "lang": "es", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}
+{"t": 97.059, "lang": "en", "type": "talk", "data": {"talk_id": null, "title": null, "speakers": [], "language": null}}

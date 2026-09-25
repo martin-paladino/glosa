@@ -1,0 +1,67 @@
+# Task 15c: the talk glossary + term list bench/bench.py rates each engine
+# against. `term` is what a real talk.glossary entry would carry (also fed
+# to the glossary engine's transcribe-live customVocabulary); `source_patterns`
+# (default: [term]) are the spellings counted in the *source* reference
+# transcript (samples/reference/*.json3); `targets` are the accepted
+# spellings counted in an engine's translated output. See bench/terms.py
+# for why matching is accent/case-insensitive substring containment (not
+# word-bounded) and why alternate spellings aren't summed.
+#
+# Every term below was chosen because it actually occurs in that clip's
+# reference transcript (verified against samples/reference/*.json3), not
+# copied from samples/README.md's talk-level description (that "why this
+# range" blurb names vocabulary from elsewhere in the full talks, some of
+# which falls outside the ~93s excerpts bundled as samples/*.opus).
+
+en_clip:  # EN -> ES (LLMs on Autopilot: agent infra/SRE talk excerpt)
+  - term: agents
+    source_patterns: [agent]  # catches agent/agents/agents'
+    targets: [agente]  # catches agente/agentes
+  - term: infrastructure
+    targets: [infraestructura]
+  - term: capabilities
+    source_patterns: [capabilit]  # catches capability/capabilities
+    targets: [capacidad]  # catches capacidad/capacidades
+  - term: ambiguity
+    targets: [ambiguedad]  # accent-insensitive: matches ambigüedad too
+  - term: structural information
+    targets: [informacion estructural]
+  - term: requirements
+    source_patterns: [requirement]
+    targets: [requisito, requerimiento]
+  - term: differences
+    source_patterns: [difference]
+    targets: [diferencia]
+
+es_clip:  # ES -> EN (cloud cost/FinOps talk excerpt)
+  - term: namespaces
+    source_patterns: [namespace]
+    targets: [namespace]
+    keep_in_english: true
+  - term: labels
+    source_patterns: [label]
+    targets: [label]
+    keep_in_english: true
+  - term: workloads
+    source_patterns: [work]  # the reference mis-transcribes "workloads" as "works"
+    targets: [workload]
+    keep_in_english: true
+  - term: Grafana
+    targets: [Grafana]
+    keep_in_english: true
+  - term: Loki
+    source_patterns: [lok]  # reference has "Loky"/"Lok" (ASR mishears)
+    targets: [Loki]
+    keep_in_english: true
+  - term: AWS
+    targets: [AWS]
+    keep_in_english: true
+  - term: GCP
+    targets: [GCP]
+    keep_in_english: true
+  - term: Azure
+    source_patterns: [azure, asure]  # reference mis-transcribes it "Asure"
+    targets: [Azure]
+    keep_in_english: true
+  - term: modelo de datos
+    targets: [data model]

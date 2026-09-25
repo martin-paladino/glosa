@@ -375,7 +375,7 @@ only you, in the operator-facing status, see the real reason.
 **Exports.** `glosa/exports.py` implements `to_srt`/`to_vtt`/`to_txt` from
 a talk's saved segments, and every segment is saved with the timing it
 needs (`Settings.default_export_shift_s = 2.4`, the measured p50
-translation delay, applied when rendering). Each room's drawer has an
+translation delay, subtracted from the caption-arrival times when rendering). Each room's drawer has an
 **Exportaciones**/**Exports** list (one entry per finished talk in that
 room, `GET /api/admin/exports`) with a **En vivo**/**Live** download link
 per target language plus a **Corregida**/**Corrected** one, whose status

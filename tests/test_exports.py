@@ -3,8 +3,9 @@
 Covers spec case 11.1: SRT numbering, HH:MM:SS,mmm formatting, <=42-char
 lines wrapped into at most 2 lines per cue (splitting into extra cues with
 time distributed proportionally to characters when needed), VTT's WEBVTT
-header and decimal-point timestamps, and shift_s (always explicit, negative
-times clipped to 0).
+header and decimal-point timestamps, and shift_s (always explicit, the
+measured delay SUBTRACTED from caption-arrival times, negative times clipped
+to 0).
 """
 
 from __future__ import annotations
@@ -106,11 +107,25 @@ def test_to_srt_splits_into_multiple_cues_with_proportional_timing() -> None:
 
 
 def test_to_srt_applies_shift() -> None:
-    segs = [ExportSegment(text="Shifted", t_start=0.0, t_end=2.0)]
+    """Segment times are caption ARRIVAL times (already late by the engine
+    latency); shift_s is that measured delay, so cues move EARLIER by it
+    (final-review-A I3)."""
+    segs = [ExportSegment(text="Shifted", t_start=12.4, t_end=14.4)]
 
     out = to_srt(segs, shift_s=2.4)
 
-    assert "00:00:02,400 --> 00:00:04,400" in out
+    assert "00:00:10,000 --> 00:00:12,000" in out
+
+
+def test_to_vtt_word_spoken_at_10s_arriving_at_12_4s_gets_a_cue_at_10s() -> None:
+    """The demo video's subtitles are this VTT: a word spoken at t=10 s whose
+    caption arrived at 12.4 s (latency 2.4 s) must be cued at ~10 s, not
+    at 14.8 s."""
+    segs = [ExportSegment(text="Spoken at ten", t_start=12.4, t_end=13.9)]
+
+    out = to_vtt(segs, shift_s=2.4)
+
+    assert "00:00:10.000 --> 00:00:11.500" in out
 
 
 def test_to_srt_clips_negative_times_to_zero() -> None:
@@ -124,7 +139,7 @@ def test_to_srt_clips_negative_times_to_zero() -> None:
 def test_to_srt_clips_negative_times_after_shift() -> None:
     segs = [ExportSegment(text="Negative shift", t_start=1.0, t_end=3.0)]
 
-    out = to_srt(segs, shift_s=-2.5)
+    out = to_srt(segs, shift_s=2.5)
 
     # 1.0 - 2.5 = -1.5 -> clipped to 0; 3.0 - 2.5 = 0.5.
     assert "00:00:00,000 --> 00:00:00,500" in out

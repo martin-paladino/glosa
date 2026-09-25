@@ -13,9 +13,11 @@ when it needs more than 2 lines, it is split into consecutive cues of (up
 to) 2 lines each, and the segment's [t_start, t_end] duration is divided
 between those cues in proportion to each cue's character count.
 
-shift_s (Ruling 6) is always explicit - there is no default - and is added
-to every timestamp; the result is clipped to 0 (subtitles can't start
-before the file does).
+shift_s (Ruling 6) is always explicit - there is no default. It is the
+measured caption delay: segment times are caption ARRIVAL times (already late
+by the engine latency), so shift_s is SUBTRACTED from every timestamp to move
+cues back onto the speech (final-review-A I3); the result is clipped to 0
+(subtitles can't start before the file does).
 
 render()/CONTENT_TYPE/slugify()/export_filename() (task-11r-brief.md Ruling 2)
 are the small pieces glosa/web/public_api.py's GET /exports/{talk_id}/{lang}.{fmt}
@@ -70,7 +72,7 @@ def _wrap_lines(text: str, max_chars: int = _MAX_LINE_CHARS) -> list[str]:
 
 
 def _shift_and_clip(seg: ExportSegment, shift_s: float) -> tuple[float, float]:
-    return max(0.0, seg.t_start + shift_s), max(0.0, seg.t_end + shift_s)
+    return max(0.0, seg.t_start - shift_s), max(0.0, seg.t_end - shift_s)
 
 
 def _segment_to_cues(seg: ExportSegment, shift_s: float) -> list[_Cue]:

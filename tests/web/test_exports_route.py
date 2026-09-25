@@ -153,8 +153,9 @@ async def test_shift_s_falls_back_to_the_configured_default_when_the_room_is_idl
     settings = _settings(tmp_path, default_export_shift_s=5.0)
     async with _open(settings) as (app, client):
         await app.state.db.insert_talks([_talk()])
-        await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 0.0, 1.0)
+        await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 7.0, 8.0)
 
         response = await client.get("/exports/t1/en.srt")
 
-        assert "00:00:05,000 --> 00:00:06,000" in response.text  # 0.0/1.0 shifted by 5.0
+        # Arrival times 7.0/8.0 moved EARLIER by the 5.0 s delay (final-review-A I3).
+        assert "00:00:02,000 --> 00:00:03,000" in response.text

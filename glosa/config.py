@@ -116,6 +116,14 @@ class Settings(BaseSettings):
     timezone: str = "UTC"
     branding: Branding = Field(default_factory=Branding)
     audience_mode: Literal["all", "qr_only"] = "all"
+    # Ruling 63: the interface language (every page's buttons/labels, not the
+    # captions themselves) for a visitor with no sticky choice of their own.
+    # "es"/"en": always that language, Accept-Language is ignored. "auto":
+    # the pre-Ruling-63 behaviour (glosa/i18n.py detect_lang on
+    # Accept-Language). ?lang= always wins over this and, once used, sticks
+    # for that visitor via the glosa_lang cookie (glosa/web/pages.py,
+    # glosa/web/admin_api.py _ui_lang()).
+    ui_language: Literal["es", "en", "auto"] = "es"
     rooms: list[RoomCfg] = Field(default_factory=list)
     budget_usd: float = 10.0
     exports_public: bool = True

@@ -16,7 +16,10 @@ Task 5's create_app() includes `router` and provides on app.state:
     pre-14b behaviour (slug-only room lookup, no token fallback, "listen"
     always off).
 
-Interface language: `?lang=es|en` wins, then Accept-Language, then Spanish.
+Interface language (Ruling 63): `?lang=es|en` wins (and sticks for that
+visitor via the `glosa_lang` cookie), then that cookie, then
+`Settings.ui_language` ("es"/"en": ignores Accept-Language; "auto": the
+pre-Ruling-63 Accept-Language detection) -- see `_ui_lang()`.
 Live captions arrive over SSE (`/api/stream/{slug}/{lang}`, glosa/web/
 public_api.py), handled by static/js/room.js; the page embeds what room.js
 needs as JSON.
@@ -37,7 +40,6 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import cast
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -45,13 +47,14 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from glosa.i18n import (
+    LANG_COOKIE,
+    LANG_COOKIE_MAX_AGE,
     STRINGS,
-    SUPPORTED,
     Lang,
-    detect_lang,
     endonym,
     join_names,
     lang_name,
+    resolve_ui_lang,
     t,
 )
 from glosa.web.admin_api import public_base, qr_data_uri
@@ -82,7 +85,8 @@ def index(request: Request):
         else [_room_summary(room, ui, forced) for room in _rooms(request)]
     )
     context = _base_context(request, ui, forced) | {"rooms": rooms}
-    return templates.TemplateResponse(request, "index.html", context, headers=_VARY)
+    response = templates.TemplateResponse(request, "index.html", context, headers=_VARY)
+    return _set_lang_cookie(response, forced)
 
 
 @router.get("/s/{slug}", include_in_schema=False)
@@ -104,9 +108,10 @@ def room_page(slug: str, request: Request):
 
     base = _base_context(request, ui, forced)
     if room is None:
-        return templates.TemplateResponse(
+        response = templates.TemplateResponse(
             request, "not_found.html", base, status_code=404, headers=_VARY
         )
+        return _set_lang_cookie(response, forced)
 
     summary = _room_summary(room, ui, forced)
     now = room.get("now")
@@ -161,7 +166,8 @@ def room_page(slug: str, request: Request):
         "config": config,
         "listen": listen,
     }
-    return templates.TemplateResponse(request, "room.html", context, headers=_VARY)
+    response = templates.TemplateResponse(request, "room.html", context, headers=_VARY)
+    return _set_lang_cookie(response, forced)
 
 
 @router.get("/overlay/{slug}", include_in_schema=False)
@@ -232,11 +238,12 @@ def qr_page(slug: str, request: Request):
     qr_only = _audience_mode(request) == "qr_only"
     if qr_only and not is_authenticated(request):
         suffix = f"?lang={forced}" if forced else ""
-        return RedirectResponse(f"/admin/login{suffix}", status_code=303)
+        return _set_lang_cookie(RedirectResponse(f"/admin/login{suffix}", status_code=303), forced)
     worker = _find_worker(request, slug)
     base = _base_context(request, ui, forced)
     if worker is None:
-        return templates.TemplateResponse(request, "not_found.html", base, status_code=404, headers=_VARY)
+        response = templates.TemplateResponse(request, "not_found.html", base, status_code=404, headers=_VARY)
+        return _set_lang_cookie(response, forced)
     key = worker.room.public_token if qr_only else worker.room.slug
     url = f"{public_base(request)}/s/{quote(key, safe='')}"
     context = base | {
@@ -244,7 +251,8 @@ def qr_page(slug: str, request: Request):
         "qr_data_uri": qr_data_uri(url),
         "qr_url": url,
     }
-    return templates.TemplateResponse(request, "qr.html", context, headers=_VARY)
+    response = templates.TemplateResponse(request, "qr.html", context, headers=_VARY)
+    return _set_lang_cookie(response, forced)
 
 
 # ---- helpers -------------------------------------------------------------------
@@ -278,10 +286,25 @@ def _clamp_int(raw: str | None, *, default: int, lo: int, hi: int) -> int:
 
 
 def _ui_lang(request: Request) -> tuple[Lang, Lang | None]:
-    """(interface language, the one forced by ?lang or None)."""
-    requested = request.query_params.get("lang")
-    forced = cast(Lang, requested) if requested in SUPPORTED else None
-    return forced or detect_lang(request.headers.get("accept-language")), forced
+    """(interface language, the one forced by ?lang or None). Ruling 63:
+    ?lang= > the sticky glosa_lang cookie > Settings.ui_language (es/en,
+    Accept-Language ignored) > ("auto", or no settings at all) today's
+    Accept-Language detection -- see glosa.i18n.resolve_ui_lang."""
+    settings = getattr(request.app.state, "settings", None)
+    configured = getattr(settings, "ui_language", "auto") if settings is not None else "auto"
+    return resolve_ui_lang(
+        query_lang=request.query_params.get("lang"),
+        cookie_lang=request.cookies.get(LANG_COOKIE),
+        configured=configured,
+        accept_language=request.headers.get("accept-language"),
+    )
+
+
+def _set_lang_cookie(response, forced: Lang | None):
+    """Ruling 63: once ?lang= picks a language, it sticks for this visitor."""
+    if forced:
+        response.set_cookie(LANG_COOKIE, forced, max_age=LANG_COOKIE_MAX_AGE, samesite="lax")
+    return response
 
 
 def _base_context(request: Request, ui: Lang, forced: Lang | None) -> dict:

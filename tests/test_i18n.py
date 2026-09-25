@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from glosa import i18n
-from glosa.i18n import detect_lang, endonym, join_names, lang_name, t
+from glosa.i18n import detect_lang, endonym, join_names, lang_name, resolve_ui_lang, t
 
 
 def test_every_key_exists_in_both_languages() -> None:
@@ -83,3 +83,40 @@ def test_admin_plurals() -> None:
     assert i18n.admin_plural("pending", 3, "es") == "3 pendientes"
     assert i18n.admin_plural("panels", 2, "en") == "2 panels open"
     assert i18n.admin_plural("tally_live", 2, "es") == "en vivo"
+
+
+# ---- resolve_ui_lang (Ruling 63) ---------------------------------------------
+
+
+def _resolve(query=None, cookie=None, configured="auto", accept=None):
+    return resolve_ui_lang(
+        query_lang=query, cookie_lang=cookie, configured=configured, accept_language=accept
+    )
+
+
+def test_query_lang_always_wins_and_is_returned_as_forced() -> None:
+    assert _resolve(query="en", cookie="es", configured="es", accept="es") == ("en", "en")
+    assert _resolve(query="es", cookie="en", configured="en", accept="en") == ("es", "es")
+
+
+def test_an_unsupported_query_lang_is_ignored() -> None:
+    assert _resolve(query="fr", configured="es") == ("es", None)
+
+
+def test_cookie_wins_over_the_configured_default_when_no_query_lang() -> None:
+    assert _resolve(cookie="en", configured="es", accept="es") == ("en", None)
+    assert _resolve(cookie="es", configured="en", accept="en") == ("es", None)
+
+
+def test_configured_es_or_en_ignores_accept_language() -> None:
+    assert _resolve(configured="es", accept="en-US,en;q=0.9") == ("es", None)
+    assert _resolve(configured="en", accept="es-AR,es;q=0.9") == ("en", None)
+
+
+def test_configured_auto_or_missing_falls_back_to_accept_language() -> None:
+    assert _resolve(configured="auto", accept="en-US,en;q=0.9") == ("en", None)
+    assert _resolve(configured="auto", accept=None) == ("es", None)
+
+
+def test_unsupported_cookie_value_is_ignored() -> None:
+    assert _resolve(cookie="fr", configured="auto", accept="en") == ("en", None)

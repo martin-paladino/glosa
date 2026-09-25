@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
+from glosa.config import Settings
 from glosa.i18n import t
 from glosa.web import pages
 from glosa.web.auth import COOKIE_NAME, new_admin_secret, sign_session
@@ -71,14 +72,24 @@ SPANISH = {"Accept-Language": "es-AR,es;q=0.9,en;q=0.8"}
 ENGLISH = {"Accept-Language": "en-US,en;q=0.9"}
 
 
-def _make_app(rooms: list[dict] | None = None, branding: dict | None = None) -> FastAPI:
+def _make_app(
+    rooms: list[dict] | None = None, branding: dict | None = None, *, settings: Settings | None = None
+) -> FastAPI:
     app = FastAPI()
     snapshot = ROOMS if rooms is None else rooms
     app.state.rooms_view = lambda: snapshot
     app.state.branding = dict(BRANDING if branding is None else branding)
+    if settings is not None:
+        app.state.settings = settings
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(pages.router)
     return app
+
+
+def _settings(**overrides) -> Settings:
+    values: dict = dict(gemini_api_key="unused", admin_password="s3cr3t-pw")
+    values.update(overrides)
+    return Settings(**values)
 
 
 @pytest.fixture
@@ -222,6 +233,71 @@ def test_index_with_no_rooms_explains_what_to_do() -> None:
 def test_pages_vary_on_accept_language(client: TestClient) -> None:
     assert "accept-language" in client.get("/").headers["vary"].lower()
     assert "accept-language" in client.get("/s/r1").headers["vary"].lower()
+
+
+# ---- Ruling 63: Settings.ui_language and the sticky glosa_lang cookie -----------
+
+
+def test_ui_language_es_ignores_accept_language() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="es")))
+
+    html = client.get("/", headers=ENGLISH).text
+
+    assert _html_lang(html) == "es"
+
+
+def test_ui_language_en_ignores_accept_language() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="en")))
+
+    html = client.get("/", headers=SPANISH).text
+
+    assert _html_lang(html) == "en"
+
+
+def test_ui_language_auto_follows_accept_language() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="auto")))
+
+    spanish = client.get("/", headers=SPANISH).text
+    english = client.get("/", headers=ENGLISH).text
+
+    assert _html_lang(spanish) == "es"
+    assert _html_lang(english) == "en"
+
+
+def test_lang_query_wins_over_configured_ui_language() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="es")))
+
+    html = client.get("/?lang=en", headers=SPANISH).text
+
+    assert _html_lang(html) == "en"
+
+
+def test_lang_query_sets_a_sticky_cookie() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="es")))
+
+    response = client.get("/?lang=en")
+
+    cookie = response.cookies.get("glosa_lang")
+    assert cookie == "en"
+
+
+def test_the_sticky_cookie_wins_over_the_configured_default_on_a_later_visit() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="es")))
+
+    client.get("/?lang=en")  # sets the cookie
+    later = client.get("/")  # no ?lang= this time
+
+    assert _html_lang(later.text) == "en"
+
+
+def test_the_room_page_also_honours_ui_language_and_sets_the_cookie() -> None:
+    client = TestClient(_make_app(settings=_settings(ui_language="en")))
+
+    html = client.get("/s/r1", headers=SPANISH).text
+    assert _html_lang(html) == "en"
+
+    response = client.get("/s/r1?lang=es")
+    assert response.cookies.get("glosa_lang") == "es"
 
 
 # ---- /s/{slug} : room view ---------------------------------------------------

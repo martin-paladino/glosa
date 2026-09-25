@@ -17,6 +17,14 @@ branding:
 # "all": anyone with the room link can watch. "qr_only": only via the room QR.
 audience_mode: all
 
+# Interface language (buttons/labels, not the captions) for a visitor with no
+# choice of their own yet. "es"/"en": always that language, ignoring the
+# browser's Accept-Language. "auto": follow Accept-Language instead (English
+# browsers get an English interface). ?lang=es|en always wins over this and
+# sticks for that visitor afterwards (a cookie), on every page: audience,
+# room, QR, station and /admin.
+ui_language: es
+
 # Each room with a source opens a "free session" at startup: the audio is
 # captioned in `language` (default en) and translated to the first of
 # `default_targets` that differs from it.

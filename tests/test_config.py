@@ -96,6 +96,30 @@ def test_room_language_engine_mode_and_storage_defaults(env_file: Path, config_y
     assert settings.fake_fixture is None
 
 
+def test_ui_language_defaults_to_spanish(env_file: Path, config_yaml: Path) -> None:  # Ruling 63
+    settings = Settings.load(env_path=str(env_file), config_path=str(config_yaml))
+
+    assert settings.ui_language == "es"
+
+
+@pytest.mark.parametrize("value", ["es", "en", "auto"])
+def test_ui_language_accepts_es_en_or_auto(env_file: Path, tmp_path: Path, value: str) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(f"ui_language: {value}\n", encoding="utf-8")
+
+    settings = Settings.load(env_path=str(env_file), config_path=str(config))
+
+    assert settings.ui_language == value
+
+
+def test_ui_language_rejects_unknown_values(env_file: Path, tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("ui_language: fr\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        Settings.load(env_path=str(env_file), config_path=str(config))
+
+
 def test_engine_mode_fake_and_room_language_from_yaml(env_file: Path, tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text(

@@ -102,6 +102,7 @@ opcionales; lo que omitas cae en los valores por defecto de
 event_name: Nerdearla Vibeathon 2026
 timezone: America/Argentina/Buenos_Aires
 audience_mode: all   # o "qr_only": sin lista pública de salas, solo funciona el link del QR
+ui_language: es      # "es" | "en" | "auto" (sigue el Accept-Language del navegador)
 
 rooms:
   - id: main

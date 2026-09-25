@@ -859,6 +859,39 @@ def admin_plural(key: str, n: int, lang: Lang) -> str:
     return (one if n == 1 or not many else many).format(n=n)
 
 
+# Ruling 63: the sticky per-visitor interface-language cookie, set by
+# glosa/web/pages.py and glosa/web/admin_api.py's _set_lang_cookie() whenever
+# ?lang= is used, and read back (before Settings.ui_language) on the next visit.
+LANG_COOKIE = "glosa_lang"
+LANG_COOKIE_MAX_AGE = 60 * 60 * 24 * 365  # 1 year
+
+
+def resolve_ui_lang(
+    *,
+    query_lang: str | None,
+    cookie_lang: str | None,
+    configured: str,
+    accept_language: str | None,
+) -> tuple[Lang, Lang | None]:
+    """(interface language, the one forced by ``?lang=`` or None).
+
+    Ruling 63's precedence: ``?lang=`` always wins, and the caller makes
+    that choice sticky (``LANG_COOKIE``, set from the returned "forced"
+    value); else the sticky cookie from an earlier visit; else
+    ``Settings.ui_language`` when it's "es" or "en" (Accept-Language is
+    ignored); else -- ``configured`` is "auto", or there is no configured
+    value at all -- today's Accept-Language detection (``detect_lang``).
+    """
+    forced = cast(Lang, query_lang) if query_lang in SUPPORTED else None
+    if forced:
+        return forced, forced
+    if cookie_lang in SUPPORTED:
+        return cast(Lang, cookie_lang), None
+    if configured in SUPPORTED:
+        return cast(Lang, configured), None
+    return detect_lang(accept_language), None
+
+
 def detect_lang(accept_language: str | None) -> Lang:
     """Pick "es" or "en" from an Accept-Language header, by q-value.
 

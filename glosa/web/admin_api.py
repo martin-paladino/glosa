@@ -4,8 +4,10 @@
     ``/admin/login`` without a valid session cookie). The first paint comes
     from the same snapshot as the live feed (glosa/web/admin_stream.py,
     ``GET /api/admin/stream``); static/js/admin.js keeps it live and drives
-    every control through the routes below. Interface language: ``?lang=``,
-    then Accept-Language (glosa/i18n.py ``ADMIN_STRINGS``).
+    every control through the routes below. Interface language (Ruling 63,
+    same precedence as glosa/web/pages.py): ``?lang=`` (sticky via the
+    ``glosa_lang`` cookie), then that cookie, then ``Settings.ui_language``
+    (glosa/i18n.py ``ADMIN_STRINGS``) -- see ``_ui_lang()``.
   - ``GET /admin/login``: the login page (redirects to ``/admin`` if already
     authenticated).
   - ``POST /admin/login``: checks ``password`` against
@@ -113,7 +115,7 @@ import urllib.request
 from dataclasses import asdict
 from datetime import date, datetime, timezone, tzinfo
 from pathlib import Path, PurePosixPath
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import qrcode
@@ -125,7 +127,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from glosa.agenda import AgendaError, stable_talk_id
 from glosa.agenda.csv_import import VALID_ENGINES, VALID_LANGUAGES, parse_csv
 from glosa.agenda.nerdearla_import import SkippedSession, parse_nerdearla_report
-from glosa.i18n import ADMIN_STRINGS, SUPPORTED, Lang, admin_t, detect_lang
+from glosa.i18n import ADMIN_STRINGS, LANG_COOKIE, LANG_COOKIE_MAX_AGE, SUPPORTED, Lang, admin_t, resolve_ui_lang
 from glosa.models import GlossaryTerm, Talk
 from glosa.room import RoomWorker, is_free_talk
 from glosa.scheduler import NoTalkToRestart
@@ -176,7 +178,9 @@ _HOST_RE = re.compile(r"(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])
 async def admin_page(request: Request):
     ui, forced = _ui_lang(request)
     if not is_authenticated(request):
-        return RedirectResponse("/admin/login" + _lang_suffix(forced), status_code=303)
+        return _set_lang_cookie(
+            RedirectResponse("/admin/login" + _lang_suffix(forced), status_code=303), forced
+        )
     view = admin_stream.localize(await admin_stream.monitor_for(request.app).snapshot(), ui)
     config = {
         "page": "panel",
@@ -194,17 +198,19 @@ async def admin_page(request: Request):
         "state": view,
     }
     context = _page_context(request, ui) | {"view": view, "config": config}
-    return templates.TemplateResponse(request, "admin.html", context, headers=_PAGE_HEADERS)
+    response = templates.TemplateResponse(request, "admin.html", context, headers=_PAGE_HEADERS)
+    return _set_lang_cookie(response, forced)
 
 
 @router.get("/admin/login", include_in_schema=False)
 def login_page(request: Request):
     ui, forced = _ui_lang(request)
     if is_authenticated(request):
-        return RedirectResponse("/admin" + _lang_suffix(forced), status_code=303)
+        return _set_lang_cookie(RedirectResponse("/admin" + _lang_suffix(forced), status_code=303), forced)
     config = {"page": "login", "ui": ui, "tz": request.app.state.settings.timezone, "i18n": ADMIN_STRINGS[ui]}
     context = _page_context(request, ui) | {"config": config}
-    return templates.TemplateResponse(request, "admin_login.html", context, headers=_PAGE_HEADERS)
+    response = templates.TemplateResponse(request, "admin_login.html", context, headers=_PAGE_HEADERS)
+    return _set_lang_cookie(response, forced)
 
 
 def _stations(request: Request) -> dict[str, dict[str, str]]:
@@ -290,10 +296,25 @@ def qr_data_uri(text: str) -> str:
 
 
 def _ui_lang(request: Request) -> tuple[Lang, Lang | None]:
-    """(the panel's language, the one forced by ?lang= or None)."""
-    requested = request.query_params.get("lang")
-    forced = cast(Lang, requested) if requested in SUPPORTED else None
-    return forced or detect_lang(request.headers.get("accept-language")), forced
+    """(the panel's language, the one forced by ?lang= or None). Ruling 63:
+    same precedence as glosa/web/pages.py's _ui_lang() -- ?lang= > the
+    sticky glosa_lang cookie > Settings.ui_language (es/en, Accept-Language
+    ignored) > ("auto", or no settings at all) Accept-Language detection."""
+    settings = getattr(request.app.state, "settings", None)
+    configured = getattr(settings, "ui_language", "auto") if settings is not None else "auto"
+    return resolve_ui_lang(
+        query_lang=request.query_params.get("lang"),
+        cookie_lang=request.cookies.get(LANG_COOKIE),
+        configured=configured,
+        accept_language=request.headers.get("accept-language"),
+    )
+
+
+def _set_lang_cookie(response, forced: Lang | None):
+    """Ruling 63: once ?lang= picks a language, it sticks for this visitor."""
+    if forced:
+        response.set_cookie(LANG_COOKIE, forced, max_age=LANG_COOKIE_MAX_AGE, samesite="lax")
+    return response
 
 
 def _lang_suffix(forced: Lang | None) -> str:

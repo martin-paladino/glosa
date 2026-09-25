@@ -169,11 +169,17 @@ const lang = input.lang;
 const storagePreload = new Map();
 if (input.dragStored) storagePreload.set("glosa.summaryPos", JSON.stringify(input.dragStored));
 
+// input.station: the room station's markup (glosa/web/templates/station.html)
+// -- same room.js, but no summary button/panel, no PiP button and no
+// summaryBase in its config.
+const station = Boolean(input.station);
+
 const config = {
-  slug: "r1", streamBase: "/api/stream/r1/", summaryBase: "/api/summary/r1/",
+  slug: "r1", streamBase: "/api/stream/r1/",
   langs: [lang], defaultLang: lang, forcedLang: lang,
   source: lang, talkId: null, endonyms: {}, langNames: {}, i18n: input.i18n,
 };
+if (!station) config.summaryBase = "/api/summary/r1/";
 const select = h("select", { "data-lang-select": "" });
 select.options = [h("option", { value: lang })];
 const transcript = h("div", { "data-transcript": "", "data-layout": "single" },
@@ -198,10 +204,10 @@ const html = h("html", {},
     select,
     h("button", { "data-action": "theme" }),
     h("button", { "data-action": "fullscreen" }),
-    h("button", { "data-action": "pip", "aria-pressed": "false" }),
+    ...(station ? [] : [h("button", { "data-action": "pip", "aria-pressed": "false" })]),
     h("main", { "data-stage": "" }, transcript),
     h("button", { "data-action": "live", hidden: "" }),
-    summaryToggle, summaryScrim, summaryPanel,
+    ...(station ? [] : [summaryToggle, summaryScrim, summaryPanel]),
     h("script", { id: "glosa-room" }, JSON.stringify(config)),
   ));
 
@@ -374,7 +380,7 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
     phrases,
     text: page.querySelectorAll("p").map((p) => p.textContent).join(" | "),
     live: live ? live.textContent : null,
-    summary: {
+    summary: station ? null : {
       fetchCalls,
       toggleHidden: summaryToggle.hidden,
       ariaExpanded: summaryToggle.getAttribute("aria-expanded"),
@@ -384,13 +390,13 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
       bullets: summaryBullets.querySelectorAll("li").map((li) => li.textContent),
       ago: summaryAgo.textContent,
     },
-    drag: {
+    drag: station ? null : {
       handleLabel: summaryDragHandle.getAttribute("aria-label"),
       left: summaryPanel.style.getPropertyValue("left"),
       top: summaryPanel.style.getPropertyValue("top"),
       stored: storage.has("glosa.summaryPos") ? JSON.parse(storage.get("glosa.summaryPos")) : null,
     },
-    pip: {
+    pip: station ? null : {
       hidden: pipButton.hidden,
       ariaPressed: pipButton.getAttribute("aria-pressed"),
       opened: pipWindows.length,

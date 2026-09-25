@@ -881,7 +881,11 @@
       event.preventDefault();
       const picked = event.currentTarget.querySelector('input[name="talk"]:checked');
       if (!picked) return;
-      if (await roomPost("start-talk", $("[data-d-pick-go]", drawerEl), { talk_id: picked.value }, T.working)) togglePick(false);
+      const go = $("[data-d-pick-go]", drawerEl);
+      const started = picked.value === FREE_PICK
+        ? await roomPost("start", go, undefined, T.working)
+        : await roomPost("start-talk", go, { talk_id: picked.value }, T.working);
+      if (started) togglePick(false);
     });
     $("[data-d-end]", drawerEl).addEventListener("click", (event) => roomPost("end-talk", event.currentTarget, undefined, T.working));
     $("[data-d-reconnect]", drawerEl).addEventListener("click", (event) => {
@@ -894,6 +898,8 @@
     for (const button of $$("[data-mode]", drawerEl)) button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
   }
 
+  const FREE_PICK = "__free__";   // the picker's "Sesión libre" option: POST .../start, not start-talk
+
   function togglePick(force) {
     const pick = $("[data-d-pick]", drawerEl);
     const open = force ?? pick.hidden;
@@ -905,18 +911,24 @@
       .filter((talk) => talk.room_id === drawer.id && talk.status !== "done")
       .sort((a, b) => a.start.localeCompare(b.start));
     const running = room?.talk?.id;
-    const preselect = room?.next?.id ?? talks.find((talk) => talk.id !== running)?.id;
+    const freeRunning = Boolean(room?.talk?.free);
+    const preselect = room?.next?.id ?? talks.find((talk) => talk.id !== running)?.id ?? (freeRunning ? null : FREE_PICK);
     const list = $("[data-d-pick-list]", drawerEl);
-    if (!talks.length) {
-      list.replaceChildren(el("li", {}, el("p", { class: "drawer__hint", text: T.no_talks_to_start })));
-    } else {
-      list.replaceChildren(...talks.map((talk) => el("li", {}, el("label", {},
+    const items = talks.length
+      ? talks.map((talk) => el("li", {}, el("label", {},
         el("input", { type: "radio", name: "talk", value: talk.id, checked: talk.id === preselect,
                       disabled: talk.id === running }),
         el("span", { class: "tc", text: isoHm(talk.start) }),
-        el("span", { lang: talk.language }, talk.title, talk.id === running ? el("em", { text: ` (${T.talk_running})` }) : null)))));
-    }
-    $("[data-d-pick-go]", drawerEl).disabled = !talks.some((talk) => talk.id !== running);
+        el("span", { lang: talk.language }, talk.title, talk.id === running ? el("em", { text: ` (${T.talk_running})` }) : null))))
+      : [el("li", {}, el("p", { class: "drawer__hint", text: T.no_talks_to_start }))];
+    // Without this a room whose free session was ended had no way back but a
+    // server restart: the agenda list is all this picker offered.
+    items.push(el("li", {}, el("label", { title: T.tip_free_pick },
+      el("input", { type: "radio", name: "talk", value: FREE_PICK, checked: preselect === FREE_PICK, disabled: freeRunning }),
+      el("span", { class: "tc", text: "—" }),
+      el("span", {}, T.free_session, el("em", { text: ` (${freeRunning ? T.talk_running : T.free_pick_note})` })))));
+    list.replaceChildren(...items);
+    $("[data-d-pick-go]", drawerEl).disabled = !talks.some((talk) => talk.id !== running) && freeRunning;
     list.querySelector("input:checked")?.focus();
   }
 

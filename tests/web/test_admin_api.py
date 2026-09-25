@@ -569,3 +569,16 @@ def test_restart_turns_only_no_talk_or_no_source_into_a_409() -> None:
     app.state.autopilot.restart = AsyncMock(side_effect=KeyError("a bug inside worker.start"))
     with pytest.raises(KeyError):  # a bug, not "no talk": no misleading 409
         client.post("/api/admin/rooms/r1/restart", headers=CSRF)
+
+
+def test_each_drawer_metric_has_an_accessible_explanation() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    es = client.get("/admin?lang=es").text
+    en = client.get("/admin?lang=en").text
+
+    for key in ("metric_audio", "metric_latency", "metric_quality", "metric_cost"):
+        assert f'aria-describedby="hint-{key}"' in es and f'id="hint-{key}"' in es
+    assert 'role="tooltip"' in es
+    assert "Jev compara un fragmento original con su traducción" in es
+    assert "Jev compares an original fragment with its translation" in en

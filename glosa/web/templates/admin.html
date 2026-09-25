@@ -219,10 +219,10 @@
   </section>
   <section class="drawer__sec" aria-label="{{ at('metrics') }}">
     <dl class="metrics">
-      <dt>{{ at("metric_audio") }}</dt><dd class="metrics__value" data-d-level></dd><dd class="metrics__note"><span class="vu" data-d-vu role="meter" aria-label="{{ at('metric_audio') }}" aria-valuemin="-60" aria-valuemax="0"></span><span data-d-level-note></span></dd>
-      <dt>{{ at("metric_latency") }}</dt><dd class="metrics__value" data-d-latency></dd><dd class="metrics__note" data-d-latency-note></dd>
-      <dt>{{ at("metric_quality") }}</dt><dd class="metrics__value" data-d-quality></dd><dd class="metrics__note" data-d-quality-note></dd>
-      <dt>{{ at("metric_cost") }}</dt><dd class="metrics__value" data-d-cost></dd><dd class="metrics__note">{{ at("cost_note") }}</dd>
+      <dt class="metrics__term">{{ at("metric_audio") }}<button type="button" class="hint" aria-label="{{ at('metric_help') }} {{ at('metric_audio') }}" aria-describedby="hint-metric_audio">?</button><span class="hint__tip" role="tooltip" id="hint-metric_audio">{{ at("metric_audio_help") }}</span></dt><dd class="metrics__value" data-d-level></dd><dd class="metrics__note"><span class="vu" data-d-vu role="meter" aria-label="{{ at('metric_audio') }}" aria-valuemin="-60" aria-valuemax="0"></span><span data-d-level-note></span></dd>
+      <dt class="metrics__term">{{ at("metric_latency") }}<button type="button" class="hint" aria-label="{{ at('metric_help') }} {{ at('metric_latency') }}" aria-describedby="hint-metric_latency">?</button><span class="hint__tip" role="tooltip" id="hint-metric_latency">{{ at("metric_latency_help") }}</span></dt><dd class="metrics__value" data-d-latency></dd><dd class="metrics__note" data-d-latency-note></dd>
+      <dt class="metrics__term">{{ at("metric_quality") }}<button type="button" class="hint" aria-label="{{ at('metric_help') }} {{ at('metric_quality') }}" aria-describedby="hint-metric_quality">?</button><span class="hint__tip" role="tooltip" id="hint-metric_quality">{{ at("metric_quality_help") }}</span></dt><dd class="metrics__value" data-d-quality></dd><dd class="metrics__note" data-d-quality-note></dd>
+      <dt class="metrics__term">{{ at("metric_cost") }}<button type="button" class="hint" aria-label="{{ at('metric_help') }} {{ at('metric_cost') }}" aria-describedby="hint-metric_cost">?</button><span class="hint__tip" role="tooltip" id="hint-metric_cost">{{ at("metric_cost_help") }}</span></dt><dd class="metrics__value" data-d-cost></dd><dd class="metrics__note">{{ at("cost_note") }}</dd>
     </dl>
     <p class="drawer__raw"><span>{{ at("raw_detail") }}</span> <code data-d-raw></code></p>
   </section>

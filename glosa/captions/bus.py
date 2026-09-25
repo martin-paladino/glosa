@@ -6,11 +6,22 @@ Last-Event-ID) can catch up before switching to the live stream.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import deque
 from typing import AsyncIterator
 
 from glosa.clock import Clock, RealClock
 from glosa.models import CaptionMsg
+
+log = logging.getLogger(__name__)
+
+# Bound on each SSE subscriber's per-message queue. A subscriber that can't
+# keep up (e.g. a phone on bad wifi) must never make the publisher block or
+# grow memory without limit; once full we drop the oldest queued message to
+# make room for the newest one. The client already recovers any gap via
+# Last-Event-ID replay from the bus's circular buffer on reconnect, so
+# losing an already-queued-but-undelivered live message here is safe.
+SUBSCRIBER_QUEUE_MAX = 500
 
 
 class _TrackState:
@@ -21,6 +32,9 @@ class _TrackState:
         self.buffer: deque[tuple[CaptionMsg, str | None]] = deque(maxlen=buffer_size)
         self.subscribers: set[asyncio.Queue[CaptionMsg]] = set()
         self.current_talk_id: str | None = None
+        # Subscriber queues we've already logged as lagging, so we warn at
+        # most once per subscriber rather than once per dropped message.
+        self.lagging_logged: set[asyncio.Queue[CaptionMsg]] = set()
 
 
 class CaptionBus:
@@ -58,7 +72,22 @@ class CaptionBus:
 
         track.buffer.append((msg, track.current_talk_id))
         for queue in track.subscribers:
-            queue.put_nowait(msg)
+            try:
+                queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                # Never block the publisher and never raise: drop the
+                # oldest queued message to make room for this one.
+                queue.get_nowait()
+                queue.put_nowait(msg)
+                if queue not in track.lagging_logged:
+                    track.lagging_logged.add(queue)
+                    log.warning(
+                        "room %s lang %s: subscriber queue full (max %d), "
+                        "dropping oldest queued message(s)",
+                        room_id,
+                        lang,
+                        SUBSCRIBER_QUEUE_MAX,
+                    )
         return msg
 
     async def subscribe(
@@ -78,7 +107,7 @@ class CaptionBus:
         silently filter out every message that should have been replayed.
         """
         track = self._track(room_id, lang)
-        queue: asyncio.Queue[CaptionMsg] = asyncio.Queue()
+        queue: asyncio.Queue[CaptionMsg] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAX)
         track.subscribers.add(queue)
         try:
             newest_id = track.next_id - 1
@@ -92,6 +121,7 @@ class CaptionBus:
                 yield msg
         finally:
             track.subscribers.discard(queue)
+            track.lagging_logged.discard(queue)
 
     def history(self, room_id: str, lang: str, talk_id: str) -> list[CaptionMsg]:
         """Buffered messages published while talk_id was current, for latecomers."""

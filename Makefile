@@ -25,9 +25,16 @@ demo-fake:
 	GLOSA_CONFIG=config.demo-fake.yaml uv run python -m glosa.web.app
 
 # Compare the "fast" and "glossary" engines on the same audio: latency,
-# quality and glossary-term accuracy. Implemented in T15 (bench/bench.py).
+# quality and glossary-term accuracy (Task 15c, bench/bench.py). Runs both
+# engines on samples/en_clip.opus and samples/es_clip.opus through a real
+# RoomWorker at real-time pace with the real Gemini APIs -- costs ~US$0.15
+# (hard cap US$0.50, see bench/bench.py's SPEND_CAP_USD). Needs
+# GEMINI_API_KEY in .env. Writes bench/raw/*.jsonl (+*.meta.json),
+# bench/reference/*.txt and bench/results.md. `uv run python bench/bench.py`
+# (no flags) instead does a free engine_mode-fake dry run that proves the
+# harness end to end without spending anything.
 bench:
-	@echo "pending T15"
+	uv run python bench/bench.py --live
 
 # Simulated fan-out load test (Task 15a, plan-scale): boots a real server
 # (python -m glosa.web.app, engine_mode fake -- no API spend) with 50 `file`

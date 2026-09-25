@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
+import logging
 import math
 import os
 import struct
@@ -908,12 +909,16 @@ def _pct(values: list[float], q: float) -> float:
 
 
 @pytest.mark.live
-async def test_live_glossary_room(tmp_path: Path) -> None:  # 10.6 through a real RoomWorker
+async def test_live_glossary_room(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:  # 10.6, RoomWorker
     """60 s of the ES clip, real time, engine "glossary": transcribe-live +
     flash-lite into English (about US$0.01). Source latency: the "close" of
     each utterance (its final) after the end of the speech (the room's
     end_utterance() on the VAD pause, minus the VAD's 400 ms). Translation
-    latency: from the cut to the answer (the lane's own measure)."""
+    latency: from the cut to the answer (the lane's own measure).
+
+    Also counts the stale-text symptoms of the first two runs: a "set" that
+    starts with the text of the segment closed before it (old text flashing
+    back), and a translated source that repeats text already translated."""
     from glosa.engines.transcribe import TranscribeLiveEngine
 
     key = _live_key()
@@ -938,15 +943,27 @@ async def test_live_glossary_room(tmp_path: Path) -> None:  # 10.6 through a rea
     worker = RoomWorker(replace(_room(targets=["en"]), source_url=str(clip)), settings, bus, database, clock, factory)
     pauses: list[float] = []  # when the room ended an utterance (a VAD pause)
     closes: list[float] = []  # when an es segment closed (its final)
+    source_msgs: list[tuple[str, int | None, str | None]] = []
     publish = bus.publish
 
     def spy_publish(room_id, lang, type, **payload):
         if lang == "es" and type == "close":
             closes.append(clock.now())
+        if lang == "es" and type in ("set", "close"):
+            source_msgs.append((type, payload.get("seg"), payload.get("text")))
         return publish(room_id, lang, type, **payload)
 
     bus.publish = spy_publish  # type: ignore[method-assign]
     lanes = []
+    translated: list[str] = []  # the source of each translated segment, in order
+    on_translation = worker._on_translation
+
+    async def spy_on_translation(run, seg) -> None:
+        translated.append(seg.source)
+        await on_translation(run, seg)
+
+    worker._on_translation = spy_on_translation  # type: ignore[method-assign]
+    caplog.set_level(logging.INFO, logger="glosa.engines.transcribe")
 
     async def run() -> None:
         await worker.start(_talk("live-g1", glossary=tuple(GlossaryTerm(t, True) for t in LIVE_VOCAB)))
@@ -967,6 +984,25 @@ async def test_live_glossary_room(tmp_path: Path) -> None:  # 10.6 through a rea
     finally:
         await worker.stop()
 
+    def words(text: str) -> list[str]:
+        return [w for w in ("".join(ch for ch in t.casefold() if ch.isalnum()) for t in text.split()) if w]
+
+    flashbacks = []  # a set that starts with the whole text of the segment closed before it
+    closed_text, last_text = None, {}
+    for kind, seg, text in source_msgs:
+        if kind == "set":
+            if closed_text and len(words(closed_text)) >= 3 and words(text or "")[: len(words(closed_text))] == words(
+                closed_text
+            ):
+                flashbacks.append(text)
+            last_text[seg] = text or ""
+        else:
+            closed_text = last_text.get(seg)
+    repeats = []  # a translated source (4+ words) that is already in the ones before it
+    for n, source in enumerate(translated):
+        if len(words(source)) >= 4 and " ".join(words(source)) in " ".join(words(" ".join(translated[:n]))):
+            repeats.append(source)
+
     source_lat: list[float] = []
     for n, paused in enumerate(pauses):
         following = pauses[n + 1] if n + 1 < len(pauses) else float("inf")
@@ -977,6 +1013,8 @@ async def test_live_glossary_room(tmp_path: Path) -> None:  # 10.6 through a rea
     es = [s.text for s in await database.get_segments("live-g1", "es", "live")]
     en = [s.text for s in await database.get_segments("live-g1", "en", "live")]
     cost = await database.total_cost()
+    said = sum(len(words(text)) for text in es)
+    stale_logs = [r.getMessage() for r in caplog.records if "stale" in r.getMessage() or "repeats" in r.getMessage()]
     print(
         f"\nLIVE glossary room: {len(pauses)} pauses, {len(closes)} es closes, {len(es)} es / {len(en)} en segments"
         f"\n  source after end of speech: p50={_pct(source_lat, 0.5):.3f}s p90={_pct(source_lat, 0.9):.3f}s"
@@ -985,7 +1023,13 @@ async def test_live_glossary_room(tmp_path: Path) -> None:  # 10.6 through a rea
         f" p90={_pct(stats['latencies_s'], 0.9):.3f}s n={stats['translated']} failed={stats['failed']}"
         f"\n  cost: total={cost:.5f} (transcribe {sum(e.usd_total for e in engines):.5f},"
         f" translate {stats['usd_total']:.5f})"
+        f"\n  flashbacks of old text: {len(flashbacks)} {flashbacks}"
+        f"\n  translated twice: {len(repeats)} {repeats}"
+        f"\n  words translated / words said: {sum(len(words(t)) for t in translated)} / {said}"
+        f"\n  engine stale cuts/drops: {len(stale_logs)}"
     )
+    for message in stale_logs:
+        print("  STALE:", message)
     for text in es:
         print("  ES:", text)
     for text in en:

@@ -54,9 +54,13 @@ Events:
     more words), with nothing of a new segment shown, is dropped.
 
   Words are compared ignoring case and punctuation; a token that is only
-  punctuation ("—", "¿") is skipped on both sides. Every drop or cut is
-  logged at INFO. A new segment that really starts with the words of the
-  one before shows up with its next interim (~0.5 s).
+  punctuation ("—", "¿") is skipped on both sides, and a repeat may stop
+  in the middle of a word. The third live run showed the server often
+  glues the old text to the new words ("…de teams,the labels",
+  "cluster?O dentro", "Azure.que tienen"), so the cut reads the raw text:
+  the closed segment's words may end at punctuation followed by a letter.
+  Every drop or cut is logged at INFO. A new segment that really starts
+  with the words of the one before shows up with its next interim (~0.5 s).
 - ``go_away`` with ``meta["time_left_s"]``, like LiveTranslateEngine.
 
 Same contract as LiveTranslateEngine for the relay: ``connect()`` never
@@ -246,17 +250,16 @@ class TranscribeLiveEngine:
         if that is all it is (see the module docstring)."""
         if self._just_closed is None:
             return text
-        words = text.split()
-        cut = _stale_cut(words, self._just_closed)
+        cut = _stale_cut(text, self._just_closed)
         if cut is None:
             self._just_closed = None  # a clean interim: the server moved on
             return text
-        if cut >= len(words):
+        if cut >= len(text):
             log.info("transcribe: dropped a stale interim (the closed segment's text): %r", text)
             return ""
-        log.info("transcribe: cut %d stale words off an interim: %r", cut, text)
+        log.info("transcribe: cut %d stale words off an interim: %r", _count_words(text[:cut]), text)
         self._cut_open = True
-        return " ".join(words[cut:])
+        return text[cut:]
 
     def _unstale_final(self, text: str) -> str | None:
         """A final without the closed segment's text at its start, if the
@@ -264,19 +267,18 @@ class TranscribeLiveEngine:
         repeats the closed segment."""
         if self._just_closed is None or not text:
             return text
-        words = text.split()
-        cut = _stale_cut(words, self._just_closed)
+        cut = _stale_cut(text, self._just_closed)
         if cut is None:
             return text
-        if cut >= len(words):
-            if self._open_text is None and len([w for w in words if _norm(w)]) >= STALE_MIN_WORDS:
+        if cut >= len(text):
+            if self._open_text is None and _count_words(text) >= STALE_MIN_WORDS:
                 log.info("transcribe: dropped a final that repeats the closed segment: %r", text)
                 return None
             return text
         if not self._cut_open:
             return text
-        log.info("transcribe: cut %d stale words off a final: %r", cut, text)
-        return " ".join(words[cut:])
+        log.info("transcribe: cut %d stale words off a final: %r", _count_words(text[:cut]), text)
+        return text[cut:]
 
     def _classify_error(self, exc: BaseException) -> EngineEvent:
         """glosa.engines._gemini_live.classify_error, carrying the usage."""
@@ -295,25 +297,59 @@ def _norm(word: str) -> str:
     return "".join(ch for ch in word.casefold() if ch.isalnum())
 
 
-def _stale_cut(words: list[str], closed: tuple[str, str]) -> int | None:
-    """How many of ``words`` are the closed segment's text: None if they do
-    not start with it; ``len(words)`` if they are only (a start of) its last
-    interim or final; else the index of the first word after the longest of
-    the two that they start with in full (``STALE_MIN_WORDS`` or more words),
-    past any punctuation-only token."""
-    key = [(i, n) for i, n in ((i, _norm(w)) for i, w in enumerate(words)) if n]
-    norms = [n for _, n in key]
+def _count_words(text: str) -> int:
+    return sum(1 for word in text.split() if _norm(word))
+
+
+def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
+    """Where the closed segment's text ends at the start of ``text``: None
+    if ``text`` does not start with it; ``len(text)`` if ``text`` is only (a
+    start of) its last interim or final, possibly ending mid-word; else the
+    index where the new words start, after the longer of the two that
+    ``text`` starts with in full (``STALE_MIN_WORDS`` or more words), and
+    after any punctuation. Works on the raw text, since the server glues
+    the old text to the new words ("…de teams,the labels", "cluster?O")."""
+    norms = [n for n in map(_norm, text.split()) if n]
+    if not norms:
+        return len(text)  # only punctuation
     best: int | None = None
     for prev in closed:
         old = [n for n in map(_norm, prev.split()) if n]
         if not old:
             continue
-        if len(norms) <= len(old) and norms == old[: len(norms)]:
-            return len(words)
-        if len(old) >= STALE_MIN_WORDS and norms[: len(old)] == old:
-            best = max(best or 0, key[len(old) - 1][0] + 1)
+        k = len(norms)
+        if k <= len(old) and norms[: k - 1] == old[: k - 1] and old[k - 1].startswith(norms[-1]):
+            return len(text)
+        if len(old) >= STALE_MIN_WORDS:
+            end = _consume_words(text, old)
+            if end is not None:
+                best = max(best or 0, end)
     if best is None:
         return None
-    while best < len(words) and not _norm(words[best]):
+    while best < len(text) and not text[best].isalnum():
         best += 1
     return best
+
+
+def _consume_words(text: str, words: list[str]) -> int | None:
+    """The index in ``text`` right after ``words`` (``_norm``ed), read in
+    order from its start: case and punctuation between or inside words are
+    skipped, a space inside a word or a longer word ("clustering" for
+    "cluster") is no match (None)."""
+    i, n = 0, len(text)
+    for word in words:
+        while i < n and not text[i].isalnum():
+            i += 1
+        j = 0
+        while j < len(word):
+            if i >= n or text[i].isspace():
+                return None
+            folded = text[i].casefold()
+            if text[i].isalnum():
+                if not word.startswith(folded, j):
+                    return None
+                j += len(folded)
+            i += 1  # a letter of the word, or punctuation inside it ("k8s.io")
+        if i < n and text[i].isalnum():
+            return None
+    return i

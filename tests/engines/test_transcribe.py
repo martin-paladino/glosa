@@ -228,6 +228,50 @@ def test_standalone_punctuation_does_not_hide_the_stale_text() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("final", "stale", "fresh"),
+    [
+        # live run 3 (2026-09-24): the server glues the closed segment's text to the new words
+        (
+            "Pero si lo pensamos, no entiende de teams,",
+            "Pero si lo pensamos, no entiende de teams,the labels, the workloads",
+            "the labels, the workloads",
+        ),
+        (
+            "¿Qué ha ocurrido en este particular cluster?",
+            "¿Qué ha ocurrido en este particular cluster?O dentro de este",
+            "O dentro de este",
+        ),
+        ("corremos en AWS, en GCP y en Azure.", "corremos en AWS, en GCP y en Azure.que tienen toda", "que tienen toda"),
+    ],
+    ids=["comma", "question-mark", "period"],
+)
+def test_the_closed_segments_text_glued_to_the_new_words_is_cut(final: str, stale: str, fresh: str) -> None:
+    engine = _engine()
+    _map_all(engine, [_interim(final.rstrip(",.?")), {"serverContent": {"inputTranscription": {"text": final}}}])
+
+    [ev] = engine._map_message(_interim(stale))
+
+    assert (ev.kind, ev.text) == ("source_delta", fresh)
+
+
+def test_a_longer_word_is_not_the_closed_segments_word() -> None:
+    engine = _engine()
+    _map_all(engine, [_interim("en este particular cluster"), {"serverContent": {"inputTranscription": {
+        "text": "en este particular cluster."}}}])
+
+    [ev] = engine._map_message(_interim("en este particular clustering nuevo"))
+
+    assert ev.text == "en este particular clustering nuevo"
+
+
+def test_a_stale_repeat_cut_in_the_middle_of_a_word_is_dropped() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    assert engine._map_message(_interim("Por cierto, cuando ustedes reci")) == []
+
+
 def test_after_a_clean_interim_nothing_is_cut_any_more() -> None:
     engine = _engine()
     _map_all(engine, [INTERIM_3, FINAL_1])

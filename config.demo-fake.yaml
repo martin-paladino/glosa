@@ -1,6 +1,14 @@
 # Same 2 rooms as config.demo.yaml, but engine_mode: fake (FakeEngine
 # replays a recorded session): `make demo-fake` runs this for free, e.g. to
 # try Glosa without a Gemini key or to smoke-test Docker.
+#
+# Limitation: each engine replays ONE recording, whatever the talk's
+# language or audio: the fast engine an English Live Translate session
+# (samples/fixtures/lt_en.jsonl, or fake_fixture), the glossary engine a
+# Spanish transcribe-live session (samples/fixtures/tr_es.jsonl). Spanish
+# rooms get the glossary engine by default, English ones the fast engine,
+# so this file matches; a talk in another language logs a warning. The
+# text translations are FakeTranslator's ("[en] <source text>").
 
 event_name: Glosa demo
 timezone: UTC

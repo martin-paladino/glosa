@@ -47,7 +47,9 @@ replays a recorded session so a demo or a load test spends nothing: for
 "glossary", samples/fixtures/tr_es.jsonl; each under the working directory,
 else the copy in the source checkout. None found is a ConfigError at
 startup (an installed package has no samples/). (RoomWorker then uses
-FakeTranslator for the text translations: no API either.)
+FakeTranslator for the text translations: no API either.) A recording
+speaks one language whatever the talk's: the factory logs a warning (once
+per engine and language) when they differ.
 
 Run it with ``python -m glosa.web.app`` (``main()``: $HOST, default 0.0.0.0,
 and $PORT, default 8000), which reads .env and config.yaml from the working
@@ -61,6 +63,7 @@ so the lifespan never stops the rooms (talks not closed, cost not flushed).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import secrets
@@ -123,13 +126,35 @@ def resolve_fake_fixture(settings: Settings, kind: str = "fast") -> str:
     raise ConfigError(f"engine_mode fake: no recorded session found for the {kind} engine (tried {tried}); {hint}")
 
 
+def _recording_language(path: str) -> str | None:
+    """The language a recorded session speaks: its first source record's
+    ``meta.lang`` (None if it does not say)."""
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            if rec.get("kind") in ("source_delta", "source_final"):
+                return (rec.get("meta") or {}).get("lang")
+    return None
+
+
 def make_engine_factory(settings: Settings, clock: Clock) -> EngineFactory:
     if settings.engine_mode == "fake":
         fixtures = {kind: resolve_fake_fixture(settings, kind) for kind in ("fast", "glossary")}
+        languages = {kind: _recording_language(path) for kind, path in fixtures.items()}
+        warned: set[tuple[str, str]] = set()
 
         def fake(cfg: EngineConfig) -> FakeEngine:
-            fixture = fixtures.get(cfg.kind, fixtures["fast"])
-            return FakeEngine(replace(cfg, kind="fake", fixture_path=fixture), clock)
+            kind = cfg.kind if cfg.kind in fixtures else "fast"
+            spoken = languages[kind]
+            if spoken and spoken != cfg.source_lang and (kind, cfg.source_lang) not in warned:
+                warned.add((kind, cfg.source_lang))
+                log.warning(
+                    "engine_mode fake: the %s engine replays a recording in %s for a talk in %s (%s)",
+                    kind, spoken, cfg.source_lang, fixtures[kind],
+                )
+            return FakeEngine(replace(cfg, kind="fake", fixture_path=fixtures[kind]), clock)
 
         return fake
 

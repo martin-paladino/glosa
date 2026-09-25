@@ -334,6 +334,23 @@ def test_engine_factory_by_engine_kind(tmp_path: Path) -> None:
     assert live._price_per_min == 0.009  # Settings.prices.transcribe_per_min
 
 
+def test_fake_mode_warns_when_the_recording_speaks_another_language(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """engine_mode fake replays one recording per engine: English for fast
+    (lt_en.jsonl), Spanish for glossary (tr_es.jsonl), whatever the talk says."""
+    factory = make_engine_factory(_settings(tmp_path, fake_fixture=None), RealClock())
+
+    with caplog.at_level(logging.WARNING, logger="glosa.web.app"):
+        factory(EngineConfig(kind="glossary", source_lang="es", target_lang=None))
+        factory(EngineConfig(kind="fast", source_lang="en", target_lang="es"))
+        assert caplog.text == ""
+        factory(EngineConfig(kind="glossary", source_lang="en", target_lang=None))
+        factory(EngineConfig(kind="glossary", source_lang="en", target_lang=None))  # once per engine and language
+
+    assert caplog.text.count("replays a recording in es for a talk in en") == 1
+
+
 def test_main_serves_with_a_graceful_shutdown_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     """Open SSE streams never end on their own: without a timeout uvicorn
     waits for them forever on SIGTERM and the rooms are never stopped."""

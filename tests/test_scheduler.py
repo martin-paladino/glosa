@@ -723,6 +723,9 @@ async def test_the_autopilot_drives_a_real_room_worker(db) -> None:  # 9.1, inte
     await _settle()
     assert worker.talk is not None and worker.talk.id == "A"
     assert bus.history("r1", "es", "A")[0].type == "talk"
+    # task-11r-brief.md item 7: the tick also refreshes the room's cached
+    # next-agenda-talk (RoomWorker.view()["next"]) -- here, B.
+    assert worker.view()["next"] is not None and worker.view()["next"]["talk_id"] == "B"
 
     move_to(clock, at("14:59"))
     await _settle()

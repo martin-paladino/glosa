@@ -347,6 +347,11 @@ class RoomWorker:
         self._aux: set[asyncio.Task] = set()
         self._on_talk_end = on_talk_end
         self._hooks: set[asyncio.Task] = set()
+        # task-11r-brief.md item 7: the room's next agenda talk, cached here
+        # and refreshed by Autopilot's tick (glosa/scheduler.py _tick_room,
+        # which already computes it via Autopilot.next_talk) so view()
+        # never blocks the event loop on a DB read of its own.
+        self._next_talk: Talk | None = None
         # The lane's translate function; None: a Translator per run (closed
         # with it), or FakeTranslator with engine_mode fake (no API, no key).
         self._translate = translate
@@ -429,6 +434,12 @@ class RoomWorker:
             langs |= {self.talk.language, *self.talk.targets}
         return langs
 
+    def set_next_talk(self, talk: Talk | None) -> None:
+        """Autopilot's tick calls this each pass (glosa/scheduler.py
+        _tick_room, via Autopilot.next_talk) to refresh view()["next"]
+        without view() itself ever touching the DB."""
+        self._next_talk = talk
+
     def view(self) -> dict:
         """The room as the audience pages see it (task-6 contract)."""
         talk = self.talk
@@ -440,7 +451,16 @@ class RoomWorker:
                 "speakers": list(talk.speakers),
                 "language": talk.language,
             }
-        return {"slug": self.room.slug, "name": self.room.name, "langs": self.langs(), "now": now, "next": None}
+        nxt = None
+        if self._next_talk is not None:
+            nxt = {
+                "talk_id": self._next_talk.id,
+                "title": self._next_talk.title,
+                "speakers": list(self._next_talk.speakers),
+                "language": self._next_talk.language,
+                "start": self._next_talk.start.astimezone(self._tz).strftime("%H:%M"),
+            }
+        return {"slug": self.room.slug, "name": self.room.name, "langs": self.langs(), "now": now, "next": nxt}
 
     def status(self) -> RoomStatus:
         run = self._run
@@ -482,6 +502,19 @@ class RoomWorker:
             talk_id=talk_id,
             detail=detail,
         )
+
+    def latency_p50(self, min_samples: int = 10) -> float | None:
+        """The room's CURRENT run's caption latency p50 (seconds), or None
+        with no talk running or fewer than min_samples closed samples.
+        task-11r-brief.md Ruling 2: the export route's shift_s uses this (a
+        room-wide estimate, not one recomputed per historical talk -- a
+        finished talk's own run and LatencyTracker are long gone) when
+        there's enough signal, else falls back to
+        Settings.default_export_shift_s."""
+        run = self._run
+        if run is None or len(run.latency.samples()) < min_samples:
+            return None
+        return run.latency.p50()
 
     def _station_summary(self) -> str:
         """The connected station's info (Task 14a), for status()'s raw

@@ -250,20 +250,33 @@ class Autopilot:
     async def _tick_room(self, room_id: str, now: datetime) -> None:
         worker = self._workers[room_id]
         async with self._lock(room_id):
-            if self.mode(room_id) != "auto":
-                return
-            agenda = await self._agenda(room_id, now)
-            due = self._due(agenda, now)
-            if not self._owns(worker, agenda, now, due):
-                return
-            current = worker.talk
-            if due is not None:
-                if current is None or current.id != due.id:
-                    await self._open(worker, due, by="autopilot")
-            elif current is not None and not self._early_next(current, agenda, now):
-                log.info("autopilot: room %s: nothing scheduled now, stopping %s", room_id, current.id)
-                await self._log(room_id, "autopilot", f"idle: nothing scheduled now (stopped {current.id})")
-                await worker.stop()
+            try:
+                if self.mode(room_id) != "auto":
+                    return
+                agenda = await self._agenda(room_id, now)
+                due = self._due(agenda, now)
+                if not self._owns(worker, agenda, now, due):
+                    return
+                current = worker.talk
+                if due is not None:
+                    if current is None or current.id != due.id:
+                        await self._open(worker, due, by="autopilot")
+                elif current is not None and not self._early_next(current, agenda, now):
+                    log.info("autopilot: room %s: nothing scheduled now, stopping %s", room_id, current.id)
+                    await self._log(room_id, "autopilot", f"idle: nothing scheduled now (stopped {current.id})")
+                    await worker.stop()
+            finally:
+                # task-11r-brief.md item 7: refresh the room's cached
+                # next-agenda-talk (auto or manual: the public list and the
+                # station's between-talks screen want it either way) after
+                # this tick's own open/stop decision, so it reflects
+                # whichever talk is current now -- not the one about to
+                # replace it (computing this any earlier could return the
+                # very talk this tick is opening: worker.talk isn't due's
+                # id yet at the top of this method).
+                refresh_next = getattr(worker, "set_next_talk", None)
+                if refresh_next is not None:
+                    refresh_next(await self.next_talk(room_id))
 
     def _early_next(self, current: Talk, agenda: list[Talk], now: datetime) -> bool:
         """Ruling 44: whether ``current`` is the room's next agenda talk,

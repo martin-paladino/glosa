@@ -122,8 +122,11 @@ class Settings(BaseSettings):
     default_engine_en: Literal["fast", "glossary"] = "fast"
     # "live": Gemini Live Translate. "fake": FakeEngine replaying a recorded
     # session (fake_fixture, by default samples/fixtures/lt_en.jsonl), so a
-    # demo or a load test runs without spending API credit.
-    engine_mode: Literal["live", "fake"] = "live"
+    # demo or a load test runs without spending API credit. "local" (Task
+    # 16): Parakeet + TranslateGemma via MLX, 100% on-device, Apple silicon
+    # only (glosa/engines/local.py, glosa/text/local_translator.py) -- no
+    # cloud API, no API key spent, one shared model per process.
+    engine_mode: Literal["live", "fake", "local"] = "live"
     fake_fixture: str | None = None
     db_path: str = "data/glosa.db"
 

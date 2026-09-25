@@ -229,6 +229,7 @@ from glosa.room_text import (
     target_lang,
     translation_langs,
 )
+from glosa.text.local_translator import LocalTranslator
 from glosa.text.pipeline import TranslatedSegment, TranslateFn
 from glosa.text.translator import FakeTranslator, Translator
 
@@ -312,7 +313,7 @@ class _EngineSide:
     kind: EngineKind
     relay: SessionRelay
     lane: TranslationLane | None = None
-    translator: Translator | None = None
+    translator: Translator | LocalTranslator | None = None
 
 
 @dataclass(eq=False)
@@ -337,7 +338,7 @@ class _Run:
     engine: str = "fast"  # "fast" | "glossary"
     relay: SessionRelay = None  # type: ignore[assignment]
     lane: TranslationLane | None = None  # translations the engine does not make itself
-    translator: Translator | None = None  # the lane's, when the run made its own (closed with it)
+    translator: Translator | LocalTranslator | None = None  # the lane's, when the run made its own (closed with it)
     text_session: int = 0  # the engine session whose source text is in use (the newest that spoke)
     flaps: FlapDetector = field(default_factory=FlapDetector)
     manual_reconnects: int = 0  # the admin's, which the fallback rule ignores
@@ -691,7 +692,10 @@ class RoomWorker:
         self.talk = talk
         self._source_down = None
 
-        kind = engine_of(talk.engine)
+        # Task 16: engine_mode "local" has no local Live Translate -- every
+        # talk uses the glossary-engine path (LocalParakeetEngine + the
+        # lane, see _build_engine below), whatever the talk's own engine.
+        kind = "glossary" if self._settings.engine_mode == "local" else engine_of(talk.engine)
         langs = translation_langs(talk.language, talk.targets)
         now = self._clock.now()
         # Segment times count from the talk's actual start, also when the
@@ -752,6 +756,14 @@ class RoomWorker:
             translate = self._translate
             if translate is None and self._settings.engine_mode == "fake":
                 translate = FakeTranslator().translate
+            elif translate is None and self._settings.engine_mode == "local":
+                # Task 16: TranslateGemma needs the spoken language too (its
+                # prompt format has no "system instruction" slot to carry a
+                # glossary in, unlike Translator -- see
+                # glosa/text/local_translator.py); built per run/talk, like
+                # Translator below.
+                side.translator = LocalTranslator(source_lang=talk.language)
+                translate = side.translator.translate
             elif translate is None:
                 prices = self._settings.prices
                 side.translator = Translator(
@@ -846,7 +858,7 @@ class RoomWorker:
         relay: SessionRelay,
         consumer: asyncio.Task | None,
         lane: TranslationLane | None,
-        translator: Translator | None,
+        translator: Translator | LocalTranslator | None,
         *,
         sessions_below: int | None = None,
     ) -> None:

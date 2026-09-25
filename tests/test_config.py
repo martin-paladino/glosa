@@ -135,6 +135,15 @@ def test_room_agenda_names_and_the_default_english_engine(env_file: Path, tmp_pa
     assert Settings.load(env_path=str(env_file), config_path=str(tmp_path / "none.yaml")).default_engine_en == "fast"
 
 
+def test_engine_mode_local_from_yaml(env_file: Path, tmp_path: Path) -> None:  # Task 16
+    config = tmp_path / "config.yaml"
+    config.write_text("engine_mode: local\n", encoding="utf-8")
+
+    settings = Settings.load(env_path=str(env_file), config_path=str(config))
+
+    assert settings.engine_mode == "local"
+
+
 def test_engine_mode_rejects_unknown_values(env_file: Path, tmp_path: Path) -> None:
     config = tmp_path / "config.yaml"
     config.write_text("engine_mode: turbo\n", encoding="utf-8")

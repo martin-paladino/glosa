@@ -163,6 +163,7 @@ from glosa.engines.relay import SessionRelay
 from glosa.engines.transcribe import MAX_VOCABULARY
 from glosa.metrics import LatencyTracker, RoomHealth
 from glosa.models import AudioChunk, EngineConfig, EngineEvent, Room, RoomStatus, Talk
+from glosa.room_quality import QualityFeed, build_quality_meter
 from glosa.room_text import (
     EngineKind,
     FlapDetector,
@@ -314,6 +315,7 @@ class RoomWorker:
         on_talk_end: TalkEndHook | None = None,
         translate: TranslateFn | None = None,
         station_hub: StationHub | None = None,
+        quality_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self.room = room
         self._settings = settings
@@ -350,6 +352,15 @@ class RoomWorker:
         # The lane's translate function; None: a Translator per run (closed
         # with it), or FakeTranslator with engine_mode fake (no API, no key).
         self._translate = translate
+        # Task 13w: Jev quality meter, lazy and optional (glosa.quality
+        # imports typesafe_sdk, the "jev" extra, at module level -- never
+        # imported here unless a key is configured). One meter -- one HTTP
+        # client -- per worker; its window is reset per talk (_start_locked).
+        self._quality: QualityFeed | None = None
+        if settings.typesafe_api_key:
+            meter = (quality_factory or build_quality_meter)(settings.typesafe_api_key)
+            if meter is not None:
+                self._quality = QualityFeed(meter, now=self._clock.now, spawn=self._spawn_aux)
 
     # ------------------------------------------------------------ public API
 
@@ -372,6 +383,8 @@ class RoomWorker:
                 await self._end_talk()
             self._source_down = None
         await self._wait_aux()
+        if self._quality is not None:
+            await self._quality.aclose()
 
     async def play_file(self, path: str) -> None:
         """"Probar con audio": play ``path`` at real-time speed as the room's
@@ -447,6 +460,9 @@ class RoomWorker:
         level = run.vad.level_db if run is not None else MIN_LEVEL_DB
         latency = run.latency.p50() if run is not None else None
         talk_id = self.talk.id if self.talk is not None else None
+        quality = self._quality.avg() if self._quality is not None else None
+        if quality is not None:
+            quality = round(quality, 2)
         if self.talk is None:
             state, detail = "idle", "no talk in progress"
         else:
@@ -454,7 +470,7 @@ class RoomWorker:
             peak = max(run.levels) if run is not None and run.levels else level
             state, detail = RoomHealth.evaluate(
                 latency_p50=latency,
-                quality_avg=None,
+                quality_avg=quality,
                 level_db=peak,
                 stall_active=False,  # the relay reconnects a stall at once (T10: flapping)
                 source_down=self._source_down is not None,
@@ -477,7 +493,7 @@ class RoomWorker:
             state=state,
             level_db=level,
             latency_p50_s=latency,
-            quality=None,
+            quality=quality,
             cost_usd=self._cost_usd,
             talk_id=talk_id,
             detail=detail,
@@ -569,6 +585,8 @@ class RoomWorker:
         )
         self._apply_engine(run, await self._build_engine(run, kind))
         self._run = run
+        if self._quality is not None:  # a fresh talk starts with an empty quality window
+            self._quality.reset()
         self._publish_all(run.tracks, "talk", data=_talk_data(talk))
         await run.relay.start()
         run.consumer = self._spawn(self._consume(run, run.relay, kind), "events")
@@ -1007,6 +1025,8 @@ class RoomWorker:
                 run.talk.id, self.room.id, seg.target, "translation", "live", seg.text, t_start, t_end
             )
         )
+        if self._quality is not None and seg.target == run.target:  # the run's FIRST target only
+            self._quality.on_target(run.talk.language, run.target, seg.text, t_start, t_end)
 
     def _apply(self, run: _Run, track: _Track, session: int, ops: list[tuple[str, dict]], now: float) -> _Closed:
         """Publish an assembler's ops, all at once (no await), and return the
@@ -1055,6 +1075,11 @@ class RoomWorker:
                         run.talk.id, self.room.id, track.lang, track.kind, "live", text, seg.t_start, seg.t_end
                     )
                 )
+                if self._quality is not None:
+                    if track.kind == "source":
+                        self._quality.on_source(text, seg.t_start, seg.t_end)
+                    elif track.kind == "translation" and track.lang == run.target:  # the FIRST target only
+                        self._quality.on_target(run.talk.language, run.target, text, seg.t_start, seg.t_end)
 
     # ------------------------------------------------------------ housekeeping
 

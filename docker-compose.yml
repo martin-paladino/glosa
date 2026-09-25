@@ -28,3 +28,26 @@ services:
       # default) survive a restart or a rebuild.
       - ./data:/app/data
     restart: unless-stopped
+
+  # Optional: a reverse proxy that terminates real HTTPS in front of Glosa,
+  # for the room stations (README's "Room stations (mini PC per stage)" --
+  # getUserMedia needs a secure context, so a mini PC on the venue network
+  # can't use plain http://<server>:8000 directly). Edit deploy/Caddyfile
+  # first (it has a placeholder domain), then uncomment this service and
+  # `docker compose up`.
+  # caddy:
+  #   image: caddy:2-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     - glosa
+  #   restart: unless-stopped
+
+# volumes:
+#   caddy_data:
+#   caddy_config:

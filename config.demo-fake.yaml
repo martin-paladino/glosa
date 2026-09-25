@@ -4,6 +4,14 @@
 # room, source_type "emitter" (Task 14a), for trying/verifying the room
 # station without a Gemini key either: open /station/station-demo?key=...
 # (glosa.web.station.station_url) with a real or fake microphone.
+#
+# Limitation: each engine replays ONE recording, whatever the talk's
+# language or audio: the fast engine an English Live Translate session
+# (samples/fixtures/lt_en.jsonl, or fake_fixture), the glossary engine a
+# Spanish transcribe-live session (samples/fixtures/tr_es.jsonl). Spanish
+# rooms get the glossary engine by default, English ones the fast engine,
+# so this file matches; a talk in another language logs a warning. The
+# text translations are FakeTranslator's ("[en] <source text>").
 
 event_name: Glosa demo
 timezone: UTC

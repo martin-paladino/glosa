@@ -152,6 +152,12 @@ class QualityMeter:
             return None
         return sum(self._scores) / len(self._scores)
 
+    def reset(self) -> None:
+        """Start a fresh rolling window (Task 13w: a new talk starts with an
+        empty average -- one HTTP client is reused across talks, only the
+        score window is cleared)."""
+        self._scores.clear()
+
     async def aclose(self) -> None:
         """Release the underlying HTTP client, if this meter created one
         (an injected client, e.g. in tests, is left for its owner to close).

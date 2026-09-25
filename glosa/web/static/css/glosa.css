@@ -138,21 +138,6 @@
     --dur-ui: 140ms;
     --dur-settle: 400ms;             /* frase en curso → cerrada: solo cambia el color */
     --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
-
-    /* Alias de v1 para el admin mínimo de la Tarea 7 (se borran con la Tarea 12).
-       Su markup v1 tiene además un bloque propio en glosa.views ("Interim admin of Task 7"). */
-    --bg: var(--room);
-    --surface: var(--panel);
-    --surface-2: var(--panel-2);
-    --text: var(--ink);
-    --text-2: var(--ink-2);
-    --rule: var(--line);
-    --rule-strong: var(--line-2);
-    --ok: var(--on);
-    --fail: var(--fault);
-    --idle: var(--ink-3);
-    --radius-s: var(--radius-btn);
-    --radius-m: var(--radius-key);
   }
 
   [data-theme="light"] { color-scheme: light; }
@@ -861,6 +846,19 @@
   .stage-agenda .slot__what .talk-title { font-size: var(--step-3); }
   .stage-agenda .slot__what .talk-meta { font-size: var(--step-0); }
 
+  /* ---- "Escuchar el audio" (Tarea 14b, Ruling 5): admin y solo en modo
+     prueba -- discreto a propósito, una fila gris más del encabezado, no un
+     llamado a la acción. */
+  .room-listen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-block-start: 10px;
+  }
+  .room-listen audio { inline-size: min(100%, 22rem); block-size: 32px; }
+  .room-listen__status { font-size: 12.5px; color: var(--ink-3); }
+
   /* ---- Salas al costado (escritorio) ---------------------------------------- */
   /* Las otras salas como filas de agenda: luz, nombre, lo que pasa ahí. */
   .room-nav {
@@ -957,7 +955,7 @@
 
 
 /* --------------------------------------------------------------------------
-   Panel de producción (Tarea 12): clases listas, sin template todavía.
+   Panel de producción (Tarea 12): templates/admin.html y static/js/admin.js.
    Maqueta: docs/design/admin.html. Estados con las mismas palabras que .status:
    --live, --degraded, --down, --idle.
    -------------------------------------------------------------------------- */
@@ -1251,8 +1249,14 @@
     font: 500 12px/1 var(--font-label);
     font-stretch: 82%;
     color: var(--ink-3);
+    text-align: start;
+    background-color: transparent;
+    border: 0;
     border-inline-start: var(--border-w) solid var(--line-2);
+    cursor: pointer;                               /* una tecla: abre la charla en el cajón */
   }
+  .timeline__talk:hover { color: var(--ink); }
+  .timeline__talk:focus-visible { z-index: 1; outline-offset: 0; }
   .timeline__talk > span { overflow: hidden; text-overflow: ellipsis; }
   .timeline__talk .tc { flex: none; font-size: 10.5px; }
   .timeline__talk--past { border-inline-start-color: transparent; opacity: 0.55; }
@@ -1395,6 +1399,220 @@
     inset: 0;
     background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 32 - 1.5px), var(--vu-gap, var(--panel)) calc(100% / 32 - 1.5px) calc(100% / 32));
   }
+
+  /* ---- Lo que el panel real suma a la maqueta ------------------------------------------ */
+
+  /* Franja: las celdas no se aplastan (se pisarían); con logo del evento, el logo
+     reemplaza al nombre. Idioma y salida, grises como todo lo que no es estado. */
+  .masthead__cell { flex: none; }
+  /* El logo del evento sin color (el color es estado): cuando no hay versión en
+     blanco y negro al lado del archivo configurado, en escala de grises. */
+  .event-logo--mono { filter: grayscale(1); }
+  .masthead__tools { gap: 12px; }
+  @container glosa (max-width: 90rem) {           /* 1440 px: todos los estados, logo y gasto a la vez */
+    .masthead__cell { padding: 0 16px; }
+    .tally { gap: 14px; }
+    .budget__bar { inline-size: 110px; }
+  }
+  @container glosa (max-width: 86.25rem) {
+    .masthead__tools > .operators { display: none; }
+  }
+  .masthead__tools form { display: contents; }
+  .masthead .btn--link { font-size: 12.5px; }
+  .segmented a {
+    display: inline-grid;
+    place-items: center;
+    padding: 5px 9px;
+    font: 600 12px/1 var(--font-label);
+    font-stretch: 88%;
+    color: var(--ink-2);
+    text-decoration: none;
+  }
+  .segmented a:hover { color: var(--ink); }
+  .segmented a[aria-current="true"] { background: var(--ink); color: var(--room); }
+
+  /* La tecla que confirma un formulario: tinta, no color (el color es estado). */
+  .btn--primary { background: var(--ink); border-color: var(--ink); color: var(--room); font-weight: 700; }
+  .btn--primary:hover { background: var(--ink); filter: brightness(0.9); }
+  .btn--primary:disabled { background: var(--line-2); border-color: var(--line-2); color: var(--ink-2); }
+  .btn[aria-busy="true"] { cursor: progress; }
+  .btn__caret { inline-size: 9px; block-size: 6px; margin-inline-start: -2px; color: var(--ink-3); }
+
+  /* Avisos: un pedido que falló, la sesión vencida, la conexión perdida.
+     Tinta con una barra, sin color: el rojo y el ámbar son de las salas. */
+  .notice {
+    padding: 9px 12px;
+    border-inline-start: var(--bar-w) solid var(--ink);
+    background: var(--panel-2);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .notice a, .toast a { font-weight: 700; }
+  .toast {
+    position: fixed;
+    z-index: 20;
+    inset-block-end: 18px;
+    inset-inline-start: 50%;
+    translate: -50% 0;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    inline-size: max-content;
+    max-inline-size: calc(100vw - 32px);
+    padding: 8px 10px 8px 16px;
+    background: var(--panel-2);
+    border: var(--border-w) solid var(--line-2);
+    border-inline-start: var(--bar-w) solid var(--ink);
+    box-shadow: var(--shadow-float);                /* flota: lleva sombra */
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .toast__text { max-inline-size: 36rem; }
+
+  /* Sin conexión con el servidor: lo que se ve puede estar viejo. */
+  .admin--stale :is(.attn, .wall, .schedule) { opacity: 0.45; transition: opacity var(--dur-settle); }
+  .admin--stale .clock--big { color: var(--ink-3); }
+
+  /* El nombre del monitor es la tecla que abre la sala en el cajón. */
+  .monitor__open {
+    max-inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .monitor:has(.monitor__open[aria-expanded="true"]) { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+  /* Nada se sale del monitor: el pie con la acción sugerida siempre se ve, y si
+     falta alto cede el roll-up (anclado abajo: se pierden los renglones viejos). */
+  .monitor { overflow: hidden; }
+  .monitor__cc { flex: 0 1 auto; min-block-size: 0; }
+  .monitor__cc--frozen { overflow: hidden; }
+
+  /* Monitor caído: el último subtítulo congelado, todo gris y sin cursor. */
+  :is(.monitor__cc--frozen, .drawer__cc--frozen) .phrase--open { color: inherit; }
+  :is(.monitor__cc--frozen, .drawer__cc--frozen) .phrase--open::after { display: none; }
+
+  .log__empty { padding: 2px 16px 12px; font-size: 13px; line-height: 1.4; color: var(--ink-3); }
+
+  /* Agenda: la tecla de importar y el aviso de agenda vacía. */
+  .schedule__head > .btn { flex: none; }
+  .schedule__empty { padding: 4px 0 2px var(--label-w, 168px); font-size: 13px; color: var(--ink-3); }
+  .timeline__track { overflow: hidden; }
+  .timeline__room > span { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Cajón: detalle técnico, elegir charla, formularios. */
+  .drawer:focus { outline: none; }
+  .drawer__raw { margin-block-start: 14px; font-size: 12px; line-height: 1.45; color: var(--ink-3); overflow-wrap: anywhere; }
+  .drawer__raw > span { margin-inline-end: 4px; font-weight: 600; color: var(--ink-2); }
+  .drawer__raw code { font: inherit; }
+  .drawer__keys .btn:disabled { border-color: var(--line); }
+  .drawer__pick { display: grid; gap: 12px; margin-block-start: 12px; }
+  .drawer__pick fieldset { min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+  .drawer .notice { margin-block-start: 10px; }
+  .pick {
+    display: grid;
+    margin-block-start: 6px;
+    max-block-size: 15rem;
+    overflow: auto;
+    border: var(--border-w) solid var(--line);
+  }
+  .pick label {
+    display: grid;
+    grid-template-columns: 14px 40px minmax(0, 1fr);
+    column-gap: 10px;
+    align-items: baseline;
+    padding: 8px 10px;
+    font-size: 13.5px;
+    line-height: 1.3;
+    cursor: pointer;
+  }
+  .pick li + li label { border-block-start: var(--border-w) solid var(--line); }
+  .pick label:has(input:checked) { background: var(--sel); }
+  .pick label:has(input:disabled) { color: var(--ink-3); cursor: default; }
+  .pick input { margin: 0; accent-color: var(--ink); align-self: center; }
+  .pick .tc { font-size: 11.5px; color: var(--ink-2); }
+  .pick em { font-style: normal; color: var(--ink-3); }
+
+  /* Exportaciones de una sala (Tarea 11-resto): una charla terminada por renglón. */
+  .exports { display: grid; margin-block-start: 4px; }
+  .exports__item { padding: 9px 0; }
+  .exports__item + .exports__item { border-block-start: var(--border-w) solid var(--line); }
+  .exports__title { display: block; font-size: 13.5px; font-weight: 600; }
+  .exports__lang { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; margin-block-start: 4px; font-size: 12.5px; }
+  .exports__lang > b { font-weight: 600; color: var(--ink-2); }
+  .exports__lang a { color: var(--ink); }
+  .exports__status { color: var(--ink-3); }
+  .exports__status--ready { color: var(--on); }
+  .exports__status--failed { color: var(--fault); }
+
+  /* La estación de una sala "emitter" (Tarea 14a): su enlace (con la clave) y su QR. */
+  .drawer__state + .station-link { margin-block-start: 14px; }
+  .station-link__row { display: flex; gap: 6px; }
+  .station-link__row input { flex: 1; min-inline-size: 0; }
+  .station-link__qr { font-size: 12.5px; color: var(--ink-2); }
+  .station-link__qr summary { cursor: pointer; }
+  .station-link__qr img { margin-block-start: 8px; inline-size: 148px; block-size: 148px; image-rendering: pixelated; }
+
+  /* "Escuchar el audio" (Tarea 14b, Ruling 5): admin y solo en modo prueba;
+     el propio widget decide si se muestra (glosa/web/static/js/listen.js). */
+  .drawer__listen { display: grid; gap: 8px; margin-block-start: 12px; }
+  .drawer__listen audio { inline-size: 100%; block-size: 32px; }
+
+  .form { display: grid; gap: 14px; }
+  .field { display: grid; gap: 6px; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+  .field__label { padding: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+  .field__hint { font-size: 12px; line-height: 1.35; color: var(--ink-3); }
+  .field__aside { justify-self: start; font-size: 12.5px; }
+  .field--narrow { max-inline-size: 15rem; }
+  .field :is(input:not([type="checkbox"], [type="radio"], [type="file"]), select, textarea) {
+    inline-size: 100%;
+    min-block-size: 36px;
+    padding: 0 10px;
+    background: var(--well);
+    border: var(--border-w) solid var(--line-2);
+    border-radius: var(--radius-btn);
+    color: var(--ink);
+    font-size: 14px;
+  }
+  .field input.tc { font-size: 13px; }
+  .field textarea { padding: 8px 10px; line-height: 1.45; resize: vertical; }
+  .field :is(input, select, textarea):focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .field :is(input, select, textarea):disabled { color: var(--ink-3); background: transparent; border-style: dashed; }
+  .field input[type="file"] { font-size: 13px; color: var(--ink-2); }
+  .field input[type="file"]::file-selector-button {
+    margin-inline-end: 10px;
+    min-block-size: 32px;
+    padding: 0 12px;
+    border: var(--border-w) solid var(--line-2);
+    border-radius: var(--radius-btn);
+    background: var(--panel-2);
+    color: var(--ink);
+    font: 600 var(--step-0)/1 var(--font-label);
+    cursor: pointer;
+  }
+  .field-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .field-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .checks { display: flex; align-items: center; gap: 16px; min-block-size: 36px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .check abbr { text-decoration: none; }
+  .check input { inline-size: 15px; block-size: 15px; margin: 0; accent-color: var(--ink); }
+  .form__actions { display: flex; align-items: center; gap: 16px; }
+  .form__or { margin-block: -4px; font-size: 12.5px; color: var(--ink-3); }
+  .confirm { display: grid; gap: 10px; }
+  .confirm__text { font-size: 14px; font-weight: 600; line-height: 1.4; }
+  .import__total { font: 700 17px/1.2 var(--font-label); font-stretch: 88%; }
+  .import__list { margin-block-start: 10px; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+  .import__list summary { font-weight: 600; cursor: pointer; }
+  .import__list ul { display: grid; gap: 4px; margin: 6px 0 0; padding-inline-start: 18px; }
+  .import__list li span { color: var(--ink-3); }
 }
 
 
@@ -1660,19 +1878,23 @@
     .timeline { min-inline-size: 900px; }
     .scrim { inset-inline-end: 0; }
   }
-  /* Interim admin of Task 7 (v1 markup). Delete with Task 12. */
-  .admin:has(> .admin__bar) { grid-template-rows: auto minmax(0, 1fr); block-size: auto; min-block-size: 100dvh; align-content: start; }
-  .admin__bar { display: flex; align-items: center; gap: 12px; min-block-size: 52px; padding: 0 16px; background: var(--panel); border-block-end: var(--border-w) solid var(--edge); }
-  .admin__title { font: 700 var(--step-2)/1 var(--font-label); }
-  .admin__user { margin-inline-start: auto; }
-  .admin__main { padding: 14px 16px; }
-  .console { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 10px; padding: 0 16px 16px; }
-  .strip { display: grid; align-content: start; gap: 8px; padding: 12px 16px; background: var(--room); border: var(--border-w) solid var(--line); }
-  .strip--degraded { border-color: var(--warn); }
-  .strip--down { border-color: var(--fault); }
-  .strip__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .strip__name { font: 700 var(--step-3)/1.1 var(--font-label); font-stretch: var(--narrow-3); }
-  .strip__actions { display: flex; gap: 6px; }
+
+  /* El login del panel: la misma franja y un solo panel sobre la sala. */
+  .login-page {
+    color-scheme: dark;
+    display: grid;
+    grid-template-rows: 52px minmax(0, 1fr);
+    min-block-size: 100dvh;
+    font-size: var(--step-0);
+    line-height: 1.3;
+    background: var(--room);
+    color: var(--ink);
+  }
+  .login { display: grid; place-items: center; padding: 48px 16px 96px; }
+  .login__card { inline-size: min(100%, 25rem); }
+  .login__card > .panel__head { border-block-end: var(--border-w) solid var(--line); }
+  .login__body { display: grid; gap: 16px; padding: 18px 16px 20px; }
+  .login__lede { font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 
   @container glosa (max-width: 40rem) {
     .wall { grid-template-columns: minmax(0, 1fr); }
@@ -1688,5 +1910,57 @@
     place-items: end center;
     padding: 0 5vw 5.5vw;
     background: transparent;
+  }
+  .overlay-logo {
+    position: fixed;
+    inset-block-start: 4vh;
+    inset-inline-end: 4vw;
+    block-size: 64px;
+    inline-size: auto;
+  }
+
+  /* ---- Página del QR (Tarea 14b): imprimible o proyectable ------------------------- */
+  /* Único lugar de la audiencia donde se permite un acento de marca (Ruling de
+     branding): una sola raya sobre el nombre de la sala, con moderación. */
+  .qr-page {
+    min-block-size: 100dvh;
+    margin: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    justify-items: center;
+    gap: 28px;
+    padding: 28px 20px 32px;
+    text-align: center;
+    background: var(--room);
+    color: var(--ink);
+  }
+  .qr-page__brand { justify-self: start; display: flex; align-items: center; gap: var(--space-3); }
+  .qr-page__body { display: grid; justify-items: center; gap: 18px; align-self: center; max-inline-size: 26rem; }
+  .qr-page__rule { inline-size: 64px; block-size: 3px; margin: 0; background: var(--brand-primary, var(--ink-3)); }
+  .qr-page__room {
+    font: 750 var(--step-5)/1.05 var(--font-label);
+    font-stretch: var(--narrow-3);
+    letter-spacing: -0.005em;
+  }
+  .qr-page__code {
+    padding: 20px;
+    background: #FFFFFF;   /* un QR necesita zona en blanco alrededor, en cualquier tema */
+    border: var(--border-w) solid var(--line);
+  }
+  .qr-page__code img { display: block; inline-size: min(64vw, 20rem); block-size: auto; }
+  .qr-page__lede { font-size: var(--step-2); line-height: 1.4; color: var(--ink-2); }
+  .qr-page__url { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+  .qr-page__foot { font-size: var(--step--1); color: var(--ink-3); }
+
+  @container glosa (min-width: 48rem) {
+    .qr-page__room { font-size: var(--step-6); }
+    .qr-page__code img { inline-size: min(36vw, 26rem); }
+    .qr-page__lede { font-size: var(--step-3); }
+  }
+
+  @media print {
+    .qr-page { background: #FFFFFF; color: #000000; }
+    .qr-page__lede, .qr-page__foot { color: #000000; }
+    .qr-page__code { border-color: #000000; }
   }
 }

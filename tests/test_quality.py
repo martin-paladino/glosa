@@ -162,6 +162,30 @@ async def test_score_then_add_feeds_the_rolling_average() -> None:
     assert client.system_one.await_count == 3
 
 
+# ------------------------------------------------------- reset (review fix round 1)
+
+
+async def test_reset_clears_the_rolling_window() -> None:
+    meter = QualityMeter(api_key="test-key", client=AsyncMock())
+    meter.add(0.9)
+    meter.add(0.8)
+
+    meter.reset()
+
+    assert meter.avg() is None
+
+
+async def test_reset_then_add_starts_a_fresh_average_unaffected_by_pre_reset_scores() -> None:
+    meter = QualityMeter(api_key="test-key", client=AsyncMock())
+    meter.add(0.1)
+    meter.add(0.1)
+
+    meter.reset()
+    meter.add(0.9)
+
+    assert meter.avg() == pytest.approx(0.9)
+
+
 # ---------------------------------------------------- failure isolation (review fix 1)
 
 

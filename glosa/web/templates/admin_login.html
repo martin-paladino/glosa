@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{#- The panel's login, in the panel's own language: the same masthead and a
+    single panel on the dark room. admin.js posts the form to show a wrong
+    password in place; without JS it still posts on its own. #}
+
+{% block title %}{{ at("admin_title") }} | {{ event_name }}{% endblock %}
+
+{% block head %}
+  <script src="/static/js/admin.js" defer></script>
+{%- endblock %}
+
+{% block body %}
+<div class="login-page">
+  <header class="masthead">
+    <div class="masthead__cell">
+      <a class="wordmark" href="/" aria-label="Glosa">glosa</a>
+      {%- if logo_url %}
+      <img class="event-logo{% if logo_mono %} event-logo--mono{% endif %}" src="{{ logo_url }}" alt="{{ event_name }}">
+      {%- endif %}
+      <div class="masthead__event"><b>{{ event_name }}</b><span>{{ at("admin_title") }}</span></div>
+    </div>
+    <div class="masthead__cell masthead__push masthead__tools">
+      <nav class="segmented" aria-label="{{ at('language') }}">
+        {%- for lang in langs %}
+        <a href="?lang={{ lang.code }}" hreflang="{{ lang.code }}" lang="{{ lang.code }}"{% if lang.current %} aria-current="true"{% endif %}>{{ lang.code | upper }}</a>
+        {%- endfor %}
+      </nav>
+    </div>
+    <div class="masthead__cell"><time class="clock clock--big" data-admin-clock></time></div>
+  </header>
+
+  <main class="login">
+    <form class="panel login__card" method="post" action="/admin/login" data-admin-login-form>
+      <header class="panel__head"><h1 class="panel__title">{{ at("admin_title") }}</h1></header>
+      <div class="login__body">
+        <p class="login__lede">{{ at("login_lede") }}</p>
+        <label class="field"><span class="field__label">{{ at("password") }}</span>
+          <input name="password" type="password" required autofocus autocomplete="current-password"></label>
+        <p class="notice" data-admin-login-error role="alert" hidden></p>
+        <div class="form__actions"><button class="btn btn--primary" type="submit">{{ at("log_in") }}</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+<script type="application/json" id="glosa-admin">{{ config | tojson }}</script>
+{% endblock %}

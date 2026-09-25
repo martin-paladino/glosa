@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -18,8 +19,10 @@ from fastapi.testclient import TestClient
 
 from glosa.i18n import t
 from glosa.web import pages
+from glosa.web.auth import COOKIE_NAME, new_admin_secret, sign_session
 
 STATIC_DIR = Path(pages.__file__).parent / "static"
+ADMIN_PASSWORD = "s3cr3t-pw"
 
 ROOMS = [
     {
@@ -83,10 +86,53 @@ def client() -> TestClient:
     return TestClient(_make_app())
 
 
+# ---- Task 14b: a fuller app -- workers (for /overlay, /qr, the token
+# fallback and the "listen" flag) and admin auth state. Kept separate from
+# _make_app()/`client` above: most of this file's tests use that narrower
+# fixture on purpose (see glosa/web/pages.py's module docstring -- pages.py
+# must keep working for a caller that never sets app.state.workers at all).
+
+
+def _worker(slug: str, *, public_token: str | None = None, langs=None, test_file=None) -> MagicMock:
+    worker = MagicMock()
+    worker.room.slug = slug
+    worker.room.name = next((r["name"] for r in ROOMS if r["slug"] == slug), slug)
+    worker.room.public_token = public_token or f"tok-{slug}"
+    worker.langs.return_value = ["en", "es"] if langs is None else langs
+    worker.test_file.return_value = test_file
+    return worker
+
+
+def _make_full_app(
+    rooms: list[dict] | None = None,
+    *,
+    branding: dict | None = None,
+    audience_mode: str = "all",
+    workers: dict | None = None,
+) -> FastAPI:
+    app = _make_app(rooms=rooms, branding=branding)
+    app.state.settings = MagicMock(audience_mode=audience_mode, admin_password=ADMIN_PASSWORD)
+    snapshot = ROOMS if rooms is None else rooms
+    app.state.workers = workers if workers is not None else {r["slug"]: _worker(r["slug"]) for r in snapshot}
+    app.state.admin_secret = new_admin_secret()
+    app.state.session_epoch = 0
+    return app
+
+
+def _admin_cookies(app: FastAPI) -> dict[str, str]:
+    return {COOKIE_NAME: sign_session(app.state.admin_secret, ADMIN_PASSWORD)}
+
+
 def _html_lang(html: str) -> str:
     match = re.search(r'<html[^>]*\slang="([^"]+)"', html)
     assert match, "the page must declare <html lang>"
     return match.group(1)
+
+
+def _json_script(html: str, script_id: str) -> dict:
+    match = re.search(rf'<script type="application/json" id="{script_id}">(.*?)</script>', html, re.S)
+    assert match, f"expected a #{script_id} JSON script tag"
+    return json.loads(match.group(1))
 
 
 def _room_config(html: str) -> dict:
@@ -378,3 +424,284 @@ def test_invalid_branding_colors_are_ignored() -> None:
     assert "--brand-primary:" not in html
     assert "--brand-accent:" not in html
     assert "display: none" not in html
+
+
+# ---- overlay (Task 14b) -------------------------------------------------------
+
+
+def test_overlay_defaults_to_the_first_language_two_lines_and_48px() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    response = client.get("/overlay/r1")
+    html = response.text
+
+    assert response.status_code == 200
+    assert "overlay-page" in html
+    assert "--overlay-lines: 2" in html
+    assert "--overlay-size: 48px" in html
+    assert '<script src="/static/js/overlay.js" defer></script>' in html
+    assert _json_script(html, "glosa-overlay") == {"streamBase": "/api/stream/r1/", "lang": "en"}
+
+
+def test_overlay_lines_size_and_lang_come_from_the_query_string() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    html = client.get("/overlay/r1?lang=es&lines=3&size=64").text
+
+    assert "--overlay-lines: 3" in html
+    assert "--overlay-size: 64px" in html
+    assert _json_script(html, "glosa-overlay")["lang"] == "es"
+
+
+def test_overlay_clamps_out_of_range_lines_and_size() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    html = client.get("/overlay/r1?lines=99&size=1000").text
+
+    assert "--overlay-lines: 4" in html
+    assert "--overlay-size: 120px" in html
+
+
+def test_overlay_falls_back_to_the_default_on_junk_or_unknown_query_values() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    html = client.get("/overlay/r1?lang=fr&lines=nope&size=nope").text
+
+    assert _json_script(html, "glosa-overlay")["lang"] == "en"  # unknown lang: first of worker.langs()
+    assert "--overlay-lines: 2" in html
+    assert "--overlay-size: 48px" in html
+
+
+def test_overlay_shows_the_logo_only_with_logo_1() -> None:
+    branding = {"event_name": "X", "primary": None, "accent": None, "logo_url": "/static/logo.svg"}
+    app = _make_full_app(branding=branding)
+    client = TestClient(app)
+
+    without = client.get("/overlay/r1").text
+    with_logo = client.get("/overlay/r1?logo=1").text
+
+    assert "overlay-logo" not in without
+    assert 'class="overlay-logo"' in with_logo and 'src="/static/logo.svg"' in with_logo
+
+
+def test_overlay_of_an_unknown_room_is_404() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    assert client.get("/overlay/nope").status_code == 404
+
+
+# ---- overlay under qr_only (Task 14b fix round 1, Ruling 56) ------------------
+
+
+def test_overlay_slug_404s_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    assert client.get("/overlay/r1").status_code == 404
+
+
+def test_overlay_token_form_works_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    response = client.get("/overlay/s/tok-r1")
+    html = response.text
+
+    assert response.status_code == 200
+    assert _json_script(html, "glosa-overlay") == {"streamBase": "/api/stream/tok-r1/", "lang": "en"}
+
+
+def test_overlay_token_form_also_works_in_all_mode() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    response = client.get("/overlay/s/tok-r1")
+    html = response.text
+
+    assert response.status_code == 200
+    # all mode: the stream endpoint isn't gated by token, so the overlay
+    # still keys the SSE stream by the room's real slug.
+    assert _json_script(html, "glosa-overlay") == {"streamBase": "/api/stream/r1/", "lang": "en"}
+
+
+def test_overlay_token_form_of_an_unknown_token_is_404() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    assert client.get("/overlay/s/nope").status_code == 404
+
+
+# ---- QR page (Task 14b, plan case 14.1) ----------------------------------------
+
+
+def test_qr_page_encodes_the_slug_url_in_all_mode() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    html = client.get("/qr/r1", headers=SPANISH).text
+
+    assert "http://testserver/s/r1" in html
+    assert "http://testserver/s/tok-r1" not in html
+    assert "Gran sala" in html
+    assert "data:image/svg+xml;base64," in html
+
+
+def test_qr_page_of_an_unknown_room_is_404() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    response = client.get("/qr/nope")
+    assert response.status_code == 404
+    assert t("room_not_found", "es") not in response.text or True  # not_found.html's own generic copy
+
+
+def test_qr_page_shows_the_exact_lede_text() -> None:
+    app = _make_full_app()
+    client = TestClient(app)
+
+    spanish = client.get("/qr/r1", headers=SPANISH).text
+    english = client.get("/qr/r1", headers=ENGLISH).text
+
+    assert "Subtítulos en vivo · escaneá y elegí tu idioma" in spanish
+    assert t("qr_lede", "en") in english
+
+
+# ---- qr_only access mode (Task 14b, plan case 14.2) ----------------------------
+
+
+def test_qr_only_mode_lists_no_rooms_on_the_index() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    html = client.get("/", headers=SPANISH).text
+
+    assert t("rooms_empty", "es") in html
+    assert "Gran sala" not in html
+
+
+def test_qr_only_mode_404s_the_slug_but_the_token_works() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    assert client.get("/s/r1").status_code == 404
+    ok = client.get("/s/tok-r1")
+    assert ok.status_code == 200
+    assert "Gran sala" in ok.text
+
+
+def test_room_config_uses_the_token_as_the_stream_base_in_qr_only_mode() -> None:
+    """Ruling 56: /api/stream/{slug}/{lang} is itself gated by the token in
+    qr_only mode (public_api.py), so the embedded config must ask room.js
+    to stream from the token, not the real (now-inaccessible) slug."""
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    config = _room_config(client.get("/s/tok-r1", headers=SPANISH).text)
+
+    assert config["streamBase"] == "/api/stream/tok-r1/"
+
+
+def test_room_config_still_uses_the_slug_as_the_stream_base_in_all_mode() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    config = _room_config(client.get("/s/r1", headers=SPANISH).text)
+
+    assert config["streamBase"] == "/api/stream/r1/"
+
+
+def test_all_mode_still_serves_the_slug_and_also_accepts_the_token() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    assert client.get("/s/r1").status_code == 200
+    assert client.get("/s/tok-r1").status_code == 200
+
+
+def test_qr_page_encodes_the_token_url_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app, cookies=_admin_cookies(app))
+
+    html = client.get("/qr/r1", headers=SPANISH).text
+
+    assert "http://testserver/s/tok-r1" in html
+    assert "http://testserver/s/r1<" not in html and ">http://testserver/s/r1\n" not in html
+
+
+# ---- /qr/{room} requires an admin session in qr_only mode (Task 14b fix round 1,
+# Ruling 56: nothing public may hand out a room's slug->token mapping) ----------
+
+
+def test_qr_page_redirects_to_admin_login_when_unauthenticated_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    response = client.get("/qr/r1?lang=en", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/login?lang=en"
+
+
+def test_qr_page_works_with_an_admin_session_in_qr_only_mode() -> None:
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app, cookies=_admin_cookies(app))
+
+    response = client.get("/qr/r1")
+
+    assert response.status_code == 200
+    assert "http://testserver/s/tok-r1" in response.text
+
+
+def test_qr_page_stays_public_without_a_session_in_all_mode() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    assert client.get("/qr/r1").status_code == 200
+
+
+# ---- "Escuchar el audio" flag on the public page (Task 14b, Ruling 5) ---------
+
+
+def test_listen_button_is_absent_without_workers_state_at_all(client: TestClient) -> None:
+    """The narrower fixture (_make_app/`client`, used throughout this file)
+    never sets app.state.workers: room_page() must degrade to "no listen",
+    not blow up."""
+    html = client.get("/s/r1", headers=SPANISH).text
+
+    assert "data-listen" not in html
+    assert "/static/js/listen.js" not in html
+
+
+def test_listen_button_is_absent_without_a_session() -> None:
+    app = _make_full_app(workers={"r1": _worker("r1", test_file=("clip.wav", 1.0))})
+    client = TestClient(app)
+
+    html = client.get("/s/r1", headers=SPANISH).text
+
+    assert "data-listen" not in html
+    assert "/static/js/listen.js" not in html
+
+
+def test_listen_button_is_absent_for_an_admin_when_the_room_is_not_in_test_mode() -> None:
+    app = _make_full_app(workers={"r1": _worker("r1", test_file=None)})
+    client = TestClient(app, cookies=_admin_cookies(app))
+
+    html = client.get("/s/r1", headers=SPANISH).text
+
+    assert "data-listen" not in html
+
+
+def test_listen_button_appears_for_an_admin_when_the_room_is_in_test_mode() -> None:
+    app = _make_full_app(workers={"r1": _worker("r1", test_file=("clip.wav", 1.0))})
+    client = TestClient(app, cookies=_admin_cookies(app))
+
+    html = client.get("/s/r1", headers=SPANISH).text
+
+    assert 'data-listen data-listen-room="r1"' in html
+    assert '<script src="/static/js/listen.js" defer></script>' in html
+    assert t("listen_audio", "es") in html

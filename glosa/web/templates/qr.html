@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tr("qr_title").format(room=room_name) }} | Glosa{% endblock %}
+
+{% block body %}
+<main class="qr-page">
+  <header class="qr-page__brand">
+    {%- if logo_url %}
+    <img class="event-logo" src="{{ logo_url }}" alt="{{ event_name }}">
+    {%- else %}
+    <span class="event-name">{{ event_name }}</span>
+    {%- endif %}
+  </header>
+  <div class="qr-page__body">
+    <p class="qr-page__rule" aria-hidden="true"></p>
+    <h1 class="qr-page__room">{{ room_name }}</h1>
+    <div class="qr-page__code">
+      <img src="{{ qr_data_uri }}" width="480" height="480" alt="{{ tr('qr_alt').format(room=room_name) }}">
+    </div>
+    <p class="qr-page__lede">{{ tr("qr_lede") }}</p>
+    <p class="qr-page__url tc">{{ qr_url }}</p>
+  </div>
+  <footer class="qr-page__foot">
+    <span class="wordmark">glosa</span>
+  </footer>
+</main>
+{% endblock %}

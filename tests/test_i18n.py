@@ -72,3 +72,14 @@ def test_endonyms_are_capitalised_in_their_own_language() -> None:
 )
 def test_join_names(names: list[str], lang: str, expected: str) -> None:
     assert join_names(names, lang) == expected
+
+
+def test_every_admin_key_exists_in_both_languages() -> None:  # Task 12
+    assert set(i18n.ADMIN_STRINGS["es"]) == set(i18n.ADMIN_STRINGS["en"])
+
+
+def test_admin_plurals() -> None:
+    assert i18n.admin_plural("pending", 1, "es") == "1 pendiente"
+    assert i18n.admin_plural("pending", 3, "es") == "3 pendientes"
+    assert i18n.admin_plural("panels", 2, "en") == "2 panels open"
+    assert i18n.admin_plural("tally_live", 2, "es") == "en vivo"

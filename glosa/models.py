@@ -36,6 +36,15 @@ class VadEvent:
 class EngineEvent:
     """One event emitted by an Engine (Live Translate, transcribe-live, fake, ...).
 
+    Text kinds:
+      - "source_delta": source-language text. Normally APPENDED to the open
+        segment (Live Translate). With meta["interim"] = True (transcribe-live)
+        its text is the open segment's WHOLE text so far: it REPLACES the
+        open segment, it is not appended.
+      - "source_final": the open segment's final text (it replaces and closes
+        it); "" means it was not speech after all.
+      - "target_delta": translated text, appended.
+
     meta conventions:
       - kind == "error": {"code": int, "retryable": bool}, plus
         {"payment": True} when credit is exhausted (a 402-style stop).
@@ -72,6 +81,15 @@ class EngineConfig:
 class CaptionMsg:
     """JSON payload sent to the audience over SSE. id = Last-Event-ID.
 
+    type:
+      - "append": ``text`` is added to the end of segment ``seg``;
+      - "set": ``text`` is the WHOLE text of the open segment ``seg`` so far
+        and replaces it (the glossary engine's source, rewritten by each
+        transcribe-live interim); "" removes it (not speech after all). Only
+        the track's open segment is ever set;
+      - "close": segment ``seg`` is finished;
+      - "talk" / "status": ``data`` (the talk now on, the room's state).
+
     ts: wall-clock time the message was published, as epoch seconds (set by
     CaptionBus.publish). Lets the audience view show an HH:MM margin next to
     replayed history; None only for messages built by hand (e.g. in tests)
@@ -79,7 +97,7 @@ class CaptionMsg:
     """
 
     id: int
-    type: Literal["append", "close", "talk", "status"]
+    type: Literal["append", "set", "close", "talk", "status"]
     seg: int | None = None
     text: str | None = None
     data: dict | None = None

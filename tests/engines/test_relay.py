@@ -781,6 +781,21 @@ async def test_end_utterance_reaches_only_the_confirmed_active_session(steady: P
     assert standby.end_utterance_at == []
 
 
+async def test_after_a_rotation_end_utterance_reaches_only_the_new_active_session(steady: Path) -> None:
+    h = Harness([Plan(steady)])
+    await h.start()
+    await h.run_until(530, vad=talking(0, pauses=[520]))  # standby at 510 s, switch at the 520 s pause
+    old, new = h.engines
+    assert switch_time(old) == pytest.approx(520.0)  # the relay's own end_utterance on retiring it
+
+    await h.relay.end_utterance()  # the room's call on its next pause
+    await settle()
+
+    assert old.end_utterance_at == [pytest.approx(520.0)]  # nothing more for the draining session
+    assert new.end_utterance_at == [pytest.approx(530.0)]
+    await h.stop()
+
+
 # ---------------------------------------------------------------- event stream
 
 
@@ -800,6 +815,41 @@ async def test_events_merge_active_and_draining_sessions_only(steady: Path) -> N
     emitted = sum(ev.meta.get("usd", 0.0) for e in h.engines for ev in e.emitted)
     forwarded = sum(ev.meta.get("usd", 0.0) for ev in h.events)
     assert forwarded == pytest.approx(emitted)  # usd increments are never dropped
+
+
+async def test_session_numbers_can_start_after_another_relays(steady: Path) -> None:
+    """A room that swaps engines numbers the new relay's sessions after the
+    old one's, so the two never share a session number."""
+    h = Harness([Plan(steady)], first_seq=4)
+    assert h.relay.last_seq == 3  # none opened yet
+    await h.start()
+    await h.run_until(530, vad=talking(0, pauses=[520]))
+    await h.stop()
+
+    sessions = {ev.meta["session"] for ev in h.events if ev.kind in TEXT_KINDS}
+    assert sessions == {4, 5}
+    assert h.relay.last_seq == 5
+
+
+async def test_audio_held_by_a_relay_can_be_handed_to_another(tmp_path: Path, steady: Path) -> None:
+    """A room swapping engines moves the chunks its halted relay holds to the
+    new relay, which sends them first."""
+    h = Harness([Plan(write_fixture(tmp_path, "dies", extra=[error_record(1.0, 1008, False)]))])
+    await h.start()
+    await h.run_until(2.0, vad=talking(0))  # halted at 1 s (chunk 1.0 still went out): 1.1-2.0 s held back
+    assert h.relay.halted
+    held = h.relay.take_pending()
+    assert [c.t for c in held] == [pytest.approx(1.1 + 0.1 * k) for k in range(10)]
+    assert h.relay.take_pending() == []
+
+    other = Harness([Plan(steady)])
+    other.relay.preload(held)
+    await other.start()
+    await other.run_until(0.5, vad=talking(0))
+    [engine] = other.engines
+    assert engine.sent[:10] == [c.t for c in held]  # the handed chunks go first, then its own audio
+    await h.stop()
+    await other.stop()
 
 
 async def test_events_can_be_consumed_while_feeding(steady: Path) -> None:

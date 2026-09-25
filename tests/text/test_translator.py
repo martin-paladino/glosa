@@ -24,7 +24,7 @@ from google.genai.errors import ClientError, ServerError
 from glosa.clock import FakeClock
 from glosa.config import Settings
 from glosa.models import GlossaryTerm
-from glosa.text.translator import Translation, Translator
+from glosa.text.translator import Translation, Translator, _build_system_instruction
 
 ENV_PATH = str(Path(__file__).resolve().parents[2] / ".env")
 
@@ -66,6 +66,10 @@ class _FakeModels:
 class _FakeAio:
     def __init__(self, models: _FakeModels) -> None:
         self.models = models
+        self.closed = 0
+
+    async def aclose(self) -> None:
+        self.closed += 1
 
 
 class FakeGenAIClient:
@@ -107,11 +111,34 @@ async def test_system_instruction_includes_glossary_and_last_two_segments() -> N
     await translator.translate("Segment four.", "es", GLOSSARY, context)
 
     system_instruction = client.models.calls[0]["config"].system_instruction
-    assert "Kubernetes → keep" in system_instruction
-    assert "control plane → plano de control" in system_instruction
+    assert '"Kubernetes": leave it as is, untranslated' in system_instruction
+    assert '"control plane": translate it as "plano de control"' in system_instruction
     assert "Segment two." in system_instruction
     assert "Segment three." in system_instruction
     assert "Segment one." not in system_instruction  # only the last 2 of context
+
+
+def test_the_glossary_applies_only_to_terms_in_the_segment() -> None:
+    """Live run 4: "en este particular cluster" came out as "in this
+    particular Kubernetes control plane": the model put glossary terms where
+    the segment had none. The instruction scopes every entry to the segment."""
+    text = _build_system_instruction("en", GLOSSARY, [])
+
+    rules = text.split("Glossary")[1].lower()
+    assert "only when" in rules and "appears in the segment" in rules and "inflection" in rules
+    assert "never add" in rules and "not in the segment" in rules
+    assert "apply exactly; do not deviate" not in text  # the old, unscoped wording
+    assert text.index('"Kubernetes"') > text.index("Glossary")
+
+
+def test_a_term_kept_in_english_is_never_written_as_keep() -> None:
+    """Live run 5: with "Kubernetes → keep" in the prompt, "en este particular
+    cluster" came out as "in this particular keep". No entry reads as a
+    translation into the word "keep" any more."""
+    text = _build_system_instruction("en", GLOSSARY, [])
+
+    assert "→ keep" not in text and "-> keep" not in text
+    assert '"Kubernetes": leave it as is, untranslated' in text
 
 
 async def test_thinking_level_is_minimal() -> None:
@@ -176,6 +203,12 @@ async def test_raises_last_error_when_fallback_also_exhausts_retries() -> None:
     with pytest.raises(ServerError):
         await translator.translate("hi", "es", [], [])
     assert len(client.models.calls) == 6
+
+
+async def test_aclose_releases_the_client_connections() -> None:
+    translator, client = _translator([])
+    await translator.aclose()
+    assert client.aio.closed == 1
 
 
 @pytest.mark.live

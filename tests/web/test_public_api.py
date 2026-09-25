@@ -25,6 +25,7 @@ from glosa.clock import RealClock
 from glosa.config import ConfigError, RoomCfg, Settings
 from glosa.engines.fake import FakeEngine
 from glosa.engines.live_translate import LiveTranslateEngine
+from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig
 from glosa.web import app as app_module
 from glosa.web.app import create_app, make_engine_factory
@@ -85,6 +86,29 @@ async def server(tmp_path: Path) -> AsyncIterator[str]:
         await asyncio.wait_for(task, timeout=20)
 
 
+@pytest.fixture
+async def qr_only_server(tmp_path: Path) -> AsyncIterator[tuple[str, object]]:
+    """Same as `server` above, but `audience_mode: qr_only` -- yields the
+    running app too, so tests can read a room's real (secret) token off
+    `app.state.workers` the way an admin's session would, without going
+    through another unauthenticated endpoint to get it."""
+    app = create_app(_settings(tmp_path, audience_mode="qr_only"))
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", ws="none", lifespan="on")
+    srv = uvicorn.Server(config)
+    task = asyncio.create_task(srv.serve())
+    for _ in range(500):
+        if srv.started or task.done():
+            break
+        await asyncio.sleep(0.01)
+    assert srv.started, "uvicorn did not start"
+    port = srv.servers[0].sockets[0].getsockname()[1]
+    try:
+        yield f"http://127.0.0.1:{port}", app
+    finally:
+        srv.should_exit = True
+        await asyncio.wait_for(task, timeout=20)
+
+
 def _client(base_url: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url=base_url, timeout=10, trust_env=False)
 
@@ -127,19 +151,23 @@ async def test_rooms_api_lists_both_rooms_with_their_talk(server: str) -> None: 
 
 
 async def test_stream_delivers_captions_for_both_rooms_at_once(server: str) -> None:  # 5.4
-    r1, r2 = await asyncio.wait_for(
+    r1, r2, r2_en = await asyncio.wait_for(
         asyncio.gather(
             _read_sse(server, "/api/stream/r1/es", {"talk", "append", "close"}),
-            _read_sse(server, "/api/stream/r2/es", {"talk", "append", "close"}),
+            _read_sse(server, "/api/stream/r2/es", {"talk", "set"}),
+            _read_sse(server, "/api/stream/r2/en", {"talk", "append", "close"}),
         ),
         timeout=15,
     )
 
     assert r1[0]["type"] == "talk" and r1[0]["data"]["talk_id"].startswith("free-r1-")
     assert any(m["type"] == "append" and "palabra" in m["text"] for m in r1)  # r1: EN talk, ES translation
+    # r2: ES talk, so its free session runs the glossary engine (the recorded
+    # transcribe-live session): the source is "set", the English translated
     assert r2[0]["data"]["talk_id"].startswith("free-r2-")
-    assert any(m["type"] == "append" and "word" in m["text"] for m in r2)  # r2: ES talk, its source track
-    assert all(isinstance(m["id"], int) and m["ts"] for m in r1 + r2)
+    assert any(m["type"] == "set" and "cierto" in m["text"] for m in r2)
+    assert any(m["type"] == "append" and m["text"].startswith("[en] ") for m in r2_en)  # FakeTranslator
+    assert all(isinstance(m["id"], int) and m["ts"] for m in r1 + r2 + r2_en)
 
 
 async def test_stream_resumes_after_last_event_id(server: str) -> None:
@@ -162,6 +190,28 @@ async def test_unknown_rooms_and_bad_languages_are_404(server: str) -> None:
         assert (await client.get("/api/stream/nope/es")).status_code == 404
         assert (await client.get("/api/stream/r1/not a lang")).status_code == 404
         assert (await client.get("/api/stream/r1/pt")).status_code == 404
+
+
+async def test_qr_only_mode_lists_no_rooms_and_refuses_the_stream_by_slug(
+    qr_only_server: tuple[str, object],
+) -> None:
+    """Ruling 56 (Task 14b fix round 1): in qr_only mode nothing public may
+    reveal a room's slug->token mapping or its captions without the token.
+    /api/rooms (pre-existing) must not list rooms, and /api/stream/{slug}
+    must 404 for a plain slug -- only the room's public_token resolves it."""
+    base_url, app = qr_only_server
+    token = app.state.workers["r1"].room.public_token
+
+    async with _client(base_url) as client:
+        rooms = (await client.get("/api/rooms")).json()
+        assert rooms == []
+
+        assert (await client.get("/api/stream/r1/es")).status_code == 404
+
+    by_token = await asyncio.wait_for(
+        _read_sse(base_url, f"/api/stream/{token}/es", {"talk"}), timeout=15
+    )
+    assert by_token[0]["type"] == "talk" and by_token[0]["data"]["talk_id"].startswith("free-r1-")
 
 
 async def test_stream_refuses_other_languages_before_touching_the_bus(tmp_path: Path) -> None:
@@ -279,6 +329,11 @@ def test_fake_fixture_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     with pytest.raises(ConfigError, match="fake_fixture"):
         make_engine_factory(_settings(tmp_path, fake_fixture=None), clock)
 
+    # the glossary engine's recording (samples/fixtures/tr_es.jsonl) is looked up the same way
+    monkeypatch.setattr(app_module, "CHECKOUT_FAKE_GLOSSARY_FIXTURE", tmp_path / "nowhere" / "tr_es.jsonl")
+    with pytest.raises(ConfigError, match="glossary engine"):
+        make_engine_factory(_settings(tmp_path), clock)
+
 
 async def test_lifespan_logs_a_room_that_fails_to_stop(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     settings = _settings(tmp_path, rooms=[RoomCfg(id="a", name="A"), RoomCfg(id="b", name="B")])
@@ -306,6 +361,39 @@ def test_engine_factory_by_engine_mode(tmp_path: Path) -> None:
     assert isinstance(fake, FakeEngine) and fake.cfg.fixture_path == str(tmp_path / "fast.jsonl")
     assert isinstance(live, LiveTranslateEngine)
     assert live._price_per_min == 0.0368  # Ruling 5: the price comes from Settings.prices
+
+
+def test_engine_factory_by_engine_kind(tmp_path: Path) -> None:
+    """engine "glossary": transcribe-live, or in fake mode the recorded
+    transcribe-live session (fake_fixture is the fast engine's)."""
+    clock = RealClock()
+    cfg = EngineConfig(kind="glossary", source_lang="es", target_lang=None, vocabulary=["Kubernetes"])
+
+    fake = make_engine_factory(_settings(tmp_path), clock)(cfg)
+    live = make_engine_factory(_settings(tmp_path, engine_mode="live"), clock)(cfg)
+
+    assert isinstance(fake, FakeEngine)
+    assert Path(fake.cfg.fixture_path) == (ROOT / "samples" / "fixtures" / "tr_es.jsonl").resolve()
+    assert isinstance(live, TranscribeLiveEngine)
+    assert live.cfg.vocabulary == ["Kubernetes"]
+    assert live._price_per_min == 0.009  # Settings.prices.transcribe_per_min
+
+
+def test_fake_mode_warns_when_the_recording_speaks_another_language(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """engine_mode fake replays one recording per engine: English for fast
+    (lt_en.jsonl), Spanish for glossary (tr_es.jsonl), whatever the talk says."""
+    factory = make_engine_factory(_settings(tmp_path, fake_fixture=None), RealClock())
+
+    with caplog.at_level(logging.WARNING, logger="glosa.web.app"):
+        factory(EngineConfig(kind="glossary", source_lang="es", target_lang=None))
+        factory(EngineConfig(kind="fast", source_lang="en", target_lang="es"))
+        assert caplog.text == ""
+        factory(EngineConfig(kind="glossary", source_lang="en", target_lang=None))
+        factory(EngineConfig(kind="glossary", source_lang="en", target_lang=None))  # once per engine and language
+
+    assert caplog.text.count("replays a recording in es for a talk in en") == 1
 
 
 def test_main_serves_with_a_graceful_shutdown_timeout(monkeypatch: pytest.MonkeyPatch) -> None:

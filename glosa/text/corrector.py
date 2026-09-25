@@ -6,6 +6,11 @@ build_corrected (Task 11-rest) saves the result with version="corrected" and
 the SAME timings as the live segments -- which only works if this module
 returns exactly one entry per input segment, in order.
 
+The glossary line format (`_build_system_instruction`) matches
+glosa/text/translator.py's (task-11r-brief.md's closing note, 223df70): the
+Translator no longer emits the old "term → keep" line, and this module must
+not either, or a stray "keep" could leak into the corrected export text.
+
 Blocks are `block_size` sentences (default 20, per task-11a-brief.md). Each
 block after the first carries the last 1-2 ORIGINAL sentences of the
 previous block as read-only context (mirrors Translator's `context` in
@@ -36,13 +41,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
 from glosa.models import GlossaryTerm
+
+if TYPE_CHECKING:
+    from glosa.db import Database, Segment
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +82,23 @@ def _build_system_instruction(
         lines.append(f"Talk abstract (context only): {abstract}")
     if glossary:
         lines.append("")
-        lines.append("Glossary (apply exactly; do not deviate):")
+        # Same wording as glosa/text/translator.py's _build_system_instruction
+        # (223df70): the Translator moved off the old "term → keep" format,
+        # and this module must match it -- otherwise "keep" (a literal English
+        # word meaning "leave untranslated") could get echoed into the
+        # corrected export whenever the model treats the glossary line as
+        # part of the text, instead of being understood as an instruction.
+        lines.append(
+            "Glossary. Use an entry only when its term, or an obvious inflection of it, appears in the "
+            "sentences you are translating; then apply it exactly. Never add a glossary term that is not "
+            "in the sentences, and never use one to replace a different word (e.g. do not turn a plain "
+            "noun into a glossary term):"
+        )
         for term in glossary:
-            rhs = "keep" if term.keep_in_english else (term.translation or "")
-            lines.append(f"{term.term} → {rhs}")
+            if term.keep_in_english or not term.translation:
+                lines.append(f'- "{term.term}": leave it as is, untranslated')
+            else:
+                lines.append(f'- "{term.term}": translate it as "{term.translation}"')
     if context:
         lines.append("")
         lines.append(
@@ -233,3 +254,100 @@ async def correct_segments(
         glossary=glossary,
         abstract=abstract,
     )
+
+
+def _fallback_text(dest_live: list["Segment"], t_start: float, t_end: float) -> str:
+    """The text build_corrected keeps for a source segment whose block
+    failed even after a retry (correct_segments returned None for it):
+    task-11r-brief.md Ruling 1 says to "copy the live text", but the source
+    and destination segments are not 1:1 by id (the glossary engine cuts by
+    the Segmenter; Live Translate produces its own destination text -- see
+    the module docstring and build_corrected below), so there is no single
+    destination segment that "is" this source segment's translation.
+
+    This module's reading (documented here per the ruling's own
+    "Documentalo"): the destination's own (uncorrected) live segments whose
+    time range overlaps [t_start, t_end] the most, concatenated in order;
+    if none overlaps, the closest one by t_start; "" if the destination has
+    no live segments at all for this talk/lang (e.g. Live Translate never
+    produced output there).
+    """
+    if not dest_live:
+        return ""
+    overlapping = [s for s in dest_live if s.t_start < t_end and s.t_end > t_start]
+    if overlapping:
+        return " ".join(s.text for s in overlapping)
+    nearest = min(dest_live, key=lambda s: abs(s.t_start - t_start))
+    return nearest.text
+
+
+async def build_corrected(
+    talk_id: str,
+    lang: str,
+    *,
+    db: "Database",
+    api_key: str,
+    model: str = "gemini-3.8-flash",
+    block_size: int = 20,
+    client: Any | None = None,
+) -> str:
+    """Task-11r-brief.md Ruling 1: rebuild talk_id's "corrected" export for
+    one target language ``lang`` (never the talk's own spoken language, and
+    never a free session -- the caller, glosa/web/app.py's on_talk_end hook,
+    enforces that before calling this).
+
+    Reads the talk's ORIGINAL source segments (version="live", the talk's
+    own language) and re-translates them with correct_segments (blocks of
+    ``block_size``, guided by the talk's glossary and abstract), then saves
+    one segment per SOURCE segment, in ``lang``, version="corrected", with
+    the SAME [t_start, t_end] as the source segment it came from -- not the
+    destination's own live segments, which the Ruling explicitly says not
+    to build from (they don't line up 1:1 with the source: the glossary
+    engine cuts by the Segmenter, Live Translate produces its own
+    destination text). Where correct_segments returns None for a source
+    segment (its block failed even after a retry), the fallback is the
+    destination's own live text for that time range -- see _fallback_text's
+    docstring for exactly how, and why that's this module's reading of
+    Ruling 1's "copy the live text".
+
+    Any previously stored "corrected" segments for (talk_id, lang) are
+    cleared first, so re-running this (e.g. Ruling 5's stale-boot retry) is
+    idempotent rather than appending duplicates.
+
+    Status: writes db's exports row "pending" at the start and "ready" or
+    "failed" at the end (glosa.db Database.set_export_status), and returns
+    that final status ("ready"/"failed") so the caller (the on_talk_end
+    hook) knows which admin event to publish -- never raises: a missing
+    talk, empty source segments, or any correct_segments/db failure is
+    caught, logged, and reported as "failed" (mirrors
+    glosa/text/glossary.py's "an optional, background nicety must never
+    break its caller").
+    """
+    try:
+        await db.set_export_status(talk_id, lang, "pending")
+        talk = await db.get_talk(talk_id)
+        if talk is None:
+            raise LookupError(f"no talk {talk_id!r}")
+        sources = await db.get_segments(talk_id, talk.language, "live")
+        dest_live = await db.get_segments(talk_id, lang, "live")
+        if sources:
+            corrector = Corrector(api_key, model=model, block_size=block_size, client=client)
+            translations = await corrector.correct(
+                [s.text for s in sources],
+                source_lang=talk.language,
+                target_lang=lang,
+                glossary=talk.glossary,
+                abstract=talk.abstract,
+            )
+        else:
+            translations = []
+        await db.delete_segments(talk_id, lang, "corrected")
+        for src, text in zip(sources, translations, strict=True):
+            final_text = text if text is not None else _fallback_text(dest_live, src.t_start, src.t_end)
+            await db.save_segment(talk_id, talk.room_id, lang, "translation", "corrected", final_text, src.t_start, src.t_end)
+    except Exception:
+        logger.exception("build_corrected: talk %r lang %r failed", talk_id, lang)
+        await db.set_export_status(talk_id, lang, "failed")
+        return "failed"
+    await db.set_export_status(talk_id, lang, "ready")
+    return "ready"

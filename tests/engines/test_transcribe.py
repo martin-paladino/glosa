@@ -22,7 +22,13 @@ from glosa.audio.vad import EnergyVad
 from glosa.clock import FakeClock, RealClock
 from glosa.config import Settings
 from glosa.engines.fake import FakeEngine
-from glosa.engines.transcribe import MAX_VOCABULARY, MODEL, TranscribeLiveEngine
+from glosa.engines.transcribe import (
+    FINAL_STALE_MIN_WORDS,
+    MAX_VOCABULARY,
+    MODEL,
+    STALE_MIN_WORDS,
+    TranscribeLiveEngine,
+)
 from glosa.models import AudioChunk, EngineConfig, EngineEvent
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -111,14 +117,347 @@ def test_a_repeated_interim_is_not_emitted_again() -> None:
     # The server re-sends an unchanged interim (e.g. "Por cierto," twice, 0.5 s
     # apart). It is no progress: it must not look like output to the stall watchdog.
     engine = _engine()
-    events = _map_all(engine, [INTERIM_1, INTERIM_1, INTERIM_2, FINAL_1, INTERIM_1])
+    events = _map_all(engine, [INTERIM_1, INTERIM_1, INTERIM_2, FINAL_1])
 
     assert [(ev.kind, ev.text) for ev in events] == [
         ("source_delta", "Por cierto,"),
         ("source_delta", "Por cierto, cuando ustedes"),
         ("source_final", "Por cierto, cuando ustedes reciben la factura."),
-        ("source_delta", "Por cierto,"),  # a new segment that happens to start the same way
     ]
+
+
+def test_a_stale_interim_of_the_segment_just_closed_is_dropped() -> None:
+    """Live run of 2026-09-24 (T10-wiring): 0.3-0.5 s after a final, the
+    server sometimes re-sends the closed segment's last interim. As a new
+    segment it would flash the old text again and get translated twice."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    events = _map_all(engine, [INTERIM_1, INTERIM_3, FINAL_1])
+    clock.advance(0.4)
+    events += _map_all(engine, [INTERIM_3, INTERIM_2])  # the last interim again, and an older prefix of it
+    clock.advance(0.3)
+    events += _map_all(engine, [INTERIM_NEXT, INTERIM_3])  # the new segment; then it is its text to rewrite
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "Por cierto,"),
+        ("source_delta", "Por cierto, cuando ustedes reciben la"),
+        ("source_final", "Por cierto, cuando ustedes reciben la factura."),
+        ("source_delta", "En nodos"),
+        ("source_delta", "Por cierto, cuando ustedes reciben la"),
+    ]
+
+
+def _interim(text: str) -> dict:
+    return {"serverContent": {"interimInputTranscription": {"text": text}}}
+
+
+def test_the_closed_segments_text_at_the_start_of_the_next_interims_is_cut_off() -> None:
+    """The same live run: more often the first interim of the next segment
+    is the closed segment's last interim with the new words after it."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [INTERIM_3, FINAL_1])
+    clock.advance(0.35)
+    events = _map_all(engine, [
+        _interim("Por cierto, cuando ustedes reciben la En nodos"),
+        _interim("por cierto cuando ustedes reciben la factura En nodos tenés"),  # the final's words, rewritten
+        _interim("En nodos tenés tantos"),  # clean: the server moved on
+    ])
+    clock.advance(0.3)
+    events += engine._map_message(FINAL_NEXT)
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "En nodos"),
+        ("source_delta", "En nodos tenés"),
+        ("source_delta", "En nodos tenés tantos"),
+        ("source_final", "En nodos tenés tantos miles de dólares gastados."),
+    ]
+
+
+def test_the_stale_text_is_cut_however_late_it_comes(caplog: pytest.LogCaptureFixture) -> None:
+    """No timer: the closed segment's text is stale until a clean interim
+    or the next final, 2 s or 3 s after the final alike."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    with caplog.at_level(logging.INFO, logger="glosa.engines.transcribe"):
+        clock.advance(2.0)
+        events = engine._map_message(INTERIM_3)  # the last interim again
+        clock.advance(1.0)
+        events += engine._map_message(_interim("Por cierto, cuando ustedes reciben la En nodos"))
+
+    assert [(ev.kind, ev.text) for ev in events] == [("source_delta", "En nodos")]
+    assert "dropped a stale interim" in caplog.text and "cut 6 stale words" in caplog.text
+
+
+def test_the_final_of_a_segment_whose_interims_were_cut_is_cut_too(caplog: pytest.LogCaptureFixture) -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    with caplog.at_level(logging.INFO, logger="glosa.engines.transcribe"):
+        events = _map_all(engine, [
+            _interim("Por cierto, cuando ustedes reciben la En nodos"),
+            {"serverContent": {"inputTranscription": {
+                "text": "Por cierto, cuando ustedes reciben la factura. En nodos tenés tantos miles de dólares gastados."
+            }}},
+        ])
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "En nodos"),
+        ("source_final", "En nodos tenés tantos miles de dólares gastados."),
+    ]
+    assert "off a final" in caplog.text
+
+
+def test_a_final_that_only_repeats_the_closed_segment_is_dropped() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    assert engine._map_message(FINAL_1) == []  # nothing of a new segment was shown: a stale repeat
+    [ev] = _map_all(engine, [INTERIM_NEXT])
+    assert (ev.kind, ev.text) == ("source_delta", "En nodos")
+
+
+def test_standalone_punctuation_does_not_hide_the_stale_text() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    events = _map_all(engine, [
+        _interim("Por cierto — cuando ustedes reciben la , En nodos"),
+        _interim("¿ Por cierto, cuando ustedes reciben la En nodos tenés"),
+    ])
+
+    assert [(ev.kind, ev.text) for ev in events] == [
+        ("source_delta", "En nodos"),
+        ("source_delta", "En nodos tenés"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("final", "stale", "fresh"),
+    [
+        # live run 3 (2026-09-24): the server glues the closed segment's text to the new words
+        (
+            "Pero si lo pensamos, no entiende de teams,",
+            "Pero si lo pensamos, no entiende de teams,the labels, the workloads",
+            "the labels, the workloads",
+        ),
+        (
+            "¿Qué ha ocurrido en este particular cluster?",
+            "¿Qué ha ocurrido en este particular cluster?O dentro de este",
+            "O dentro de este",
+        ),
+        ("corremos en AWS, en GCP y en Azure.", "corremos en AWS, en GCP y en Azure.que tienen toda", "que tienen toda"),
+    ],
+    ids=["comma", "question-mark", "period"],
+)
+def test_the_closed_segments_text_glued_to_the_new_words_is_cut(final: str, stale: str, fresh: str) -> None:
+    engine = _engine()
+    _map_all(engine, [_interim(final.rstrip(",.?")), {"serverContent": {"inputTranscription": {"text": final}}}])
+
+    [ev] = engine._map_message(_interim(stale))
+
+    assert (ev.kind, ev.text) == ("source_delta", fresh)
+
+
+def test_a_stale_text_between_the_last_interim_and_the_final_is_cut_whole() -> None:
+    """Live run 3, verbatim: the last interim the engine sent lacked
+    "cluster?", the final said "esta" where the interims said "este", and
+    the stale text was a later interim glued to the new words."""
+    last = "¿Qué ha ocurrido con que ha habido este disparada de costos desde el mes pasado en este particular"
+    final = "¿Qué ha ocurrido con que ha habido esta disparada de costos desde el mes pasado en este particular cluster?"
+    engine = _engine()
+    _map_all(engine, [_interim(last), {"serverContent": {"inputTranscription": {"text": final}}}])
+
+    events = _map_all(engine, [
+        _interim(last + " cluster?O"),
+        _interim(last + " cluster?O dentro de este"),
+    ])
+
+    assert [ev.text for ev in events] == ["O", "O dentro de este"]
+
+
+def test_an_opening_question_mark_of_the_new_segment_is_kept() -> None:
+    engine = _engine()
+    closed = "Qué ha ocurrido en este particular cluster."
+    _map_all(engine, [_interim(closed.rstrip(".")), _final(closed)])
+
+    events = _map_all(engine, [
+        _interim(closed + "¿Qué pasa"),
+        _interim(closed + "¡"),  # only an opening mark so far: nothing to show
+    ])
+
+    assert [ev.text for ev in events] == ["¿Qué pasa"]
+
+
+def test_a_longer_word_is_not_the_closed_segments_word() -> None:
+    engine = _engine()
+    _map_all(engine, [_interim("en este particular cluster"), {"serverContent": {"inputTranscription": {
+        "text": "en este particular cluster."}}}])
+
+    [ev] = engine._map_message(_interim("en este particular clustering nuevo"))
+
+    assert ev.text == "en este particular clustering nuevo"
+
+
+def test_a_stale_repeat_cut_in_the_middle_of_a_word_is_dropped() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    assert engine._map_message(_interim("Por cierto, cuando ustedes reci")) == []
+
+
+def _final(text: str) -> dict:
+    return {"serverContent": {"inputTranscription": {"text": text}}}
+
+
+@pytest.mark.parametrize(
+    ("said_before", "said_now"),
+    [
+        ("Sí, sí, sí.", "Sí, sí, sí, claro."),
+        ("Esto es importante.", "Esto es importante porque escala."),
+        ("Vamos a ver.", "Vamos a ver."),
+    ],
+    ids=["si-si-si-claro", "starts-the-same", "said-twice"],
+)
+def test_a_short_real_repeat_keeps_its_final(said_before: str, said_now: str) -> None:
+    """Fix round 2: interims of a real repeat may lose the repeated start
+    (the final corrects them), but a final is only cut or dropped for a
+    long match (FINAL_STALE_MIN_WORDS): the server's repeats had 8+ words."""
+    engine = _engine()
+    _map_all(engine, [_interim(said_before.rstrip(".")), _final(said_before)])
+    words = said_now.rstrip(".").split()
+
+    events = _map_all(engine, [_interim(" ".join(words[:n])) for n in range(1, len(words) + 1)])
+    events += engine._map_message(_final(said_now))
+
+    assert events[-1].kind == "source_final" and events[-1].text == said_now
+
+
+@pytest.mark.parametrize(
+    ("said_before", "said_now"),
+    [
+        ("lo que tenemos que hacer es desplegar", "lo que tenemos que hacer es desplegarlo en producción."),
+        ("Vamos a usar el patrón sidecar", "Vamos a usar el patrón sidecars en todos lados."),
+    ],
+    ids=["desplegarlo", "sidecars"],
+)
+def test_a_real_repeat_that_continues_the_last_word_keeps_its_final_whole(said_before: str, said_now: str) -> None:
+    """Fix round 3: the no-separator cut ("…particularEs") is for interims
+    only. A final is never cut inside a word: a 6+ word repeat whose last
+    word goes on ("desplegar" -> "desplegarlo") keeps its final whole."""
+    engine = _engine()
+    _map_all(engine, [_interim(said_before), _final(said_before)])
+    words = said_now.rstrip(".").split()
+
+    events = _map_all(engine, [_interim(" ".join(words[:n])) for n in range(1, len(words) + 1)])
+    events += engine._map_message(_final(said_now))
+
+    assert events[-1].kind == "source_final" and events[-1].text == said_now
+
+
+def test_run_5_interims_glued_with_nothing_in_between_are_still_cut() -> None:
+    last = "o dentro de este cluster en este particular"
+    engine = _engine()
+    _map_all(engine, [_interim(last), _final("o dentro de este clúster en este particular namespace.")])
+
+    events = _map_all(engine, [_interim(last + "Es"), _interim(last + "esa visibilidad, esa")])
+
+    assert [ev.text for ev in events] == ["Es", "esa visibilidad, esa"]
+
+
+def test_the_server_repeats_seen_live_are_long_enough_to_cut_finals() -> None:
+    assert STALE_MIN_WORDS == 3 and FINAL_STALE_MIN_WORDS == 6
+
+
+FIXTURES = ROOT / "tests" / "fixtures"
+
+
+def _versions(rows: list[dict], upto: int) -> list[str]:
+    """Every text the segment closed at row ``upto`` had: its interims and final."""
+    out = [rows[upto]["final"]]
+    for row in reversed(rows[:upto]):
+        if "final" in row:
+            break
+        out.append(row["interim"])
+    return out
+
+
+@pytest.mark.parametrize(
+    ("fixture", "firsts"),
+    [
+        ("tr_es_glued_run4.jsonl", ["En nodos", "Pero", "de", "¿Qué", "O", "Esa", "Que"]),
+        ("tr_es_glued_run5.jsonl", ["En nodos", "Pero", "de", "¿Qué", "O", "Es", "Que"]),
+    ],
+    ids=["run4", "run5"],
+)
+def test_replay_of_live_server_strings(fixture: str, firsts: list[str]) -> None:
+    """Live runs 4 and 5 (2026-09-24), the server's interims and finals
+    verbatim. After some finals every interim of the next segment came with
+    the closed segment's text glued in front, after punctuation
+    ("…teams,the labels", "…Azure.Que") or with none at all ("…en este
+    particularEs", "…particularesa visibilidad", run 5). Replayed through
+    the engine: no shown text starts with any version of the segment closed
+    before it, the new segments start with their own words, the finals pass
+    unchanged."""
+    rows = [json.loads(line) for line in (FIXTURES / fixture).read_text(encoding="utf-8").splitlines()]
+    engine = _engine()
+    closed: list[str] | None = None
+    shown_firsts: list[str] = []
+    finals: list[str] = []
+    for n, row in enumerate(rows):
+        raw = _interim(row["interim"]) if "interim" in row else _final(row["final"])
+        for ev in engine._map_message(raw):
+            if ev.kind == "source_final":
+                finals.append(ev.text)
+                closed = _versions(rows, n)
+            elif closed is not None:
+                shown_firsts.append(ev.text)
+                closed = None
+            if ev.kind == "source_delta":
+                for version in _versions(rows, max(i for i, r in enumerate(rows[:n]) if "final" in r)) if any(
+                    "final" in r for r in rows[:n]
+                ) else []:
+                    stale = version.split()[:4]
+                    assert len(stale) < 4 or ev.text.split()[:4] != stale, (ev.text, version)
+
+    assert finals == [row["final"] for row in rows if "final" in row]
+    assert shown_firsts == firsts
+
+
+def test_after_a_clean_interim_nothing_is_cut_any_more() -> None:
+    engine = _engine()
+    _map_all(engine, [INTERIM_3, FINAL_1])
+
+    events = _map_all(engine, [INTERIM_NEXT, _interim("Por cierto, cuando ustedes reciben la otra")])
+
+    assert [ev.text for ev in events] == ["En nodos", "Por cierto, cuando ustedes reciben la otra"]
+
+
+def test_a_short_closed_segment_is_not_cut_off_the_next_one() -> None:
+    """"Sí." then "Sí, claro": too short to tell a stale repeat from a real
+    start, so nothing is cut (a stale interim has many words)."""
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [_interim("Sí"), {"serverContent": {"inputTranscription": {"text": "Sí."}}}])
+    clock.advance(0.5)
+
+    [ev] = engine._map_message(_interim("Sí, claro"))
+
+    assert (ev.kind, ev.text) == ("source_delta", "Sí, claro")
+
+
+def test_a_new_segment_that_starts_like_the_closed_one_shows_up_with_its_next_interim() -> None:
+    clock = FakeClock()
+    engine = _engine(clock)
+    _map_all(engine, [INTERIM_2, FINAL_1])
+    clock.advance(0.5)
+    later = {"serverContent": {"interimInputTranscription": {"text": "Por cierto, otra cosa"}}}
+
+    events = _map_all(engine, [INTERIM_1, later])  # "Por cierto," could be stale: it waits for more
+
+    assert [(ev.kind, ev.text) for ev in events] == [("source_delta", "Por cierto, otra cosa")]
 
 
 def test_an_empty_final_closes_an_open_segment_and_is_skipped_otherwise() -> None:
@@ -298,6 +637,16 @@ async def test_vocabulary_drops_blanks_and_duplicates_without_a_warning(caplog: 
     assert caplog.text == ""
 
 
+async def test_vocabulary_dedupes_ignoring_case_before_the_cap(caplog: pytest.LogCaptureFixture) -> None:
+    terms = [f"term{i}" for i in range(80)] + [f"TERM{i}" for i in range(80)]  # 160 entries, 80 terms
+
+    with caplog.at_level(logging.WARNING, logger="glosa.engines.transcribe"):
+        _, live = await _connected(EngineConfig(kind="glossary", source_lang="es", target_lang=None, vocabulary=terms))
+
+    assert live.calls[0]["config"].input_audio_transcription.custom_vocabulary == terms[:80]
+    assert caplog.text == ""  # nothing was cut
+
+
 async def test_no_vocabulary_sends_none() -> None:
     _, live = await _connected(EngineConfig(kind="glossary", source_lang="en", target_lang=None))
     tr = live.calls[0]["config"].input_audio_transcription
@@ -359,46 +708,15 @@ async def test_price_per_min_is_configurable_and_defaults_to_0_009() -> None:
 # -------------------------------------------------------------------- errors
 
 
-@pytest.mark.parametrize(
-    ("exc", "expected_meta"),
-    [
-        (errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}), {"code": 429, "retryable": True}),
-        (errors.ServerError(503, {"error": {"code": 503, "status": "UNAVAILABLE"}}), {"code": 503, "retryable": True}),
-        (errors.ClientError(402, {"error": {"code": 402, "message": "Payment required"}}), {"code": 402, "retryable": False, "payment": True}),
-        (errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT"}}), {"code": 400, "retryable": False}),
-        (
-            errors.ClientError(429, {"error": {"code": 429, "message": "Your prepayment credits are depleted."}}),
-            {"code": 402, "retryable": False, "payment": True},
-        ),
-        (errors.APIError(1011, "Internal error encountered.", None), {"code": 1011, "retryable": True}),
-        (errors.APIError(1007, "Request contains an invalid argument.", None), {"code": 1007, "retryable": False}),
-        (
-            errors.APIError(
-                1008,
-                "Connection aborted because the client failed to close the connection after receiving"
-                " a GoAway signal once the session durat",
-                None,
-            ),
-            {"code": 1008, "retryable": True},
-        ),
-        (
-            errors.APIError(
-                1008,
-                "models/gemini-x is not found for API version v1beta, or is not supported for bidiGenerateContent.",
-                None,
-            ),
-            {"code": 1008, "retryable": False},
-        ),
-        (ConnectionResetError("reset by peer"), {"code": 0, "retryable": True}),
-    ],
-    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-other", "network"],
-)
-def test_classify_error_like_live_translate(exc: Exception, expected_meta: dict) -> None:
-    ev = _engine(FakeClock(start=3.0))._classify_error(exc)
-    assert ev.kind == "error"
-    assert ev.meta == expected_meta
-    assert ev.t_recv == 3.0
-    assert ev.text
+def test_classify_error_like_live_translate_uses_the_shared_policy_and_carries_the_usage() -> None:
+    """The cases are in tests/engines/test_gemini_live.py (one policy for both engines)."""
+    engine = _engine(FakeClock(start=3.0))
+    engine._usd_unreported = 0.25
+    ev = engine._classify_error(errors.APIError(1011, "Internal error encountered.", None))
+    assert (ev.kind, ev.t_recv) == ("error", 3.0)
+    assert ev.meta == {"code": 1011, "retryable": True, "usd": 0.25}
+    assert ev.text == "APIError: 1011 None. Internal error encountered."
+
 
 
 # -------------------------------------------------------------- session loop

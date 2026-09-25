@@ -22,6 +22,8 @@ Other answers from the channel:
 ## What Glosa does about it
 
 > Status on 2026-09-24 19:50 UTC: the room station (1), remote reload (2) and the overlay (5) are being built. The autopilot (3) and the audience QR flow (4) are in progress or done. This note is updated when they land.
+>
+> Update, Task 14b: the overlay (5), `/overlay/{room}`, is done -- a transparent, chrome-less page for a vMix browser input or an OBS browser source (`docs/design/overlay.html`). The audience QR flow (4) also gained a printable/projectable `/qr/{room}` page and a `qr_only` access mode (no room list, only the QR's link works), for an event that does not want its room list public.
 
 1. **Room station.** Instead of a SaaS tab, the mini PC opens `/station/{room}?key=…`.
    - Capture:

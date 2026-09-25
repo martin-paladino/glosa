@@ -3,6 +3,13 @@ translation with gemini-3.5-flash-lite (thinking_level=MINIMAL, per
 globals.md), guided by the talk's glossary and the last couple of segments
 for continuity.
 
+Known limit: a GlossaryTerm's ``translation`` is ONE string, and the room's
+translation lane passes the same glossary for every target language. On a
+talk translated into en and pt, a term with ``translation="plano de
+control"`` is asked for as "plano de control" in both. Terms kept in
+English (``keep_in_english``) are fine in every language; a per-language
+translation would need the glossary model to carry one per target.
+
 Retries on 429 (rate limited) / 503 (overloaded) wait a growing amount of
 time between attempts. After _MAX_CONSECUTIVE_FAILURES failures in a row on
 one model, Translator switches to fallback_model and starts a fresh run of
@@ -12,10 +19,14 @@ raised. Any other error (e.g. 400) is raised immediately, unretried.
 The genai client can be injected (`client=`), which is how tests fake it
 without spending API budget; production code leaves it unset and Translator
 builds a real `genai.Client(api_key=...)`.
+
+FakeTranslator is what a room uses with ``engine_mode: fake`` (a demo or a
+load test with FakeEngine): no API call, no key needed.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -46,10 +57,17 @@ def _build_system_instruction(target: str, glossary: list[GlossaryTerm], context
     ]
     if glossary:
         lines.append("")
-        lines.append("Glossary (apply exactly; do not deviate):")
+        lines.append(
+            "Glossary. Use an entry only when its term, or an obvious inflection of it, appears in the "
+            "segment you are translating; then apply it exactly. Never add a glossary term that is not "
+            "in the segment, and never use one to replace a different word (e.g. do not turn a plain "
+            "noun into a glossary term):"
+        )
         for term in glossary:
-            rhs = "keep" if term.keep_in_english else (term.translation or "")
-            lines.append(f"{term.term} → {rhs}")
+            if term.keep_in_english or not term.translation:
+                lines.append(f'- "{term.term}": leave it as is, untranslated')
+            else:
+                lines.append(f'- "{term.term}": translate it as "{term.translation}"')
     previous = context[-2:] if context else []
     if previous:
         lines.append("")
@@ -82,6 +100,13 @@ class Translator:
         self.price_out_per_m = price_out_per_m
         self._client = client if client is not None else genai.Client(api_key=api_key)
         self._clock: Clock = clock if clock is not None else RealClock()
+
+    async def aclose(self) -> None:
+        """Release the client's HTTP connections (the owner calls it when it
+        is done with this Translator; RoomWorker does at the end of a run)."""
+        close = getattr(getattr(self._client, "aio", None), "aclose", None)
+        if close is not None:
+            await close()
 
     def _cost_usd(self, usage_metadata: Any) -> float:
         if usage_metadata is None:
@@ -134,3 +159,20 @@ class Translator:
 
         assert last_error is not None  # every exit path above sets it before falling through
         raise last_error
+
+
+class FakeTranslator:
+    """``engine_mode: fake``: the "translation" is the segment itself tagged
+    with the target language ("[en] Hola a todos."), at once and for free,
+    so a demo shows the glossary engine's and the extra languages' captions
+    without a Gemini key."""
+
+    async def translate(
+        self,
+        segment: str,
+        target: str,
+        glossary: list[GlossaryTerm],
+        context: list[str],
+    ) -> Translation:
+        await asyncio.sleep(0)
+        return Translation(text=f"[{target}] {segment}", latency_s=0.0, usd=0.0)

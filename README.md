@@ -41,12 +41,15 @@ or add the same volume line to a local `docker-compose.override.yml` (Compose me
 | `ADMIN_PASSWORD` | yes | The single password for `/admin` (start/stop rooms). At least 8 characters — Glosa refuses to start otherwise. Use a long random one, e.g. `openssl rand -base64 18`; it's the only thing standing between the internet and your rooms' start/stop controls. |
 | `TYPESAFE_API_KEY` | no | Enables the Jev quality meter. Leave blank to skip it — everything else works without it. |
 
+With a key set, the meter scores one caption pair every 15 s per room, English↔Spanish only (Jev's question is fixed to that pair); other language pairs, and rooms without a key, keep the "quality" reading as "—".
+
 Secrets live only in `.env` (gitignored) and are read from that file directly, never from the shell/container environment (so a stray exported variable, or `docker inspect`, can't leak them — see `docker-compose.yml`'s comment). Never put them in `config.yaml` or commit them.
 
 ## What's in the box
 
-- **Audience view** (`/`, `/s/{room}`): live captions per room over SSE, phone-first, EN/ES interface, light/dark/high-contrast themes.
-- **Admin** (`/admin`): log in with `ADMIN_PASSWORD`, see every room's state and current talk, start/stop each one. (A fuller production console — audio levels, quality, cost, an event log — lands in a later milestone; this is the minimum needed to run the MVP.)
+- **Audience view** (`/`, `/s/{room}`): live captions per room over SSE, phone-first, EN/ES interface, light/dark/high-contrast themes. `/qr/{room}` is a printable or projectable page with that room's QR code. Set `audience_mode: qr_only` in `config.yaml` to hide the room list at `/` entirely and only accept a room's QR link (`/s/{token}`, not `/s/{room}`) — for an event that doesn't want its room list guessable or public. In this mode nothing public reveals a room's slug→token mapping or its captions without the token: `/qr/{room}` itself requires an admin session, `GET /api/rooms` returns an empty list, and `GET /api/stream/{slug}/{lang}` (the SSE endpoint room.js/overlay.js read) only resolves by the token, not the slug.
+- **Overlay for OBS/vMix** (`/overlay/{room}?lang=es&lines=2&size=48`, add `&logo=1` for the event logo): a transparent, chrome-less page a vMix browser input or an OBS browser source reads, burning translated captions into the stream. In `qr_only` mode the slug form 404s like `/s/{room}` does — use `/overlay/s/{token}` instead (same token as the audience link; an admin has it from `/qr/{room}` or the room's drawer).
+- **Admin** (`/admin`): the production panel, "Sala de control" (log in with `ADMIN_PASSWORD`). Every room is a monitor with its live captions, a status light and its time on air; a healthy room shows nothing else. The Atención bar lists only what needs action now (a room down or degraded and why, the budget at 80 %, a silence alarm), each with its suggested key. Also: spend against the budget, the log (alerts first), today's agenda with the next automatic change, and a side drawer per room (click it or press 1–9; Esc closes) with auto/manual, start and end talk, reconnect, "Probar con audio" (play an EN/ES sample clip or an uploaded file through the room, to judge quality without a live talk — `POST /api/admin/rooms/<id>/test-audio`), "Escuchar el audio" (an admin, and only while a room plays a test file, can listen to it synchronized with the captions — `GET /api/admin/listen/<id>`; it also shows up on that room's own public page for a logged-in admin), every metric against its limit and the room's history; for a room station (`source_type: emitter`) it also shows whether the station is connected, its device, level and last audio, its link with a copy key and a QR code (behind a TLS proxy both use the proxy's `X-Forwarded-Proto`/`X-Forwarded-Host`, so they are the public `https://` address), and "Recargar estación". The agenda is imported and edited in the same drawer. Spanish or English, from the browser or `?lang=`. Screenshots in `docs/screenshots/admin-*.png`.
 - **Docker**: `docker-compose.yml` builds the same app, mounts `.env` and persists `data/` (the SQLite database: agenda, captions, cost) across restarts.
 
 ## Agenda & autopilot
@@ -78,9 +81,10 @@ After a restart, an `auto` room reopens the talk the agenda says is on, and a `m
 | `start-talk` `{"talk_id": "..."}` | End the current talk and open this one now. The room goes `manual`. |
 | `end-talk` | End the current talk; the room goes idle and `manual`. |
 | `reconnect` | Open a new engine session for the running talk (the mode stays). |
+| `restart` | Open the room's audio source again for the talk it runs (after "source is down"). The mode stays. |
 | `start` / `stop` | Start (free session or current talk) or stop the room. The room goes `manual`. |
 
-`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk.
+`GET /api/admin/rooms` lists every room with its mode, status, current talk and next talk. `GET /api/admin/stream` is the panel's live feed (Server-Sent Events): every room's status each second, the event log (resumable with `Last-Event-ID`), agenda changes and each room's latest captions; it needs the session cookie but not the `X-Glosa-Admin` header, which a browser's `EventSource` cannot send.
 
 ## Room stations (mini PC per stage)
 

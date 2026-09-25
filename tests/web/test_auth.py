@@ -23,12 +23,14 @@ fails on) a per-request ``cookies=`` argument.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
+from glosa.clock import RealClock
 from glosa.config import Settings
 from glosa.web import admin_api
 from glosa.web.auth import (
@@ -58,6 +60,10 @@ def _make_app(settings: Settings | None = None, workers: dict | None = None) -> 
     app.state.workers = workers if workers is not None else {}
     app.state.admin_secret = new_admin_secret()
     app.state.session_epoch = 0
+    # What the panel's first paint reads (Task 12, glosa/web/admin_stream.py).
+    app.state.clock = RealClock()
+    app.state.db = MagicMock(cost_by_room=AsyncMock(return_value={}))
+    app.state.autopilot = MagicMock(next_talk=AsyncMock(return_value=None))
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)

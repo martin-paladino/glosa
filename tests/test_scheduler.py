@@ -27,7 +27,7 @@ from glosa.config import RoomCfg, Settings
 from glosa.db import init_db
 from glosa.models import AudioChunk, EngineEvent, Room, Talk
 from glosa.room import RoomWorker
-from glosa.scheduler import Autopilot
+from glosa.scheduler import Autopilot, NoTalkToRestart
 from glosa.web.admin_events import AdminEvents
 
 TZ = "America/Argentina/Buenos_Aires"
@@ -335,6 +335,29 @@ async def test_back_to_auto_stops_an_agenda_talk_that_is_not_the_next_one(db) ->
         await db.update_talk(opened_early, status="scheduled", actual_start=None, actual_end=None)
 
 
+async def test_back_to_auto_stops_tomorrows_talk_even_when_it_is_the_next_one(db) -> None:  # Ruling 44, 6C
+    """The "starts today" half of _early_next, left untested by the
+    "not the next one" test above (there, C and T both fail the earlier
+    "is upcoming[0]" check on their own, so the date check is never
+    reached). Here, C's slot has already ended, so tomorrow's T really is
+    the room's only upcoming talk (upcoming[0]) once opened -- and it must
+    still be stopped, since it does not start today."""
+    talks = [_talk("C", "16:00", "17:00"), _talk("T", "10:00", "11:00", day=DAY + timedelta(days=1))]
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=talks, at_time=at("16:00"))
+    await pilot.tick()  # C, by the autopilot
+    move_to(clock, at("17:00"))
+    await pilot.tick()  # C's slot ends: idle
+    assert workers["r1"].talk is None
+
+    move_to(clock, at("17:30"))
+    await pilot.start_talk("r1", "T")  # tomorrow's talk, rehearsed early
+    move_to(clock, at("17:31"))
+    await pilot.set_mode("r1", "auto")
+    await pilot.tick()
+
+    assert workers["r1"].talk is None
+
+
 async def test_start_talk_on_the_running_talk_only_switches_to_manual(db) -> None:
     clock, workers, pilot, events = await _setup(
         db, _room("r1"), talks=[_talk("A", "14:00", "15:00")], at_time=at("13:59")
@@ -412,6 +435,70 @@ async def test_reconnect_asks_the_worker_and_keeps_the_mode(db) -> None:  # 9.4
 
     assert workers["r1"].calls == [("reconnect", "manual")]
     assert pilot.mode("r1") == "auto"
+
+
+# ------------------------------------------------------------------ restart (Task 12)
+
+
+async def test_restart_reopens_the_running_talk_and_keeps_the_mode(db) -> None:
+    clock, workers, pilot, events = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")],
+                                                 at_time=at("14:10"))
+    await pilot.tick()
+    worker = workers["r1"]
+    assert worker.starts() == ["A"]
+    sub = events.subscribe()
+
+    talk = await pilot.restart("r1")
+
+    assert talk.id == "A" and worker.starts() == ["A", "A"]  # the same talk again: no end, no free session
+    assert not [c for c in worker.calls if c[0] == "end"]
+    assert pilot.mode("r1") == "auto"
+    event = sub.get_nowait()
+    assert event.kind == "room_restart" and event.data == {"room_id": "r1", "talk_id": "A"}
+    logged = [e for e in await db.recent_events(10) if e.type == "restart"]
+    assert logged and logged[0].message.startswith("A:")
+
+
+async def test_restart_reads_the_talk_under_the_room_lock(db) -> None:
+    # A tick (or an operator action) that holds the room's lock changes the
+    # talk; restart must see the talk as it is once it gets the lock.
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")],
+                                            at_time=at("14:10"))
+    await pilot.tick()
+    worker = workers["r1"]
+    lock = pilot._lock("r1")
+    await lock.acquire()
+    restarting = asyncio.create_task(pilot.restart("r1"))
+    await asyncio.sleep(0)
+    await worker.stop()  # the holder ends the talk meanwhile
+    lock.release()
+
+    with pytest.raises(NoTalkToRestart):
+        await restarting
+    assert worker.starts() == ["A"]
+
+
+async def test_restart_needs_a_talk_and_a_known_room(db) -> None:
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), at_time=at("14:10"))
+
+    with pytest.raises(NoTalkToRestart):
+        await pilot.restart("r1")
+    with pytest.raises(KeyError):
+        await pilot.restart("nope")
+
+
+async def test_a_failure_inside_the_restart_is_not_no_talk(db) -> None:
+    clock, workers, pilot, _ = await _setup(db, _room("r1"), talks=[_talk("A", "14:00", "15:00")],
+                                            at_time=at("14:10"))
+    await pilot.tick()
+
+    async def broken(talk=None):
+        raise KeyError("something inside start")
+
+    workers["r1"].start = broken
+    with pytest.raises(KeyError) as caught:
+        await pilot.restart("r1")
+    assert not isinstance(caught.value, NoTalkToRestart)
 
 
 # ---------------------------------------------------------------- server restart (9.4b)
@@ -636,6 +723,9 @@ async def test_the_autopilot_drives_a_real_room_worker(db) -> None:  # 9.1, inte
     await _settle()
     assert worker.talk is not None and worker.talk.id == "A"
     assert bus.history("r1", "es", "A")[0].type == "talk"
+    # task-11r-brief.md item 7: the tick also refreshes the room's cached
+    # next-agenda-talk (RoomWorker.view()["next"]) -- here, B.
+    assert worker.view()["next"] is not None and worker.view()["next"]["talk_id"] == "B"
 
     move_to(clock, at("14:59"))
     await _settle()

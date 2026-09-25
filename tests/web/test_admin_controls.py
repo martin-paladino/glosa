@@ -29,6 +29,7 @@ from glosa.config import RoomCfg, Settings
 from glosa.db import init_db
 from glosa.models import AudioChunk, EngineEvent, Room, Talk
 from glosa.scheduler import Autopilot
+from glosa.web import app as app_module
 from glosa.web.app import create_app
 from glosa.web.auth import COOKIE_NAME, sign_session
 
@@ -308,6 +309,24 @@ async def test_boot_resumes_a_manual_room_that_crashed_mid_talk_and_keeps_the_ot
         assert (await app.state.db.get_talk("x")).status == "live"
 
 
+async def test_boot_resumes_the_live_talk_not_the_last_started_one(tmp_path: Path) -> None:  # Ruling 46 / 6A
+    """The reviewer's scenario: room r1 ran talk a, then talk b (a's
+    actual_start is earlier), then a was reopened -- so a is live again but
+    b (done) still has the later actual_start. A crash-restart must resume
+    a, not b."""
+    settings = _settings(tmp_path)
+    a, b = _talk("a", "r1", -60, 60), _talk("b", "r1", -60, 60)
+    await _seed(settings, a, b, modes={"r1": "manual"})
+    await _mark(settings, "b", status="live", actual_start=T0 - timedelta(minutes=50))
+    await _mark(settings, "b", status="done", actual_end=T0 - timedelta(minutes=40))
+    await _mark(settings, "a", status="live", actual_start=T0 - timedelta(minutes=30))
+    await _mark(settings, "b", status="done", actual_start=T0 - timedelta(minutes=20))  # reopened+closed again
+
+    async with _open(settings) as (app, _):
+        r1 = app.state.workers["r1"]
+        assert r1.talk is not None and r1.talk.id == "a"
+
+
 async def test_boot_closes_live_rows_that_no_room_resumed(tmp_path: Path) -> None:  # stale live rows
     settings = _settings(tmp_path)
     past = _talk("past", "r1", -120, -60)  # r1 crashed during it; its slot is over
@@ -328,6 +347,75 @@ async def test_boot_closes_live_rows_that_no_room_resumed(tmp_path: Path) -> Non
         closed = [e for e in await db.recent_events(30) if e.type == "stale_live"]
         assert sorted(e.room_id for e in closed) == ["r1", "r2"]
         assert (await db.get_talk(r2.id)).status == "live"  # the new one is untouched
+
+
+async def test_boot_runs_on_talk_end_for_talks_it_closed_as_stale(tmp_path: Path) -> None:
+    """task-11r-brief.md item 5: a talk the boot closes as stale never goes
+    through RoomWorker._end_talk (no worker is running it), so its own
+    on_talk_end never fires on its own -- the boot must run it directly, the
+    same hook create_app(on_talk_end=...) wires up for every other talk
+    end, with status/actual_end already updated (done, boot time)."""
+    settings = _settings(tmp_path)
+    past = _talk("past", "r1", -120, -60)
+    old_free = _talk("free-r2-20300924T080000", "r2", -360, 360)
+    await _seed(settings, past, old_free)
+    await _mark(settings, "past", status="live", actual_start=T0 - timedelta(minutes=119))
+    await _mark(settings, old_free.id, status="live", actual_start=T0 - timedelta(minutes=360))
+
+    ended: list[tuple[str, str, datetime | None]] = []
+
+    async def hook(talk: Talk) -> None:
+        ended.append((talk.id, talk.status, talk.actual_end))
+
+    async with _open(settings, on_talk_end=hook):
+        pass
+
+    stale_ended = {talk_id: (status, end) for talk_id, status, end in ended if talk_id in ("past", old_free.id)}
+    assert set(stale_ended) == {"past", old_free.id}
+    for status, actual_end in stale_ended.values():
+        assert status == "done"
+        assert actual_end is not None and T0 <= actual_end < T0 + timedelta(seconds=10)
+
+
+async def test_a_blocking_boot_export_hook_does_not_delay_startup_or_leak_at_shutdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """task-11r-fix1.md item 1: _close_stale_live_talks used to await
+    on_talk_end inline in the lifespan, before yield -- a slow hook (a real
+    Gemini call, no timeout) blocked the whole app's startup and the
+    autopilot loop for every room, not just the stale talk's own. It must
+    be queued as a background task instead, mirroring how
+    RoomWorker._end_talk spawns and tracks its own talk-end hooks
+    (glosa/room.py _spawn/_hooks/drain_hooks)."""
+    monkeypatch.setattr(app_module, "HOOK_GRACE_S", 0.05)  # keep the shutdown wait short
+    settings = _settings(tmp_path)
+    past = _talk("past", "r1", -120, -60)
+    await _seed(settings, past)
+    await _mark(settings, "past", status="live", actual_start=T0 - timedelta(minutes=119))
+
+    started = asyncio.Event()
+
+    async def blocking_hook(talk: Talk) -> None:
+        started.set()
+        await asyncio.Event().wait()  # never returns on its own
+
+    app = create_app(settings, clock=EventClock(), engine_factory=QuietEngine, ingest_factory=SilentIngest,
+                      on_talk_end=blocking_hook, autopilot_interval_s=3600)
+    ctx = app.router.lifespan_context(app)
+    await asyncio.wait_for(ctx.__aenter__(), 1)  # would hang here before the fix
+    await asyncio.wait_for(started.wait(), 1)  # the hook is running...
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/admin/login")  # ...but the app serves a request anyway
+    assert response.status_code == 200
+
+    boot_tasks = [t for t in asyncio.all_tasks() if t.get_name().startswith("boot-hook-")]
+    assert len(boot_tasks) == 1 and not boot_tasks[0].done()
+
+    await asyncio.wait_for(ctx.__aexit__(None, None, None), 2)  # shutdown does not hang on the stuck hook
+
+    assert not [t for t in asyncio.all_tasks() if t.get_name().startswith("boot-hook-")]  # cancelled, not leaked
 
 
 # ------------------------------------------------- integration: engine_mode fake
@@ -413,6 +501,55 @@ async def test_a_talk_end_is_published_and_reaches_the_app_hook(tmp_path: Path) 
     assert {"room_mode", "talk_started"} <= {e.kind for e in published}
 
 
+async def test_talk_end_builds_the_corrected_export_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Case 11.3: ending a talk with target languages queues
+    build_corrected in the background -- the same hook app_from_env wires
+    up in production (glosa.web.app._export_talk, on create_app's
+    on_talk_end) -- and the export status goes pending -> ready, with an
+    export_ready admin event published. build_corrected itself is
+    monkeypatched (its own tests cover its behavior in isolation); this one
+    is about the wiring: a talk ending really reaches it."""
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build_corrected(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        await db.save_segment(talk_id, "r1", lang, "translation", "corrected", "Hola.", 0.0, 1.0)
+        await db.set_export_status(talk_id, lang, "ready")
+        return "ready"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
+
+    settings = _settings(tmp_path)
+    holder: dict = {}
+
+    async def hook(talk: Talk) -> None:
+        app = holder["app"]
+        await app_module._export_talk(talk, db=app.state.db, settings=settings, admin_events=app.state.admin_events)
+
+    async with _open(settings, on_talk_end=hook) as (app, client):
+        holder["app"] = app
+        await app.state.db.insert_talks([_talk("t", "r1", 0, 30)])
+        sub = app.state.admin_events.subscribe()
+
+        await client.post("/api/admin/rooms/r1/start-talk", json={"talk_id": "t"})
+        await client.post("/api/admin/rooms/r1/end-talk")
+        await app.state.workers["r1"].drain_hooks()
+
+        assert calls == [("t", "es")]
+        assert await app.state.db.get_export_status("t", "es") == "ready"
+        saved = await app.state.db.get_segments("t", "es", "corrected")
+        assert [s.text for s in saved] == ["Hola."]
+
+        published = []
+        while not sub.empty():
+            published.append(sub.get_nowait())
+    assert any(
+        e.kind == "export_ready" and e.data == {"talk_id": "t", "room_id": "r1", "lang": "es"} for e in published
+    )
+
+
 async def test_the_lifespan_ticks_the_autopilot_and_cancels_the_loop_on_shutdown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -458,3 +595,62 @@ async def test_the_control_endpoints_need_the_admin_cookie_and_the_csrf_header(t
         for method, path, body in requests:
             assert (await client.request(method, path, json=body)).status_code == 401, path
         assert app.state.autopilot.mode("r1") == "auto"
+
+
+# ---------------------------------------------------------------------------- restart (Task 12)
+
+
+class DyingIngest(SilentIngest):
+    """A source that dies for good after a few chunks (what AudioIngest does
+    after its restarts: the chunks end with restarts > before)."""
+
+    async def chunks(self):
+        for n in range(3):
+            await self._clock.sleep(0.1)
+            yield AudioChunk(pcm=bytes(3200), t=round(n * 0.1, 1))
+        self.restarts += 1
+        self.last_error = "ffmpeg exited 5 times"
+
+
+async def test_restart_reopens_the_source_for_the_same_talk(tmp_path: Path) -> None:
+    # The panel's "Reconectar" on a room whose source is down: reconnect is a
+    # no-op there (the pipeline is gone) and start would end the talk for a
+    # free session; restart opens the source again for the same talk.
+    deaths = {"r1": 1}
+
+    def ingest(source_type, source_url, realtime, clock):
+        room = source_url.removeprefix("fake://")
+        if deaths.get(room):
+            deaths[room] -= 1
+            return DyingIngest(source_type, source_url, realtime, clock)
+        return SilentIngest(source_type, source_url, realtime, clock)
+
+    settings = _settings(tmp_path)
+    await _seed(settings, _talk("t", "r1", -5, 40))
+    app = create_app(settings, clock=EventClock(), engine_factory=QuietEngine, ingest_factory=ingest,
+                     autopilot_interval_s=3600)
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=CSRF) as client:
+            client.cookies.set(COOKIE_NAME, sign_session(app.state.admin_secret, ADMIN_PASSWORD))
+            db, worker = app.state.db, app.state.workers["r1"]
+            assert worker.talk is not None and worker.talk.id == "t"  # the boot tick opened it
+            for _ in range(100):
+                if worker.status().state == "red":
+                    break
+                await asyncio.sleep(0.05)
+            assert worker.status().detail == "source is down: ffmpeg exited 5 times"
+
+            response = await client.post("/api/admin/rooms/r1/restart")
+
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["mode"] == "auto" and body["room"]["talk_id"] == "t" and body["room"]["state"] != "red"
+            assert worker.talk.id == "t" and (await db.get_talk("t")).status == "live"
+            assert not [e for e in await db.recent_events(50) if e.type == "talk_end" and e.message == "t"]
+
+            await client.post("/api/admin/rooms/r2/end-talk")
+            idle = await client.post("/api/admin/rooms/r2/restart")
+            assert idle.status_code == 409
+            assert (await client.post("/api/admin/rooms/nope/restart")).status_code == 404
+            assert (await client.post("/api/admin/rooms/r1/restart", headers={"X-Glosa-Admin": ""})).status_code == 403

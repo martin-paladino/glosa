@@ -1,5 +1,5 @@
-"""Tests for glosa.web.admin_api: the room list on /admin and the
-start/stop actions.
+"""Tests for glosa.web.admin_api: the production panel on /admin (Task 12:
+"Sala de control" v2), its login page, and the start/stop actions.
 
 7.2: start and stop change the RoomWorker's state; here the RoomWorker is a
 mock, so these tests only check that the routes call through to it (and are
@@ -26,6 +26,9 @@ The admin cookie is set on the TestClient's own cookie jar
 
 from __future__ import annotations
 
+import json
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -35,11 +38,15 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.testclient import TestClient
 
+from glosa.captions.bus import CaptionBus
+from glosa.clock import RealClock
 from glosa.config import Settings
-from glosa.models import RoomStatus
+from glosa.models import RoomStatus, Talk
 from glosa.web import admin_api
+from glosa.web.admin_events import AdminEvents
 from glosa.web.app import create_app
 from glosa.web.auth import COOKIE_NAME, new_admin_secret, sign_session
+from glosa.web.station import station_url
 
 STATIC_DIR = Path(admin_api.__file__).parent / "static"
 ADMIN_PASSWORD = "s3cr3t-pw"
@@ -61,30 +68,61 @@ def _status(**overrides) -> RoomStatus:
     return RoomStatus(**values)
 
 
-def _worker(room_id: str, slug: str, name: str, *, now: dict | None = None, status: RoomStatus | None = None) -> MagicMock:
+NOW = datetime.now(timezone.utc)
+
+
+def _talk(talk_id: str, room_id: str, title: str, *, start_min: float = -10, end_min: float = 30) -> Talk:
+    return Talk(
+        id=talk_id, room_id=room_id, title=title, speakers=["Ana Pérez"], language="en", targets=["es"],
+        engine="fast", start=NOW + timedelta(minutes=start_min), end=NOW + timedelta(minutes=end_min),
+        abstract="", tags=[], glossary=[], status="live", actual_start=NOW + timedelta(minutes=start_min),
+        actual_end=None,
+    )
+
+
+def _worker(room_id: str, slug: str, name: str, *, talk: Talk | None = None, status: RoomStatus | None = None) -> MagicMock:
     worker = MagicMock()
     worker.room.id = room_id
-    worker.view.return_value = {"slug": slug, "name": name, "langs": ["en", "es"], "now": now, "next": None}
+    worker.room.slug = slug
+    worker.room.name = name
+    worker.talk = talk
+    worker.language = "en"
+    worker.has_source = True
+    worker.view.return_value = {"slug": slug, "name": name, "langs": ["en", "es"], "now": None, "next": None}
     worker.status.return_value = status if status is not None else _status()
     worker.start = AsyncMock()
     worker.stop = AsyncMock()
     return worker
 
 
-def _autopilot() -> MagicMock:
+def _autopilot(next_talk: Talk | None = None) -> MagicMock:
     autopilot = MagicMock()
     autopilot.set_mode = AsyncMock()
     autopilot.mode.return_value = "manual"
+    autopilot.next_talk = AsyncMock(return_value=next_talk)
     return autopilot
 
 
-def _make_app(workers: dict | None = None, settings: Settings | None = None) -> FastAPI:
+def _db() -> MagicMock:
+    db = MagicMock()
+    db.cost_by_room = AsyncMock(return_value={})
+    db.log_event = AsyncMock()
+    return db
+
+
+def _make_app(workers: dict | None = None, settings: Settings | None = None, *, branding: dict | None = None) -> FastAPI:
     app = FastAPI()
     app.state.settings = settings if settings is not None else _settings()
     app.state.workers = workers if workers is not None else {}
     app.state.autopilot = _autopilot()
+    app.state.db = _db()
+    app.state.clock = RealClock()
+    app.state.bus = CaptionBus()
+    app.state.admin_events = AdminEvents()
     app.state.admin_secret = new_admin_secret()
     app.state.session_epoch = 0
+    if branding is not None:
+        app.state.branding = branding
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(admin_api.router)
     app.include_router(admin_api.api_router)
@@ -98,36 +136,38 @@ def _client(app: FastAPI, *, authenticated: bool = True) -> TestClient:
     return client
 
 
-# ---- GET /admin: the room list ---------------------------------------------
+# ---- GET /admin: the panel ---------------------------------------------------
 
 
-def test_admin_lists_rooms_with_state_and_talk() -> None:
-    w1 = _worker(
-        "room-1", "slug-1", "Sala Uno",
-        now={"talk_id": "t1", "title": "Charla X", "speakers": [], "language": "en"},
-        status=_status(state="green", talk_id="t1"),
-    )
+def _config(html: str) -> dict:
+    match = re.search(r'<script type="application/json" id="glosa-admin">(.*?)</script>', html, re.S)
+    assert match, "the page embeds its config for admin.js"
+    return json.loads(match.group(1))
+
+
+def test_admin_renders_a_monitor_per_room_with_its_talk() -> None:
+    w1 = _worker("room-1", "slug-1", "Sala Uno", talk=_talk("t1", "room-1", "Charla X"),
+                 status=_status(state="green", talk_id="t1", detail="ok", level_db=-20.0))
     w2 = _worker("room-2", "slug-2", "Sala Dos", status=_status(state="idle"))
     client = _client(_make_app(workers={"room-1": w1, "room-2": w2}))
 
     html = client.get("/admin").text
 
     assert "Sala Uno" in html and "Sala Dos" in html
-    assert "Charla X" in html
-    assert 'data-room-row' in html and 'data-room-id="room-1"' in html and 'data-room-id="room-2"' in html
-    assert 'data-action="start"' in html
-    assert 'data-action="stop"' in html
+    assert 'data-monitor="room-1"' in html and 'data-monitor="room-2"' in html
+    assert re.search(r'data-monitor="room-1" data-key="1"', html) and re.search(r'data-monitor="room-2" data-key="2"', html)
+    assert _config(html)["state"]["rooms"][0]["talk"]["title"] == "Charla X"  # the drawer shows it
 
 
 def test_admin_keys_rooms_by_id_not_slug() -> None:
     # id and slug deliberately differ: only "id" (never "slug-only") may
-    # appear as data-room-id, and start/stop must be reachable at the id.
+    # key a monitor, and start/stop must be reachable at the id.
     worker = _worker("room-id-1", "totally-different-slug", "Sala Uno")
     client = _client(_make_app(workers={"room-id-1": worker}))
 
     html = client.get("/admin").text
-    assert 'data-room-id="room-id-1"' in html
-    assert 'data-room-id="totally-different-slug"' not in html
+    assert 'data-monitor="room-id-1"' in html and 'data-track="room-id-1"' in html
+    assert 'data-monitor="totally-different-slug"' not in html
 
     response = client.post("/api/admin/rooms/room-id-1/start", headers=CSRF)
     assert response.status_code == 200
@@ -135,27 +175,124 @@ def test_admin_keys_rooms_by_id_not_slug() -> None:
 
 
 @pytest.mark.parametrize(
-    "state, css",
-    [("green", "live"), ("yellow", "degraded"), ("red", "down"), ("idle", "idle")],
+    "status, css, action",
+    [
+        (_status(state="green", talk_id="t", detail="ok", level_db=-20.0), "live", None),
+        (_status(state="yellow", talk_id="t", latency_p50_s=6.1, detail="latency 6.1s exceeds 5.0s"), "degraded", "reconnect"),
+        (_status(state="red", talk_id="t", detail="source is down: ffmpeg exited 5 times"), "down", "restart"),
+        (_status(state="idle"), "idle", None),
+    ],
+    ids=["live", "degraded", "down", "idle"],
 )
-def test_admin_renders_the_state_class_per_room_status(state: str, css: str) -> None:
-    worker = _worker("r1", "r1", "Sala Uno", status=_status(state=state))
-    client = _client(_make_app(workers={"r1": worker}))
+def test_admin_renders_each_room_in_its_state(status: RoomStatus, css: str, action: str | None) -> None:
+    talk = _talk("t", "r1", "Charla") if status.state != "idle" else None
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno", talk=talk, status=status)}))
 
-    html = client.get("/admin").text
+    html = client.get("/admin", headers={"Accept-Language": "es"}).text
 
-    assert f'strip strip--{css}"' in html
-    assert f'status status--{css}"' in html
-    assert f">{state}<" in html
+    assert f'class="monitor monitor--{css}" data-monitor="r1"' in html
+    assert f'<i class="led led--{css}" data-m-led></i>' in html
+    footer = re.search(r"<footer class=\"monitor__issue\" data-m-issue( hidden)?>(.*?)</footer>", html, re.S)
+    assert footer is not None
+    if action is None:
+        assert footer.group(1) == " hidden"  # a healthy or idle room stays calm: no metrics, no keys
+        assert 'class="attn attn--calm"' in html and "Todo en orden." in html
+    else:
+        assert footer.group(1) is None
+        assert f'data-action="{action}" data-room-id="r1"' in footer.group(2)
+        assert f"btn--{css}" in footer.group(2)  # the suggested key takes the state's colour
+        assert 'class="attn"' in html and f'attn__row attn__row--{css}" data-attn-row="r1"' in html
+    if css == "idle":
+        assert re.search(r'<div class="monitor__wait" data-m-wait>', html)
+        assert re.search(r'<div class="monitor__cc" data-m-cc lang="en" hidden>', html)
 
 
 def test_admin_shows_the_admin_only_raw_status_detail() -> None:
-    worker = _worker("r1", "r1", "Sala Uno", status=_status(state="red", detail="source is down: ffmpeg exited 5 times"))
+    status = _status(state="red", talk_id="t", detail="source is down: ffmpeg exited 5 times")
+    worker = _worker("r1", "r1", "Sala Uno", talk=_talk("t", "r1", "Charla"), status=status)
     client = _client(_make_app(workers={"r1": worker}))
+
+    html = client.get("/admin", headers={"Accept-Language": "es"}).text
+
+    assert "Fuente caída: ffmpeg exited 5 times." in html  # the Atención row
+    assert _config(html)["state"]["rooms"][0]["status"]["detail"] == "source is down: ffmpeg exited 5 times"
+
+
+def test_admin_page_has_the_hooks_admin_js_needs() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
 
     html = client.get("/admin").text
 
-    assert "source is down: ffmpeg exited 5 times" in html
+    for hook in ("data-admin", "data-tally", "data-budget", "data-budget-bar", "data-admin-clock", "data-attn",
+                 "data-attn-list", "data-wall", "data-log", "data-log-filter=\"alerts\"", "data-log-more",
+                 "data-timeline", "data-track=\"r1\"", "data-now", "data-next-change", "data-drawer", "data-scrim",
+                 "data-toast", 'data-tpl="room"', "data-d-start", "data-d-pick", "data-d-end", "data-d-reconnect",
+                 "data-mode=\"auto\"", "data-d-level", "data-d-raw", "data-d-log"):
+        assert hook in html, hook
+    # Task 14a's station-reload key stays hidden until a room turns out to be
+    # an emitter station (admin.js's renderStation()); Task 14b's "Probar con
+    # audio" and "Escuchar el audio" are wired in (the latter is its own
+    # widget, gated by its own poll -- glosa/web/static/js/listen.js).
+    assert 'data-slot="station-reload" hidden' in html
+    for hook in ('data-slot="test-audio"', "data-d-test-audio", 'data-test-sample="en"', 'data-test-sample="es"',
+                 "data-test-file", "data-listen", "data-listen-button", "data-listen-audio", "data-listen-status"):
+        assert hook in html, hook
+    config = _config(html)
+    assert config["streamUrl"].startswith("/api/admin/stream?lang=")
+    assert config["limits"] == {"latency": 5.0, "quality": 0.5, "level": -50.0}
+
+
+def test_admin_page_has_the_agenda_editing_hooks() -> None:
+    # Import and talk editing live in the same drawer, without native dialogs.
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    html = client.get("/admin", headers={"Accept-Language": "es"}).text
+
+    for hook in ("data-open-import", 'data-tpl="talk"', 'data-tpl="import"', "data-talk-form", 'name="glossary"',
+                 'type="datetime-local" name="start"', "data-t-delete", "data-t-confirm", "data-import-form",
+                 'type="file" name="file"', 'type="url" name="url"', "data-use-nerdearla", "data-i-result"):
+        assert hook in html, hook
+    assert "confirm(" not in html and "prompt(" not in html
+    assert "nerdearla.com" in _config(html)["nerdearlaUrl"]
+    assert client.get("/static/js/admin.js").text.count("window.confirm") == 0
+
+
+def test_admin_page_speaks_the_browser_language_or_the_chosen_one() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    spanish = client.get("/admin", headers={"Accept-Language": "es-AR,es"}).text
+    english = client.get("/admin", headers={"Accept-Language": "en-US,en"}).text
+    chosen = client.get("/admin?lang=es", headers={"Accept-Language": "en"}).text
+
+    assert '<html lang="es">' in spanish and "<b>Atención</b>" in spanish and "Registro" in spanish
+    assert '<html lang="en">' in english and "<b>Attention</b>" in english and "Import agenda" in english
+    assert '<html lang="es">' in chosen and _config(chosen)["i18n"]["log"] == "Registro"
+    assert 'href="?lang=en"' in spanish  # the switch
+
+
+def test_admin_page_shows_the_event_logo_next_to_the_mark() -> None:
+    logo = "/static/branding/nerdearla/nerdearla-logo-bw.svg"
+    app = _make_app(branding={"event_name": "Nerdearla 2026", "logo_url": logo})
+    client = _client(app)
+
+    html = client.get("/admin").text
+
+    assert re.search(r'class="wordmark"[^>]*>glosa</a>\s*<img class="event-logo" src="' + re.escape(logo), html)
+    assert "Nerdearla 2026" in html
+
+
+def test_admin_pages_link_only_assets_that_exist() -> None:
+    logo = "/static/branding/nerdearla/nerdearla-logo-bw.svg"
+    app = _make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")},
+                    branding={"event_name": "Nerdearla 2026", "logo_url": logo})
+    for path, authenticated in (("/admin", True), ("/admin/login", False)):
+        client = _client(app, authenticated=authenticated)
+        html = client.get(path).text
+        assert 'href="/static/css/glosa.css"' in html and 'src="/static/js/admin.js"' in html
+        refs = re.findall(r'(?:href|src)="(/static/[^"]+)"', html)
+        assert logo in refs
+        for ref in refs:
+            assert client.get(ref).status_code == 200, f"{path} links a missing {ref}"
 
 
 def test_admin_page_loads_the_design_system_and_its_own_js() -> None:
@@ -166,6 +303,135 @@ def test_admin_page_loads_the_design_system_and_its_own_js() -> None:
     assert 'href="/static/css/glosa.css"' in html
     assert 'src="/static/js/admin.js"' in html
     assert client.get("/static/js/admin.js").status_code == 200
+
+
+def test_admin_redirects_to_the_login_page_in_the_chosen_language() -> None:
+    client = _client(_make_app(), authenticated=False)
+
+    response = client.get("/admin?lang=en", follow_redirects=False)
+
+    assert response.status_code == 303 and response.headers["location"] == "/admin/login?lang=en"
+
+
+def test_the_login_page_is_the_panel_s_own() -> None:
+    client = _client(_make_app(), authenticated=False)
+
+    spanish = client.get("/admin/login", headers={"Accept-Language": "es"}).text
+    english = client.get("/admin/login?lang=en").text
+
+    assert 'class="login-page"' in spanish and 'class="masthead"' in spanish
+    assert 'action="/admin/login"' in spanish and 'name="password" type="password"' in spanish
+    assert ">Entrar</button>" in spanish and "data-admin-login-error" in spanish
+    assert ">Log in</button>" in english and _config(english)["page"] == "login"
+
+
+def test_the_drawer_is_a_modal_dialog_and_each_monitor_opens_it_with_a_button() -> None:
+    client = _client(_make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")}))
+
+    html = client.get("/admin").text
+
+    assert re.search(r'<aside class="drawer" id="admin-drawer" data-drawer role="dialog" aria-modal="true"', html)
+    assert re.search(r'<button class="monitor__open" type="button" aria-expanded="false" aria-controls="admin-drawer"'
+                     r'[^>]*>Sala Uno</button>', html)
+    article = re.search(r'<article [^>]*data-monitor="r1"[^>]*>', html).group(0)
+    assert "tabindex" not in article and "aria-expanded" not in article  # not on an article
+
+
+def test_an_issue_without_an_action_renders_no_action() -> None:
+    status = _status(state="red", talk_id="t", detail="payment blocked: budget exhausted")
+    worker = _worker("r1", "r1", "Sala Uno", talk=_talk("t", "r1", "Charla"), status=status)
+    client = _client(_make_app(workers={"r1": worker}))
+
+    html = client.get("/admin").text
+
+    assert 'data-action="None"' not in html
+    assert re.search(r'data-action="" data-room-id="r1" hidden', html)
+
+
+def test_an_emitter_room_gets_its_station_link_and_qr_in_the_panel_only() -> None:
+    station_room = _worker("st", "st", "Sala Estación")
+    station_room.room.source_type = "emitter"
+    file_room = _worker("r1", "r1", "Sala Uno")
+    file_room.room.source_type = "file"
+    client = _client(_make_app(workers={"st": station_room, "r1": file_room}))
+
+    html = client.get("/admin").text
+
+    stations = _config(html)["stations"]
+    assert list(stations) == ["st"]
+    # No proxy headers: the request's own base (TestClient's http://testserver).
+    assert stations["st"]["url"] == "http://testserver" + station_url("st", ADMIN_PASSWORD)
+    assert stations["st"]["qr"] == admin_api.qr_data_uri(stations["st"]["url"])
+    for hook in ("data-d-station-sec", "data-d-station-state", "data-d-station-url", "data-d-station-copy",
+                 "data-d-station-qr", 'data-slot="station-reload"'):
+        assert hook in html, hook
+    anonymous = _client(_make_app(workers={"st": station_room}), authenticated=False).get("/admin/login").text
+    assert station_url("st", ADMIN_PASSWORD).split("key=")[1] not in anonymous
+
+
+def _station_app() -> FastAPI:
+    station_room = _worker("st", "st", "Sala Estación")
+    station_room.room.source_type = "emitter"
+    return _make_app(workers={"st": station_room})
+
+
+def test_behind_a_proxy_the_station_link_and_its_qr_are_the_public_https_url() -> None:  # Ruling 52
+    # Caddy (deploy/Caddyfile) terminates TLS; uvicorn only trusts
+    # X-Forwarded-* from 127.0.0.1, so request.base_url says http://.
+    client = _client(_station_app())
+
+    html = client.get("/admin", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "glosa.example.org"}).text
+
+    station = _config(html)["stations"]["st"]
+    assert station["url"] == "https://glosa.example.org" + station_url("st", ADMIN_PASSWORD)
+    assert station["qr"] == admin_api.qr_data_uri(station["url"])  # the QR encodes that exact string
+
+
+@pytest.mark.parametrize(
+    ("headers", "base"),
+    [
+        ({}, "http://testserver"),
+        ({"X-Forwarded-Proto": "https"}, "https://testserver"),
+        ({"X-Forwarded-Proto": "https, http", "X-Forwarded-Host": "glosa.example.org, internal"},
+         "https://glosa.example.org"),
+        ({"X-Forwarded-Proto": "javascript"}, "http://testserver"),
+        ({"X-Forwarded-Host": "evil.example/path?x=1"}, "http://testserver"),
+        ({"Host": "glosa.local:8443", "X-Forwarded-Proto": "https"}, "https://glosa.local:8443"),
+    ],
+    ids=["own-base", "proto-only", "first-of-a-list", "bad-scheme", "bad-host", "host-header"],
+)
+def test_the_station_base_takes_only_a_sane_forwarded_scheme_and_host(headers: dict, base: str) -> None:
+    client = _client(_station_app())
+
+    station = _config(client.get("/admin", headers=headers).text)["stations"]["st"]
+
+    assert station["url"] == base + station_url("st", ADMIN_PASSWORD)
+
+
+def test_the_admin_pages_are_never_cached() -> None:  # they hold the station links (and keys)
+    app = _station_app()
+    assert _client(app).get("/admin").headers["cache-control"] == "no-store"
+    assert _client(app, authenticated=False).get("/admin/login").headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    ("logo", "shown", "mono"),
+    [
+        ("/static/branding/nerdearla/nerdearla-logo.svg", "/static/branding/nerdearla/nerdearla-logo-bw.svg", False),
+        ("/static/branding/nerdearla/nerdearla-logo-bw.svg", "/static/branding/nerdearla/nerdearla-logo-bw.svg", False),
+        ("https://cdn.example.org/event.png", "https://cdn.example.org/event.png", True),
+    ],
+    ids=["has-a-bw-variant", "already-bw", "no-variant"],
+)
+def test_the_admin_shows_the_event_logo_without_colour(logo: str, shown: str, mono: bool) -> None:
+    # Colour only for state: the official black-and-white version when the
+    # configured logo has one next to it, else the logo in greyscale.
+    app = _make_app(branding={"event_name": "Nerdearla 2026", "logo_url": logo})
+    for path, authenticated in (("/admin", True), ("/admin/login", False)):
+        html = _client(app, authenticated=authenticated).get(path).text
+        img = re.search(r'<img class="event-logo[^"]*" src="([^"]+)"', html)
+        assert img and img.group(1) == shown, path
+        assert ('class="event-logo event-logo--mono"' in html) is mono, path
 
 
 # ---- POST /api/admin/rooms/{id}/start, /stop -------------------------------
@@ -289,3 +555,17 @@ async def test_create_app_mounts_admin(tmp_path: Path) -> None:
 
     assert response.status_code == 303
     assert response.headers["location"] == "/admin/login"
+
+
+def test_restart_turns_only_no_talk_or_no_source_into_a_409() -> None:
+    from glosa.scheduler import NoTalkToRestart
+
+    app = _make_app(workers={"r1": _worker("r1", "r1", "Sala Uno")})
+    client = _client(app)
+    app.state.autopilot.restart = AsyncMock(side_effect=NoTalkToRestart("room 'r1' has no talk to restart"))
+    assert client.post("/api/admin/rooms/r1/restart", headers=CSRF).status_code == 409
+    app.state.autopilot.restart = AsyncMock(side_effect=ValueError("room 'r1' has no audio source"))
+    assert client.post("/api/admin/rooms/r1/restart", headers=CSRF).status_code == 409
+    app.state.autopilot.restart = AsyncMock(side_effect=KeyError("a bug inside worker.start"))
+    with pytest.raises(KeyError):  # a bug, not "no talk": no misleading 409
+        client.post("/api/admin/rooms/r1/restart", headers=CSRF)

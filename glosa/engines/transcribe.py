@@ -53,8 +53,14 @@ Events:
     the server may repeat an interim newer than the last one it sent us)
     loses that start, and so does the final of that segment if it starts
     the same way;
-  - a final that only repeats the closed segment (``STALE_MIN_WORDS`` or
-    more words), with nothing of a new segment shown, is dropped.
+  - a final that only repeats the closed segment, with nothing of a new
+    segment shown, is dropped.
+
+  Cutting or dropping an interim is reversible (the final rewrites the
+  segment); cutting or dropping a final is not, so a final is only touched
+  for a match of ``FINAL_STALE_MIN_WORDS`` (6) words or more. The server's
+  repeats had 8 to 45 words; a speaker repeating a short phrase ("Sí, sí,
+  sí." then "Sí, sí, sí, claro.", "Vamos a ver." twice) keeps it.
 
   Words are compared ignoring case and punctuation; a token that is only
   punctuation ("—", "¿") is skipped on both sides, and a repeat may stop
@@ -100,6 +106,7 @@ log = logging.getLogger(__name__)
 MODEL = "gemini-3.5-transcribe-live"
 MAX_VOCABULARY = 100  # spec: customVocabulary gets at most 100 terms
 STALE_MIN_WORDS = 3  # shorter closed segments are never cut off an interim: "Sí." then "Sí, claro"
+FINAL_STALE_MIN_WORDS = 6  # a final is only cut or dropped for a longer match (see above)
 _BYTES_PER_S = 16000 * 2  # PCM16 mono @ 16 kHz
 
 
@@ -257,7 +264,7 @@ class TranscribeLiveEngine:
         if cut is None:
             self._just_closed = None  # a clean interim: the server moved on
             return text
-        if cut >= len(text):
+        if cut >= len(text) or not _count_words(text[cut:]):
             log.info("transcribe: dropped a stale interim (the closed segment's text): %r", text)
             return ""
         log.info("transcribe: cut %d stale words off an interim: %r", _count_words(text[:cut]), text)
@@ -271,10 +278,10 @@ class TranscribeLiveEngine:
         if self._just_closed is None or not text:
             return text
         cut = _stale_cut(text, self._just_closed)
-        if cut is None:
-            return text
-        if cut >= len(text):
-            if self._open_text is None and _count_words(text) >= STALE_MIN_WORDS:
+        if cut is None or _count_words(text[:cut]) < FINAL_STALE_MIN_WORDS:
+            return text  # no final is ever cut for a short match: it may be a real repeat
+        if cut >= len(text) or not _count_words(text[cut:]):
+            if self._open_text is None:
                 log.info("transcribe: dropped a final that repeats the closed segment: %r", text)
                 return None
             return text
@@ -292,6 +299,9 @@ class TranscribeLiveEngine:
             event.meta["usd"] = self._usd_unreported
             self._usd_unreported = 0.0
         return event
+
+
+_OPENING = "¿¡([{«“"  # punctuation that opens the new words after a glued stale text
 
 
 def _norm(word: str) -> str:
@@ -342,8 +352,8 @@ def _stale_cut(text: str, closed: tuple[str, str]) -> int | None:
             end = i
     if end is None:
         return None
-    while end < len(text) and not text[end].isalnum():
-        end += 1
+    while end < len(text) and not text[end].isalnum() and text[end] not in _OPENING:
+        end += 1  # spaces and the closed segment's last punctuation, not "¿" or "¡" of the new one
     return end
 
 

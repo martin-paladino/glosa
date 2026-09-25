@@ -22,7 +22,13 @@ from glosa.audio.vad import EnergyVad
 from glosa.clock import FakeClock, RealClock
 from glosa.config import Settings
 from glosa.engines.fake import FakeEngine
-from glosa.engines.transcribe import MAX_VOCABULARY, MODEL, TranscribeLiveEngine
+from glosa.engines.transcribe import (
+    FINAL_STALE_MIN_WORDS,
+    MAX_VOCABULARY,
+    MODEL,
+    STALE_MIN_WORDS,
+    TranscribeLiveEngine,
+)
 from glosa.models import AudioChunk, EngineConfig, EngineEvent
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -272,6 +278,19 @@ def test_a_stale_text_between_the_last_interim_and_the_final_is_cut_whole() -> N
     assert [ev.text for ev in events] == ["O", "O dentro de este"]
 
 
+def test_an_opening_question_mark_of_the_new_segment_is_kept() -> None:
+    engine = _engine()
+    closed = "Qué ha ocurrido en este particular cluster."
+    _map_all(engine, [_interim(closed.rstrip(".")), _final(closed)])
+
+    events = _map_all(engine, [
+        _interim(closed + "¿Qué pasa"),
+        _interim(closed + "¡"),  # only an opening mark so far: nothing to show
+    ])
+
+    assert [ev.text for ev in events] == ["¿Qué pasa"]
+
+
 def test_a_longer_word_is_not_the_closed_segments_word() -> None:
     engine = _engine()
     _map_all(engine, [_interim("en este particular cluster"), {"serverContent": {"inputTranscription": {
@@ -287,6 +306,68 @@ def test_a_stale_repeat_cut_in_the_middle_of_a_word_is_dropped() -> None:
     _map_all(engine, [INTERIM_3, FINAL_1])
 
     assert engine._map_message(_interim("Por cierto, cuando ustedes reci")) == []
+
+
+def _final(text: str) -> dict:
+    return {"serverContent": {"inputTranscription": {"text": text}}}
+
+
+@pytest.mark.parametrize(
+    ("said_before", "said_now"),
+    [
+        ("Sí, sí, sí.", "Sí, sí, sí, claro."),
+        ("Esto es importante.", "Esto es importante porque escala."),
+        ("Vamos a ver.", "Vamos a ver."),
+    ],
+    ids=["si-si-si-claro", "starts-the-same", "said-twice"],
+)
+def test_a_short_real_repeat_keeps_its_final(said_before: str, said_now: str) -> None:
+    """Fix round 2: interims of a real repeat may lose the repeated start
+    (the final corrects them), but a final is only cut or dropped for a
+    long match (FINAL_STALE_MIN_WORDS): the server's repeats had 8+ words."""
+    engine = _engine()
+    _map_all(engine, [_interim(said_before.rstrip(".")), _final(said_before)])
+    words = said_now.rstrip(".").split()
+
+    events = _map_all(engine, [_interim(" ".join(words[:n])) for n in range(1, len(words) + 1)])
+    events += engine._map_message(_final(said_now))
+
+    assert events[-1].kind == "source_final" and events[-1].text == said_now
+
+
+def test_the_server_repeats_seen_live_are_long_enough_to_cut_finals() -> None:
+    assert STALE_MIN_WORDS == 3 and FINAL_STALE_MIN_WORDS == 6
+
+
+GLUED = ROOT / "tests" / "fixtures" / "tr_es_glued.jsonl"
+
+
+def test_replay_of_live_run_4_server_strings() -> None:
+    """Live run 4 (2026-09-24), the server's interims and finals verbatim:
+    after 3 of 8 finals every interim of the next segment came with the
+    closed segment's text glued in front. Replayed through the engine: no
+    shown text starts with the segment closed before it, the new segments
+    start with their own words ("de", "¿Qué", "Que"), the finals pass
+    unchanged."""
+    rows = [json.loads(line) for line in GLUED.read_text(encoding="utf-8").splitlines()]
+    engine = _engine()
+    closed: str | None = None
+    firsts: list[str] = []
+    finals: list[str] = []
+    for row in rows:
+        raw = _interim(row["interim"]) if "interim" in row else _final(row["final"])
+        for ev in engine._map_message(raw):
+            if ev.kind == "source_final":
+                finals.append(ev.text)
+                closed = ev.text
+            elif closed is not None:
+                firsts.append(ev.text)
+                closed_words = [w for w in closed.lower().split()][:3]
+                assert ev.text.lower().split()[:3] != closed_words, ev.text
+                closed = None
+
+    assert finals == [row["final"] for row in rows if "final" in row]
+    assert firsts == ["En nodos", "Pero", "de", "¿Qué", "O", "Esa", "Que"]
 
 
 def test_after_a_clean_interim_nothing_is_cut_any_more() -> None:

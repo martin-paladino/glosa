@@ -18,11 +18,13 @@ sites (lines ~440, ~464, ~479 of that file).
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from glosa.models import Talk
 from glosa.web import app as app_module
-from glosa.web.app import RedactStationKeyFilter
+from glosa.web.app import RedactStationKeyFilter, _export_talk
 
 
 def _access_record(path: str, status: int = 200) -> logging.LogRecord:
@@ -186,6 +188,69 @@ def test_main_installs_the_redact_filter_and_bounds_ws_frame_size(monkeypatch: p
         # Both are global singletons: don't leak filters into other tests.
         access_logger.filters = before_access
         error_logger.filters = before_error
+
+
+# ---------------------------------------------------- _export_talk (task-11r-brief.md item 5 / decision 1)
+
+
+class _FakeAdminEvents:
+    def __init__(self) -> None:
+        self.published: list[tuple[str, dict]] = []
+
+    def publish(self, kind: str, data: dict) -> None:
+        self.published.append((kind, data))
+
+
+def _talk(talk_id: str, *, language: str = "en", targets: tuple[str, ...] = ("es",)) -> Talk:
+    start = datetime(2026, 9, 24, 10, 0, tzinfo=timezone.utc)
+    return Talk(
+        id=talk_id, room_id="r1", title="A Talk", speakers=[], language=language, targets=list(targets),
+        engine="fast", start=start, end=start + timedelta(minutes=20), abstract="", tags=[], glossary=[],
+        status="done", actual_start=start, actual_end=start + timedelta(minutes=20),
+    )
+
+
+async def test_export_talk_skips_a_free_session_entirely(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build_corrected(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        return "ready"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
+    events = _FakeAdminEvents()
+    talk = _talk("free-r1-20260924T100000")
+
+    await _export_talk(talk, db=object(), settings=_FakeSettings(), admin_events=events)
+
+    assert calls == []
+    assert events.published == []
+
+
+async def test_export_talk_builds_every_target_language_but_not_the_source_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build_corrected(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        return "ready" if lang == "es" else "failed"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
+    events = _FakeAdminEvents()
+    talk = _talk("t1", language="en", targets=("en", "es", "pt"))  # "en" target == source: skipped
+
+    await _export_talk(talk, db=object(), settings=_FakeSettings(), admin_events=events)
+
+    assert sorted(calls) == [("t1", "es"), ("t1", "pt")]
+    assert sorted(events.published) == [
+        ("export_failed", {"talk_id": "t1", "room_id": "r1", "lang": "pt"}),
+        ("export_ready", {"talk_id": "t1", "room_id": "r1", "lang": "es"}),
+    ]
+
+
+class _FakeSettings:
+    gemini_api_key = "unused"
 
 
 # No TestClient-based integration test for the WS 4401 case: Starlette's

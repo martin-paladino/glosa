@@ -94,6 +94,17 @@ CREATE TABLE IF NOT EXISTS costs (
     units     REAL NOT NULL,
     usd       REAL NOT NULL
 );
+
+-- task-11r-brief.md Ruling 1: the "corrected" export's build status per
+-- (talk_id, lang), pending -> ready|failed. The "live" version has no
+-- status row -- it is always built on the fly from segments(version=live).
+CREATE TABLE IF NOT EXISTS exports (
+    talk_id    TEXT NOT NULL,
+    lang       TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (talk_id, lang)
+);
 """
 
 _TALK_COLUMNS = (
@@ -313,6 +324,15 @@ class Database:
         rows = await self._run(lambda con: con.execute(sql).fetchall())
         return [_talk_from_row(r) for r in rows]
 
+    async def get_done_talks(self) -> list[Talk]:
+        """Every finished agenda talk (free sessions excluded), newest
+        first: task-11r-brief.md's ``GET /api/admin/exports`` listing."""
+        sql = (
+            "SELECT * FROM talks WHERE status = 'done' AND id NOT LIKE ? ORDER BY \"start\" DESC"
+        )
+        rows = await self._run(lambda con: con.execute(sql, (f"{FREE_TALK_PREFIX}%",)).fetchall())
+        return [_talk_from_row(r) for r in rows]
+
     async def get_last_started_talk(self, room_id: str) -> Talk | None:
         """The room's talk (free sessions included) with the latest
         ``actual_start``, or None if none ever started."""
@@ -384,6 +404,29 @@ class Database:
         sql = "SELECT * FROM segments WHERE talk_id = ? AND lang = ? AND version = ? ORDER BY t_start, id"
         rows = await self._run(lambda con: con.execute(sql, (talk_id, lang, version)).fetchall())
         return [Segment(**dict(r)) for r in rows]
+
+    async def delete_segments(self, talk_id: str, lang: str, version: str) -> None:
+        """Clears a talk's segments of one (lang, version) -- used before
+        (re)writing a "corrected" export (glosa/text/corrector.py
+        build_corrected) so a retry never leaves duplicate rows."""
+        sql = "DELETE FROM segments WHERE talk_id = ? AND lang = ? AND version = ?"
+        await self._run(lambda con: con.execute(sql, (talk_id, lang, version)))
+
+    # ------------------------------------------------------------ exports
+
+    async def set_export_status(self, talk_id: str, lang: str, status: str) -> None:
+        """Upsert the "corrected" export's build status for (talk_id, lang):
+        "pending" | "ready" | "failed" (task-11r-brief.md Ruling 1)."""
+        sql = (
+            "INSERT INTO exports (talk_id, lang, status, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (talk_id, lang) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at"
+        )
+        await self._run(lambda con: con.execute(sql, (talk_id, lang, status, _now_iso())))
+
+    async def get_export_status(self, talk_id: str, lang: str) -> str | None:
+        sql = "SELECT status FROM exports WHERE talk_id = ? AND lang = ?"
+        row = await self._run(lambda con: con.execute(sql, (talk_id, lang)).fetchone())
+        return row["status"] if row is not None else None
 
     # ------------------------------------------------------------ events
 

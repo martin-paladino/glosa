@@ -29,6 +29,7 @@ from glosa.config import RoomCfg, Settings
 from glosa.db import init_db
 from glosa.models import AudioChunk, EngineEvent, Room, Talk
 from glosa.scheduler import Autopilot
+from glosa.web import app as app_module
 from glosa.web.app import create_app
 from glosa.web.auth import COOKIE_NAME, sign_session
 
@@ -308,6 +309,24 @@ async def test_boot_resumes_a_manual_room_that_crashed_mid_talk_and_keeps_the_ot
         assert (await app.state.db.get_talk("x")).status == "live"
 
 
+async def test_boot_resumes_the_live_talk_not_the_last_started_one(tmp_path: Path) -> None:  # Ruling 46 / 6A
+    """The reviewer's scenario: room r1 ran talk a, then talk b (a's
+    actual_start is earlier), then a was reopened -- so a is live again but
+    b (done) still has the later actual_start. A crash-restart must resume
+    a, not b."""
+    settings = _settings(tmp_path)
+    a, b = _talk("a", "r1", -60, 60), _talk("b", "r1", -60, 60)
+    await _seed(settings, a, b, modes={"r1": "manual"})
+    await _mark(settings, "b", status="live", actual_start=T0 - timedelta(minutes=50))
+    await _mark(settings, "b", status="done", actual_end=T0 - timedelta(minutes=40))
+    await _mark(settings, "a", status="live", actual_start=T0 - timedelta(minutes=30))
+    await _mark(settings, "b", status="done", actual_start=T0 - timedelta(minutes=20))  # reopened+closed again
+
+    async with _open(settings) as (app, _):
+        r1 = app.state.workers["r1"]
+        assert r1.talk is not None and r1.talk.id == "a"
+
+
 async def test_boot_closes_live_rows_that_no_room_resumed(tmp_path: Path) -> None:  # stale live rows
     settings = _settings(tmp_path)
     past = _talk("past", "r1", -120, -60)  # r1 crashed during it; its slot is over
@@ -328,6 +347,34 @@ async def test_boot_closes_live_rows_that_no_room_resumed(tmp_path: Path) -> Non
         closed = [e for e in await db.recent_events(30) if e.type == "stale_live"]
         assert sorted(e.room_id for e in closed) == ["r1", "r2"]
         assert (await db.get_talk(r2.id)).status == "live"  # the new one is untouched
+
+
+async def test_boot_runs_on_talk_end_for_talks_it_closed_as_stale(tmp_path: Path) -> None:
+    """task-11r-brief.md item 5: a talk the boot closes as stale never goes
+    through RoomWorker._end_talk (no worker is running it), so its own
+    on_talk_end never fires on its own -- the boot must run it directly, the
+    same hook create_app(on_talk_end=...) wires up for every other talk
+    end, with status/actual_end already updated (done, boot time)."""
+    settings = _settings(tmp_path)
+    past = _talk("past", "r1", -120, -60)
+    old_free = _talk("free-r2-20300924T080000", "r2", -360, 360)
+    await _seed(settings, past, old_free)
+    await _mark(settings, "past", status="live", actual_start=T0 - timedelta(minutes=119))
+    await _mark(settings, old_free.id, status="live", actual_start=T0 - timedelta(minutes=360))
+
+    ended: list[tuple[str, str, datetime | None]] = []
+
+    async def hook(talk: Talk) -> None:
+        ended.append((talk.id, talk.status, talk.actual_end))
+
+    async with _open(settings, on_talk_end=hook):
+        pass
+
+    stale_ended = {talk_id: (status, end) for talk_id, status, end in ended if talk_id in ("past", old_free.id)}
+    assert set(stale_ended) == {"past", old_free.id}
+    for status, actual_end in stale_ended.values():
+        assert status == "done"
+        assert actual_end is not None and T0 <= actual_end < T0 + timedelta(seconds=10)
 
 
 # ------------------------------------------------- integration: engine_mode fake
@@ -411,6 +458,55 @@ async def test_a_talk_end_is_published_and_reaches_the_app_hook(tmp_path: Path) 
     talk_ends = [e.data for e in published if e.kind == "talk_ended"]
     assert [(d["talk_id"] == "t", d["free"]) for d in talk_ends] == [(False, True), (True, False)]
     assert {"room_mode", "talk_started"} <= {e.kind for e in published}
+
+
+async def test_talk_end_builds_the_corrected_export_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Case 11.3: ending a talk with target languages queues
+    build_corrected in the background -- the same hook app_from_env wires
+    up in production (glosa.web.app._export_talk, on create_app's
+    on_talk_end) -- and the export status goes pending -> ready, with an
+    export_ready admin event published. build_corrected itself is
+    monkeypatched (its own tests cover its behavior in isolation); this one
+    is about the wiring: a talk ending really reaches it."""
+    calls: list[tuple[str, str]] = []
+
+    async def fake_build_corrected(talk_id, lang, *, db, api_key, model="gemini-3.8-flash"):
+        calls.append((talk_id, lang))
+        await db.save_segment(talk_id, "r1", lang, "translation", "corrected", "Hola.", 0.0, 1.0)
+        await db.set_export_status(talk_id, lang, "ready")
+        return "ready"
+
+    monkeypatch.setattr(app_module, "build_corrected", fake_build_corrected)
+
+    settings = _settings(tmp_path)
+    holder: dict = {}
+
+    async def hook(talk: Talk) -> None:
+        app = holder["app"]
+        await app_module._export_talk(talk, db=app.state.db, settings=settings, admin_events=app.state.admin_events)
+
+    async with _open(settings, on_talk_end=hook) as (app, client):
+        holder["app"] = app
+        await app.state.db.insert_talks([_talk("t", "r1", 0, 30)])
+        sub = app.state.admin_events.subscribe()
+
+        await client.post("/api/admin/rooms/r1/start-talk", json={"talk_id": "t"})
+        await client.post("/api/admin/rooms/r1/end-talk")
+        await app.state.workers["r1"].drain_hooks()
+
+        assert calls == [("t", "es")]
+        assert await app.state.db.get_export_status("t", "es") == "ready"
+        saved = await app.state.db.get_segments("t", "es", "corrected")
+        assert [s.text for s in saved] == ["Hola."]
+
+        published = []
+        while not sub.empty():
+            published.append(sub.get_nowait())
+    assert any(
+        e.kind == "export_ready" and e.data == {"talk_id": "t", "room_id": "r1", "lang": "es"} for e in published
+    )
 
 
 async def test_the_lifespan_ticks_the_autopilot_and_cancels_the_loop_on_shutdown(

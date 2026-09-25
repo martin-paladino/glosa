@@ -21,7 +21,12 @@ rooms. The lifespan:
      every room and gives the talk-end hooks ``HOOK_GRACE_S``.
 
 Every talk that ends publishes ``talk_ended`` on ``admin_events``, then goes
-to ``create_app(on_talk_end=...)`` if given (Task 11: exports).
+to ``create_app(on_talk_end=...)`` if given -- generic extensibility (tests
+inject their own hook this way); ``app_from_env()`` (the real entry point)
+wires it to ``_export_talk`` (Task 11-rest: rebuilds every target
+language's "corrected" export in the background). A talk the boot closes as
+stale (``_close_stale_live_talks``, never routed through a RoomWorker's own
+``on_talk_end``) gets the same hook run for it directly.
 
 ``app.state``:
   - ``settings``, ``clock``, ``bus`` (CaptionBus), ``db`` (Database, once
@@ -102,6 +107,7 @@ from glosa.engines.transcribe import TranscribeLiveEngine
 from glosa.models import EngineConfig, Room, Talk
 from glosa.room import IngestFactory, RoomWorker, TalkEndHook, is_free_talk
 from glosa.scheduler import LEAD_S, TICK_S, Autopilot
+from glosa.text.corrector import build_corrected
 from glosa.web import admin_api, admin_stream, pages, public_api, station
 from glosa.web.admin_events import AdminEvents
 from glosa.web.auth import new_admin_secret
@@ -328,7 +334,7 @@ def create_app(
                 )
             autopilot = Autopilot(db, workers, clock, lead_s=LEAD_S, tz=settings.timezone, events=admin_events)
             app.state.autopilot = autopilot
-            await _boot_rooms(autopilot, workers, db, clock.wall())
+            await _boot_rooms(autopilot, workers, db, clock.wall(), on_talk_end)
             pilot = asyncio.create_task(autopilot.run(autopilot_interval_s), name="autopilot")
             yield
         finally:
@@ -378,7 +384,13 @@ def create_app(
     return app
 
 
-async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db, boot: datetime) -> None:
+async def _boot_rooms(
+    autopilot: Autopilot,
+    workers: dict[str, RoomWorker],
+    db,
+    boot: datetime,
+    on_talk_end: TalkEndHook | None = None,
+) -> None:
     """What each room runs at startup:
 
       1. the autopilot's tick reopens whatever the agenda says is on now in
@@ -389,7 +401,11 @@ async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db, 
       3. an auto room with a source that the autopilot does not run (no
          agenda talks today) starts its free session (Task 5, Ruling 33);
       4. any talk still ``live`` that no room now runs (left by a crash) is
-         closed: ``done``, ``actual_end`` = boot time.
+         closed: ``done``, ``actual_end`` = boot time -- and, since that
+         never goes through RoomWorker._end_talk, ``on_talk_end`` (Task 11:
+         exports) is run for it here too (task-11r-brief.md item 5): such a
+         talk's on_talk_end never fired on its own, so its corrected export
+         would otherwise never get built.
     """
     try:
         await autopilot.tick()
@@ -409,14 +425,18 @@ async def _boot_rooms(autopilot: Autopilot, workers: dict[str, RoomWorker], db, 
             owned = False
         if not owned:
             await _start_free_session(worker, db)
-    await _close_stale_live_talks(workers, db, boot)
+    await _close_stale_live_talks(workers, db, boot, on_talk_end)
 
 
 async def _resume_manual_room(worker: RoomWorker, db) -> None:
     room_id = worker.room.id
     try:
-        last = await db.get_last_started_talk(room_id)
-        if last is None or last.status != "live":
+        # Ruling 46 / task-11r-brief.md Ruling 6A: the room's live talk, not
+        # its last-started one -- a talk reopened after a later one (A after
+        # B) can have an earlier actual_start than a since-done B, so "last
+        # started" would wrongly resume B.
+        last = await db.get_live_talk(room_id)
+        if last is None:
             return
         await worker.start(last)
         await db.log_event(room_id, "info", "resumed", f"{last.id}: still live when the server stopped")
@@ -428,7 +448,9 @@ async def _resume_manual_room(worker: RoomWorker, db) -> None:
             log.exception("room %s: could not log the failure", room_id)
 
 
-async def _close_stale_live_talks(workers: dict[str, RoomWorker], db, boot: datetime) -> None:
+async def _close_stale_live_talks(
+    workers: dict[str, RoomWorker], db, boot: datetime, on_talk_end: TalkEndHook | None = None
+) -> None:
     held = {w.talk.id for w in workers.values() if w.talk is not None}
     try:
         for talk in await db.get_live_talks():
@@ -437,6 +459,12 @@ async def _close_stale_live_talks(workers: dict[str, RoomWorker], db, boot: date
             await db.update_talk(talk.id, status="done", actual_end=boot)
             message = f"{talk.id}: still live from a previous run, closed"
             await db.log_event(talk.room_id, "warning", "stale_live", message)
+            if on_talk_end is not None:
+                talk.status, talk.actual_end = "done", boot
+                try:
+                    await on_talk_end(talk)
+                except Exception:
+                    log.exception("room %s: on_talk_end failed for the stale talk %s", talk.room_id, talk.id)
     except Exception:
         log.exception("could not close the talks left live by a previous run")
 
@@ -453,11 +481,49 @@ async def _start_free_session(worker: RoomWorker, db) -> None:
             log.exception("room %s: could not log the failure", worker.room.id)
 
 
+async def _export_talk(talk: Talk, *, db, settings: Settings, admin_events: AdminEvents) -> None:
+    """Task 11-rest, decision 1: after a talk ends (through RoomWorker's own
+    on_talk_end, or _close_stale_live_talks above for one the boot closed),
+    rebuild the "corrected" export for every one of the talk's TARGET
+    languages (never its own spoken language, never a free session --
+    glosa/text/corrector.py build_corrected does the actual re-translation
+    and db.exports pending -> ready|failed bookkeeping). Each language's
+    outcome is published as an export_ready/export_failed admin event. This
+    is what create_app(on_talk_end=...) is wired to in app_from_env(); it
+    already runs in the background (RoomWorker._end_talk spawns and tracks
+    the hook, drained with HOOK_GRACE_S at shutdown), so a talk ending never
+    waits on it.
+    """
+    if is_free_talk(talk.id):
+        return
+    for lang in talk.targets:
+        if lang == talk.language:
+            continue
+        status = await build_corrected(talk.id, lang, db=db, api_key=settings.gemini_api_key)
+        admin_events.publish(
+            "export_ready" if status == "ready" else "export_failed",
+            {"talk_id": talk.id, "room_id": talk.room_id, "lang": lang},
+        )
+
+
 def app_from_env() -> FastAPI:
     """Factory for ``uvicorn --factory glosa.web.app:app_from_env``."""
     env_file = os.environ.get("GLOSA_ENV_FILE", ".env")
     config = os.environ.get("GLOSA_CONFIG", "config.yaml")
-    return create_app(Settings.load(env_path=env_file, config_path=config))
+    settings = Settings.load(env_path=env_file, config_path=config)
+    # _export_talk needs app.state.db/admin_events, which don't exist until
+    # create_app's lifespan starts -- but by the time any talk can actually
+    # end (a request has to arrive first), app_from_env has long since
+    # returned and populated this holder. See _export_talk's docstring.
+    app_holder: dict[str, FastAPI] = {}
+
+    async def on_talk_end(talk: Talk) -> None:
+        app = app_holder["app"]
+        await _export_talk(talk, db=app.state.db, settings=settings, admin_events=app.state.admin_events)
+
+    app = create_app(settings, on_talk_end=on_talk_end)
+    app_holder["app"] = app
+    return app
 
 
 def main() -> None:

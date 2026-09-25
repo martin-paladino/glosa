@@ -20,8 +20,14 @@ screens -- all unattended, all day, reloadable from the admin panel.
     once and ``{"type": "level", "db": ...}` once a second; the server
     replies ``{"type": "ack"}`` and, for a remote reload, sends
     ``{"type": "reload"}`` unprompted. A missing/wrong ``key`` closes the
-    handshake with code 4401 (Ruling 38); a second connection for the same
-    room replaces the first, which is closed with 4409 (StationHub.connect).
+    handshake with code 4401 (Ruling 38); a second (normal) connection for
+    the same room replaces the first, which is closed with 4409
+    (StationHub.connect). ``?standby=1`` (Ruling 62, round 2): a station
+    that was just replaced retries as a standby attempt instead of sitting
+    dead -- accepted (promoted to active, normal flow) only if the room has
+    no active station right now, otherwise the standby attempt itself is
+    the one closed with 4409, leaving whatever is active untouched. The
+    manual "Tomar el control" button always does a normal connect.
   - ``POST /api/admin/rooms/{room_id}/station/reload`` (``api_router``:
     ``require_admin`` + ``require_csrf_header``, glosa/web/auth.py -- same
     dependencies as ``glosa/web/admin_api.py``'s ``api_router``, a separate
@@ -67,6 +73,9 @@ log = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+# B-Minor #8: the page embeds the station key (config.wsUrl's ?key=...),
+# same as admin_api.py's _PAGE_HEADERS for the admin panel's station links.
+_PAGE_HEADERS = {"Cache-Control": "no-store"}
 
 # Ruling 38: hex digest length the station key is truncated to.
 STATION_KEY_LEN = 32
@@ -150,7 +159,7 @@ def station_page(room_id: str, request: Request, key: str = ""):
         "now": (now | {"speakers_text": join_names(list(now.get("speakers") or []), ui)}) if now else None,
         "config": _room_js_config(worker, ui, key),
     }
-    return templates.TemplateResponse(request, "station.html", context)
+    return templates.TemplateResponse(request, "station.html", context, headers=_PAGE_HEADERS)
 
 
 @router.get("/emitter/{room_id}", include_in_schema=False)
@@ -180,7 +189,12 @@ def _room_js_config(worker: RoomWorker, ui: Lang, key: str) -> dict:
     default_lang = ui if ui in langs else (langs[0] if langs else ui)
     return {
         "slug": worker.room.slug,
-        "streamBase": f"/api/stream/{worker.room.slug}/",
+        # B-I2: public_api._resolve_worker only accepts a room's slug in
+        # "all" mode -- in qr_only, /api/stream/{slug}/... 404s. The
+        # public_token resolves in both modes, so use it unconditionally
+        # (the station is a stage screen, not the audience UI, so there's
+        # no reason to prefer the prettier slug the way pages.py does).
+        "streamBase": f"/api/stream/{worker.room.public_token}/",
         "wsUrl": f"/ws/station/{worker.room.id}?key={key}",
         "langs": langs,
         "defaultLang": default_lang,
@@ -211,8 +225,15 @@ async def station_ws(websocket: WebSocket, room_id: str) -> None:
         await websocket.close(code=WS_INVALID_KEY)
         return
 
+    standby = websocket.query_params.get("standby") == "1"
     await websocket.accept()
-    generation = await hub.connect(room_id, websocket)
+    generation = await hub.connect(room_id, websocket, standby=standby)
+    if generation is None:
+        # Ruling 62: a standby attempt while another station is already
+        # active is closed (4409) by hub.connect() itself, above, without
+        # touching that active connection -- nothing to register or clean
+        # up here.
+        return
     buffer = bytearray()
     try:
         while True:

@@ -346,7 +346,15 @@ def logout(request: Request):
     # in the very same second as a logout get wrongly rejected, because
     # sign_session floors issued_at to whole seconds. An epoch has no such
     # boundary to get wrong.)
-    request.app.state.session_epoch += 1
+    #
+    # B-C1: this route has no auth dependency (an unauthenticated visitor
+    # must be able to hit "log out" from a stale/expired cookie state), so
+    # only bump the shared epoch when the caller is actually authenticated.
+    # Otherwise an anonymous POST -- a curl loop, or an auto-submitting form
+    # on any page, since SameSite=Lax still lets it through -- would log
+    # every admin out repeatedly.
+    if is_authenticated(request):
+        request.app.state.session_epoch += 1
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(COOKIE_NAME, path="/")
     return response

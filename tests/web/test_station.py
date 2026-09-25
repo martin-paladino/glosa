@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -42,14 +44,23 @@ def _settings(**overrides) -> Settings:
     return Settings(**values)
 
 
-def _worker(room_id: str = "r1", slug: str | None = None, name: str = "Sala Uno") -> MagicMock:
+def _worker(
+    room_id: str = "r1", slug: str | None = None, name: str = "Sala Uno", public_token: str | None = None
+) -> MagicMock:
     worker = MagicMock()
     worker.room.id = room_id
     worker.room.slug = slug or room_id
     worker.room.name = name
+    worker.room.public_token = public_token or f"tok-{room_id}"
     worker.langs.return_value = ["en", "es"]
     worker.view.return_value = {"now": None}
     return worker
+
+
+def _room_config(html: str) -> dict:
+    match = re.search(r'<script type="application/json" id="glosa-room">(.*?)</script>', html, re.S)
+    assert match, "expected a #glosa-room JSON script tag"
+    return json.loads(match.group(1))
 
 
 def _make_app(workers: dict | None = None, settings: Settings | None = None) -> FastAPI:
@@ -147,6 +158,85 @@ def test_station_page_200_with_a_valid_key() -> None:
 
     assert response.status_code == 200
     assert "Sala Uno" in response.text
+
+
+def test_station_streambase_uses_the_room_public_token_not_the_slug() -> None:
+    # B-I2: the station page's streamBase must resolve in qr_only too --
+    # /api/stream/{slug}/... 404s there (public_api._resolve_worker only
+    # accepts a room's public_token in that mode), which left the stage
+    # screens stuck retrying "Reconectando" forever. The token resolves in
+    # "all" mode as well, so this is unconditional, not mode-dependent.
+    worker = _worker(public_token="tok-r1-secret")
+    client = _client(_make_app(workers={"r1": worker}))
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    response = client.get(f"/station/r1?key={key}")
+
+    assert response.status_code == 200
+    config = _room_config(response.text)
+    assert config["streamBase"] == "/api/stream/tok-r1-secret/"
+
+
+def test_station_page_has_a_replaced_by_another_station_block() -> None:
+    # B-I4: StationHub.connect closes the older socket with 4409 ("replaced
+    # by another station") when a second client opens the same room. The
+    # page needs a hidden block station.js can reveal instead of silently
+    # reconnecting (which would just supersede the other client back,
+    # forever) -- a clear message plus a "take over" control that
+    # reconnects deliberately. No JS harness covers station.js (unlike
+    # room.js/room_js_harness.js), so this is the template/i18n half of the
+    # fix: the markup and hooks station.js needs are present and correctly
+    # localized; the close-code branch itself is a code-reading check on
+    # static/js/station.js below.
+    client = _client(_make_app())
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    response = client.get(f"/station/r1?key={key}", headers={"Accept-Language": "es"})
+
+    html = response.text
+    assert "data-replaced" in html
+    assert "data-retake" in html
+    assert "Esta estación se abrió en otro equipo" in html
+    assert "Tomar el control" in html
+
+
+def test_station_js_does_not_reconnect_on_4409_and_offers_a_take_over_button() -> None:
+    # Code-reading check (see note above): station.js must special-case the
+    # StationHub's 4409 close code by NOT calling its normal reconnect path,
+    # and must wire a click on the take-over control to reconnect instead.
+    js = (Path(station.__file__).parent / "static" / "js" / "station.js").read_text()
+    assert "4409" in js
+    assert "data-retake" in js
+
+
+def test_station_js_retries_as_standby_every_10s_instead_of_sitting_dead() -> None:
+    # Ruling 62 (round 2): a 4409 must not be a one-way trap any more --
+    # station.js has to retry as a ?standby=1 attempt on a fixed 10 s
+    # interval (not the growing backoff used for ordinary drops), so a
+    # transient replacer (e.g. an admin's preview tab) leaving lets the real
+    # station recover on its own. The URL-building/state-transition logic
+    # itself is exercised for real under Node in test_station_js.py (this
+    # file has no DOM/WebSocket harness); this is a code-reading check that
+    # the runtime wiring calls into it.
+    js = (Path(station.__file__).parent / "static" / "js" / "station.js").read_text()
+    assert "standby=1" in js or '"standby"' in js
+    assert "10000" in js  # STANDBY_RETRY_MS
+    assert "scheduleStandbyRetry" in js
+    assert "stationWsUrl" in js and "nextStationAction" in js
+
+
+def test_station_page_sends_cache_control_no_store() -> None:
+    # B-Minor #8: the station page embeds the station key in its JSON
+    # config (config.wsUrl's ?key=...), same as the admin panel embedding
+    # station links -- admin_api.py's pages already send this header
+    # (_PAGE_HEADERS); the station page didn't.
+    client = _client(_make_app())
+    key = station.station_key(ADMIN_PASSWORD, "r1")
+
+    response = client.get(f"/station/r1?key={key}")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_station_page_403_without_a_key() -> None:
@@ -253,6 +343,47 @@ def test_ws_second_connection_replaces_the_first_with_4409() -> None:
             assert excinfo.value.code == 4409
         assert app.state.station_hub.info("r1").connected is False
     # closing the (already-superseded) ws1 context must not un-set that.
+
+
+def test_ws_standby_connection_is_rejected_with_4409_while_active_and_active_keeps_working() -> None:
+    """Ruling 62: a ?standby=1 attempt is closed with 4409 at once while a
+    station is already active -- and that active station is never touched,
+    unlike a normal second connection (which always replaces it)."""
+    app = _make_app()
+    client = TestClient(app)
+    hub: StationHub = app.state.station_hub
+
+    with client.websocket_connect(_ws_url()) as ws1:
+        ws1.send_json({"type": "hello", "device": "Focusrite Scarlett 2i2", "version": 1})
+        assert ws1.receive_json() == {"type": "ack"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect(_ws_url() + "&standby=1") as ws2:
+                ws2.receive_bytes()
+        assert excinfo.value.code == 4409
+
+        # the active station was never touched by the rejected standby
+        # attempt: same device, still connected, still able to stream.
+        assert hub.info("r1").connected is True
+        assert hub.info("r1").device == "Focusrite Scarlett 2i2"
+        ws1.send_bytes(b"\x00" * CHUNK_BYTES)
+
+    assert hub.queue("r1").qsize() == 1
+
+
+def test_ws_standby_connection_is_accepted_when_no_station_is_active() -> None:
+    """Ruling 62: with nobody active, ?standby=1 is accepted exactly like a
+    normal connect (this is how the real station recovers on its own once
+    a transient replacer -- e.g. an admin's preview tab -- disconnects)."""
+    app = _make_app()
+    client = TestClient(app)
+    hub: StationHub = app.state.station_hub
+
+    with client.websocket_connect(_ws_url() + "&standby=1") as ws:
+        ws.send_json({"type": "hello", "device": "Focusrite Scarlett 2i2", "version": 1})
+        assert ws.receive_json() == {"type": "ack"}
+        assert hub.info("r1").connected is True
+        assert hub.info("r1").device == "Focusrite Scarlett 2i2"
 
 
 def test_ws_hello_and_level_update_the_hub_and_are_acked() -> None:

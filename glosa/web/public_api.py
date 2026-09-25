@@ -29,10 +29,15 @@
     glosa/exports.py from db.get_segments(talk_id, lang, version). 404 for
     an unknown talk/lang, an unsupported {fmt}, or ``version=corrected``
     before its export is "ready" (glosa.db Database.get_export_status --
-    "live" always renders on the fly, no status to check). When
-    ``Settings.exports_public`` is False, every version requires a valid
-    admin session cookie (glosa.web.auth.is_authenticated): 401 without
-    one. ``shift_s`` is the room's current LatencyTracker p50
+    "live" always renders on the fly, no status to check). An anonymous
+    caller (no valid admin session, glosa.web.auth.is_authenticated) gets
+    401 when ``audience_mode: qr_only`` (regardless of ``exports_public`` --
+    a talk id is guessable from public agenda fields, and this mode's whole
+    point is that nothing public works without the room token), when
+    ``Settings.exports_public`` is False, or when the talk's status isn't
+    ``"done"`` yet (the one in progress is not public just because its id
+    can be guessed). An authenticated admin session always works. ``shift_s``
+    is the room's current LatencyTracker p50
     (RoomWorker.latency_p50(), >=10 samples) if there is one, else
     ``Settings.default_export_shift_s`` -- a room-wide estimate, not one
     recomputed per (possibly long-finished) talk. ``Content-Disposition:
@@ -116,8 +121,15 @@ async def export_file(talk_id: str, lang: str, fmt: str, request: Request, versi
     if talk is None or lang not in {talk.language, *talk.targets}:
         raise HTTPException(status_code=404)
     settings = request.app.state.settings
-    if not settings.exports_public and not is_authenticated(request):
-        raise HTTPException(status_code=401, detail="admin login required")
+    # B-I1: in qr_only, exports always require an admin session -- talk ids
+    # are guessable from public agenda fields, and exports_public must not
+    # bypass the room-token boundary that mode is built around. In any
+    # mode, an anonymous caller only gets a "done" talk: the one in
+    # progress is not public just because its id can be guessed.
+    if not is_authenticated(request):
+        qr_only = _audience_mode(request) == "qr_only"
+        if qr_only or not settings.exports_public or talk.status != "done":
+            raise HTTPException(status_code=401, detail="admin login required")
     if version == "corrected" and await db.get_export_status(talk_id, lang) != "ready":
         raise HTTPException(status_code=404)
 

@@ -88,6 +88,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "station_audio_reconnecting": "Reconectando…",
         "station_audio_idle": "Sin señal",
         "station_device_gone": "Se desconectó el micrófono. Buscando otro…",
+        "station_replaced_title": "Esta estación se abrió en otro equipo",
+        "station_replaced_body": "Otra pestaña o dispositivo tomó el control de esta sala. Si fue un error, podés volver a tomar el control acá.",
+        "station_retake": "Tomar el control",
+        "station_standby": "En espera: otra estación está activa",
         # QR page (Task 14b: glosa/web/templates/qr.html)
         "qr_title": "Código QR de {room}",
         "qr_alt": "Código QR para {room}",
@@ -173,6 +177,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "station_audio_reconnecting": "Reconnecting…",
         "station_audio_idle": "No signal",
         "station_device_gone": "The microphone disconnected. Looking for another one…",
+        "station_replaced_title": "This station was opened on another device",
+        "station_replaced_body": "Another tab or device took over this room. If that was a mistake, you can take control back here.",
+        "station_retake": "Take over",
+        "station_standby": "Standby: another station is active",
         # QR page (Task 14b: glosa/web/templates/qr.html)
         "qr_title": "QR code for {room}",
         "qr_alt": "QR code for {room}",

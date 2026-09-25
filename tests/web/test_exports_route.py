@@ -39,12 +39,14 @@ def _settings(tmp_path: Path, **overrides) -> Settings:
     return Settings(**values)
 
 
-def _talk(talk_id: str = "t1", *, language: str = "en", targets: tuple[str, ...] = ("es",)) -> Talk:
+def _talk(
+    talk_id: str = "t1", *, language: str = "en", targets: tuple[str, ...] = ("es",), status: str = "done"
+) -> Talk:
     start = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
     return Talk(
         id=talk_id, room_id="r1", title="Charla de prueba", speakers=["Ana"], language=language,
         targets=list(targets), engine="fast", start=start, end=start + timedelta(minutes=20),
-        abstract="", tags=[], glossary=[GlossaryTerm(term="x", keep_in_english=True)], status="done",
+        abstract="", tags=[], glossary=[GlossaryTerm(term="x", keep_in_english=True)], status=status,
         actual_start=start, actual_end=start + timedelta(minutes=20),
     )
 
@@ -144,6 +146,49 @@ async def test_exports_public_true_needs_no_session(tmp_path: Path) -> None:
         await app.state.db.insert_talks([_talk()])
         await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 0.0, 1.0)
         assert (await client.get("/exports/t1/en.srt")).status_code == 200
+
+
+async def test_qr_only_exports_require_admin_even_with_exports_public(tmp_path: Path) -> None:
+    # B-I1: in qr_only, /exports/... must require an admin session
+    # regardless of exports_public -- otherwise anyone who guesses a talk
+    # id can download captions without ever having the room token.
+    settings = _settings(tmp_path, audience_mode="qr_only", exports_public=True)
+    async with _open(settings) as (app, client):
+        await app.state.db.insert_talks([_talk()])
+        await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 0.0, 1.0)
+
+        anon = await client.get("/exports/t1/en.srt")
+        assert anon.status_code == 401
+
+        client.cookies.set(COOKIE_NAME, sign_session(app.state.admin_secret, ADMIN_PASSWORD))
+        admin = await client.get("/exports/t1/en.srt")
+        assert admin.status_code == 200
+
+
+async def test_anonymous_export_of_a_live_talk_is_refused(tmp_path: Path) -> None:
+    # B-I1: even in "all" mode with exports_public, anonymous users must
+    # only be able to export talks that are "done" -- not the one in
+    # progress (talk ids are guessable from public agenda fields).
+    settings = _settings(tmp_path, audience_mode="all", exports_public=True)
+    async with _open(settings) as (app, client):
+        await app.state.db.insert_talks([_talk(status="live")])
+        await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 0.0, 1.0)
+
+        anon = await client.get("/exports/t1/en.srt")
+        assert anon.status_code == 401
+
+        client.cookies.set(COOKIE_NAME, sign_session(app.state.admin_secret, ADMIN_PASSWORD))
+        admin = await client.get("/exports/t1/en.srt")
+        assert admin.status_code == 200
+
+
+async def test_anonymous_export_of_a_scheduled_talk_is_also_refused(tmp_path: Path) -> None:
+    settings = _settings(tmp_path, audience_mode="all", exports_public=True)
+    async with _open(settings) as (app, client):
+        await app.state.db.insert_talks([_talk(status="scheduled")])
+        await app.state.db.save_segment("t1", "r1", "en", "source", "live", "Hi.", 0.0, 1.0)
+
+        assert (await client.get("/exports/t1/en.srt")).status_code == 401
 
 
 async def test_shift_s_falls_back_to_the_configured_default_when_the_room_is_idle(tmp_path: Path) -> None:

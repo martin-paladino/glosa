@@ -643,6 +643,33 @@ def test_room_config_still_uses_the_slug_as_the_stream_base_in_all_mode() -> Non
     assert config["streamBase"] == "/api/stream/r1/"
 
 
+def test_qr_only_room_page_side_list_shows_no_other_rooms() -> None:
+    # B-I3: pages.py built `nav` from every room in every mode, so a /s/{token}
+    # viewer saw every room's name/status linking to /s/{slug} -- links that
+    # 404 in qr_only (Ruling 56), contradicting "/ no lista nada" and looking
+    # broken. In qr_only the side list must show no other rooms.
+    app = _make_full_app(audience_mode="qr_only")
+    client = TestClient(app)
+
+    html = client.get("/s/tok-r1", headers=SPANISH).text
+
+    assert "Sala Comunidad" not in html
+    assert "Sala Talleres" not in html
+    nav_match = re.search(r'<ul class="room-nav__list">(.*?)</ul>', html, re.S)
+    assert nav_match, "expected the room-nav list to still be present (possibly empty)"
+    assert '<li>' not in nav_match.group(1)
+
+
+def test_all_mode_room_page_side_list_still_shows_every_room() -> None:
+    app = _make_full_app(audience_mode="all")
+    client = TestClient(app)
+
+    html = client.get("/s/r1", headers=SPANISH).text
+
+    assert "Sala Comunidad" in html
+    assert "Sala Talleres" in html
+
+
 def test_all_mode_still_serves_the_slug_and_also_accepts_the_token() -> None:
     app = _make_full_app(audience_mode="all")
     client = TestClient(app)

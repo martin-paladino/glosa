@@ -257,6 +257,37 @@ def test_a_pre_logout_token_from_the_same_second_is_still_rejected(
     assert response.headers["location"] == "/admin/login"
 
 
+def test_anonymous_logout_does_not_invalidate_other_sessions(client: TestClient) -> None:
+    # B-C1: POST /admin/logout has no auth check, so an anonymous caller
+    # (a curl loop, or an auto-submitting form on any page -- it needs no
+    # cookie) must not be able to bump the shared session_epoch and log
+    # every admin out. Only a request that is itself authenticated may do
+    # that; an anonymous POST should just be a no-op past clearing its own
+    # (nonexistent) cookie.
+    victim = TestClient(client.app, follow_redirects=False)
+    victim.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    assert victim.get("/admin").status_code == 200
+
+    anonymous = TestClient(client.app, follow_redirects=False)
+    response = anonymous.post("/admin/logout")
+    assert response.status_code in (302, 303, 307)
+
+    assert victim.get("/admin").status_code == 200
+
+
+def test_authenticated_logout_still_invalidates_every_session(client: TestClient) -> None:
+    client.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    other = TestClient(client.app, follow_redirects=False)
+    other.post("/admin/login", data={"password": ADMIN_PASSWORD})
+    assert other.get("/admin").status_code == 200
+
+    client.post("/admin/logout")
+
+    response = other.get("/admin")
+    assert response.status_code in (302, 303, 307)
+    assert response.headers["location"] == "/admin/login"
+
+
 def test_two_logouts_in_a_row_still_work(client: TestClient) -> None:
     client.post("/admin/login", data={"password": ADMIN_PASSWORD})
 

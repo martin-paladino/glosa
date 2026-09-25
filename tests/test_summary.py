@@ -457,7 +457,7 @@ def _build_es_text_from_bench(path: Path, window_s: float = SUMMARY_WINDOW_S) ->
             if rec.get("lang") != "es":
                 continue
             if rec.get("type") == "talk":
-                title = (rec.get("data") or {}).get("title", "")
+                title = (rec.get("data") or {}).get("title") or title  # keep it: a later "talk end" clears it to None
             elif rec.get("type") == "append":
                 seg = rec["seg"]
                 open_segs[seg] = open_segs.get(seg, "") + (rec.get("text") or "")

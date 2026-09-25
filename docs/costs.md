@@ -116,12 +116,16 @@ today, and they are not the same mechanism:
    prepaid project actually runs out of credit, the Live API returns an
    error Glosa recognizes as a payment stop (`code == 402`, or a
    "RESOURCE_EXHAUSTED"-with-billing-wording match — see
-   `glosa/engines/live_translate.py` and `glosa/engines/transcribe.py`).
+   `glosa/engines/_gemini_live.py`). The project's **monthly spending cap**
+   ("Your project has exceeded its monthly spending cap", a 1011 on the
+   Live API) is one too, from either engine or the translation lane.
    That room's `SessionRelay` sets `payment_blocked = True`
    (`glosa/engines/relay.py`), which `RoomHealth.evaluate()`
    (`glosa/metrics.py`) turns into the room state **`red`**, detail
-   `"payment blocked: budget exhausted"` — and the relay **keeps retrying
-   every 30 s** in case the project is topped up, rather than giving up.
+   `"payment blocked: budget exhausted"` (`"payment blocked: spending cap
+   reached"` for the cap: raise it at ai.studio/spend) — and the relay
+   **keeps retrying every 30 s** in case the project is topped up, rather
+   than giving up.
 2. **Wired to the admin console: an 80%-of-budget warning.**
    `glosa/metrics.py`'s `CostTracker.alert()` returns `"80%"` once spend
    reaches 80% of `budget_usd`, and `"exhausted"` at or past 100% — this is

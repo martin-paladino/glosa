@@ -129,6 +129,8 @@ def classify(status: RoomStatus) -> Issue | None:
         return Issue("halted", severity, "reconnect")
     if detail.startswith("stalled"):
         return Issue("stalled", severity, "reconnect")
+    if detail.startswith("payment blocked: spending cap"):
+        return Issue("spend_cap", severity, None)
     if detail.startswith("payment blocked"):
         return Issue("payment", severity, None)
     if detail.startswith("latency"):
@@ -312,7 +314,7 @@ class AdminMonitor:
             room_id = worker.room.id
             status: RoomStatus = worker.status()
             issue = classify(status)
-            payment |= issue is not None and issue.kind == "payment"
+            payment |= issue is not None and issue.kind in ("payment", "spend_cap")
             issue = await self._silence(room_id, issue, now)
             css = STATE_CSS.get(status.state, "idle")
             talk: Talk | None = worker.talk

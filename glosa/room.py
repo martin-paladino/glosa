@@ -367,6 +367,7 @@ class _Run:
     falling_back: bool = False
     halt_code: int | None = None  # code of the last non-retryable error (why the relay halted)
     halt_auth: bool = False  # that error was a refused API key
+    payment_stop: dict[str, Any] | None = None  # meta of the engine's last payment error
     auth_reported: bool = False
     latency: LatencyTracker = field(default_factory=LatencyTracker)
     levels: collections.deque = field(default_factory=lambda: collections.deque(maxlen=LEVEL_WINDOW_CHUNKS))
@@ -630,13 +631,14 @@ class RoomWorker:
         else:
             now = self._clock.now()
             peak = max(run.levels) if run is not None and run.levels else level
+            payment = self._payment_stop(run)
             state, detail = RoomHealth.evaluate(
                 latency_p50=latency,
                 quality_avg=quality,
                 level_db=peak,
                 stall_active=False,  # the relay reconnects a stall at once (T10: flapping)
                 source_down=self._source_down is not None,
-                payment_blocked=run is not None and run.relay.payment_blocked,
+                payment_blocked=payment is not None,
                 talk_active=True,
                 recent_reconnect=run is not None
                 and run.last_reconnect_at is not None
@@ -644,6 +646,8 @@ class RoomWorker:
             )
             if self._source_down is not None and state == "red":
                 detail = f"source is down: {self._source_down}"
+            elif payment is not None and payment.get("cap") and state == "red":
+                detail = "payment blocked: spending cap reached"
             elif run is not None and run.relay.halted and state != "red":
                 if run.halt_auth:
                     state, detail = "red", f"engine halted: the API key was refused ({run.halt_code})"
@@ -663,6 +667,15 @@ class RoomWorker:
             detail=detail,
             gated_s=round(run.gate.gated_s, 1) if run is not None else 0.0,
         )
+
+    @staticmethod
+    def _payment_stop(run: _Run | None) -> dict[str, Any] | None:
+        """The meta of the payment error blocking ``run`` (``"cap"``: the
+        spending cap): the engine's while its relay is blocked, else the
+        translation lane's; None when nothing is."""
+        if run is not None and run.relay.payment_blocked:
+            return run.payment_stop or {}
+        return run.lane.payment if run is not None and run.lane is not None else None
 
     def latency_p50(self, min_samples: int = 10) -> float | None:
         """The room's CURRENT run's caption latency p50 (seconds), or None
@@ -1166,7 +1179,9 @@ class RoomWorker:
             code = int(ev.meta.get("code") or 0)
             payment = bool(ev.meta.get("payment")) or code == 402
             fatal = payment or not ev.meta.get("retryable", True)
-            if fatal and not payment:
+            if payment:
+                run.payment_stop = dict(ev.meta)  # the relay blocks on it (and retries every 30 s)
+            elif fatal:
                 run.halt_code = code  # the relay halts on it (payment only blocks)
                 reason = ev.text.lower()
                 run.halt_auth = code in AUTH_CODES or any(hint in reason for hint in AUTH_HINTS)

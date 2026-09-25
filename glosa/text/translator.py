@@ -14,7 +14,10 @@ Retries on 429 (rate limited) / 503 (overloaded) wait a growing amount of
 time between attempts. After _MAX_CONSECUTIVE_FAILURES failures in a row on
 one model, Translator switches to fallback_model and starts a fresh run of
 retries there; if the fallback also exhausts its retries, the last error is
-raised. Any other error (e.g. 400) is raised immediately, unretried.
+raised. Any other error (e.g. 400) is raised immediately, unretried, and so
+is a payment stop whatever its code (a 429 saying the project hit its
+spending cap, per ``glosa.engines._gemini_live.error_meta``): the cap is the
+project's, so a retry or the fallback model would be refused too.
 
 The genai client can be injected (`client=`), which is how tests fake it
 without spending API budget; production code leaves it unset and Translator
@@ -37,6 +40,7 @@ from google.genai import types
 from google.genai.errors import APIError
 
 from glosa.clock import Clock, RealClock
+from glosa.engines._gemini_live import error_meta
 from glosa.models import GlossaryTerm
 
 _MAX_CONSECUTIVE_FAILURES = 3
@@ -181,7 +185,7 @@ class Translator:
                         config=config,
                     )
                 except APIError as exc:
-                    if exc.code not in _RETRYABLE_CODES:
+                    if exc.code not in _RETRYABLE_CODES or error_meta(exc).get("payment"):
                         raise
                     last_error = exc
                     failures += 1

@@ -22,6 +22,12 @@ Translation lane
     The glossary of every translation is the talk's glossary at that moment
     (an admin edit of a live talk applies at once).
 
+    A payment stop from the Translator (a spending cap, exhausted credit:
+    ``glosa.engines._gemini_live.error_meta``) is kept in ``payment`` until
+    a translation works again; the room shows it (red) the way it shows the
+    engine's. The Translator does not retry it, so each segment costs one
+    refused call.
+
 Fallback (case 10.5, Rulings 48-49)
     A fast talk whose Live Translate keeps failing (``FlapDetector``: 3
     incidents within 2 min) or halts (a non-retryable error, except a
@@ -37,6 +43,7 @@ from typing import Any, Literal
 
 from glosa.clock import Clock
 from glosa.config import SegmenterCfg, Settings
+from glosa.engines._gemini_live import error_meta
 from glosa.models import GlossaryTerm
 from glosa.text.pipeline import LivePipeline, TranslatedSegment, TranslateFn
 from glosa.text.segmenter import Segmenter
@@ -78,7 +85,8 @@ def engine_of(talk_engine: str) -> EngineKind:
 
 class TranslationLane:
     """One run's LivePipeline. ``interim/delta/final/tick`` pass straight to
-    it (see LivePipeline); ``close()`` drains it, then closes it."""
+    it (see LivePipeline); ``close()`` drains it, then closes it.
+    ``payment``: the meta of the payment stop blocking it, or None."""
 
     def __init__(
         self,
@@ -93,8 +101,17 @@ class TranslationLane:
         async def translate_now(
             segment: str, target: str, _: list[GlossaryTerm], context: list[tuple[str, str | None]]
         ) -> Translation:
-            return await translate(segment, target, glossary(), context)
+            try:
+                result = await translate(segment, target, glossary(), context)
+            except Exception as exc:
+                meta = error_meta(exc)
+                if meta.get("payment"):
+                    self.payment = meta
+                raise
+            self.payment = None
+            return result
 
+        self.payment: dict[str, Any] | None = None
         self.targets = list(targets)
         self.pipeline = LivePipeline(
             targets=self.targets,

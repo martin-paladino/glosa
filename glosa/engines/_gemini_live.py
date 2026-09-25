@@ -8,11 +8,17 @@ by the relay (glosa/engines/relay.py):
 
 - 402, or a message with a payment hint (prepaid billing reports exhausted
   credit as a 429 RESOURCE_EXHAUSTED): ``{"code": 402, "retryable": False,
-  "payment": True}``, a stop, never a retry loop;
+  "payment": True}``, a stop, never a retry loop. The project's monthly
+  spending cap ("... exceeded its monthly spending cap", a 1011 close on the
+  Live API) is one too, with ``"cap": True``. The free tier's per-minute
+  quota ("exceeded your current quota, please check your plan and billing
+  details") is not: it is a rate limit, a plain 429;
 - 429, 503 and any 5xx: retryable;
 - websocket 1008 whose reason mentions GoAway: retryable (the server kills a
   session kept past its GoAway, observed at 591 s in the T0.5 run; a fresh
-  session works);
+  session works), and 1008 "The operation was aborted." (seen 5 times on
+  transcribe-live, each while no audio reached the session -- station gone,
+  silence gate closed; a new session worked at once);
 - any other 4xx, 1007 (invalid argument) and 1008 (model not found, config
   rejected): hard, retrying would only loop;
 - anything else (1011 internal error, 1006 abnormal closure, network, 0 =
@@ -36,7 +42,9 @@ NORMAL_CLOSE = 1000
 # bidiGenerateContent, config rejected). Exception: see GOAWAY_ABORT.
 NON_RETRYABLE_WS = frozenset({1007, 1008})
 GOAWAY_ABORT = 1008
+RETRYABLE_1008_HINTS = ("goaway", "operation was aborted")  # a 1008 a fresh session gets past
 PAYMENT_HINTS = ("prepayment", "credits are depleted", "payment required", "payment_required")
+SPEND_CAP_HINT = "spending cap"
 
 
 def error_code(exc: BaseException) -> int:
@@ -49,15 +57,18 @@ def error_code(exc: BaseException) -> int:
 
 
 def error_meta(exc: BaseException) -> dict:
-    """``{"code", "retryable"}`` (plus ``"payment": True``) for ``exc``, per
-    the policy in the module docstring."""
+    """``{"code", "retryable"}`` (plus ``"payment": True``, and ``"cap": True``
+    for a spending cap) for ``exc``, per the policy in the module docstring.
+    Also the translation lane's (glosa/text/translator.py) payment check."""
     code = error_code(exc)
     reason = (str(exc) or exc.__class__.__name__).lower()
+    if SPEND_CAP_HINT in reason:
+        return {"code": 402, "retryable": False, "payment": True, "cap": True}
     if code == 402 or any(hint in reason for hint in PAYMENT_HINTS):
         return {"code": 402, "retryable": False, "payment": True}
     if code in (429, 503) or 500 <= code < 600:
         return {"code": code, "retryable": True}
-    if code == GOAWAY_ABORT and "goaway" in reason:
+    if code == GOAWAY_ABORT and any(hint in reason for hint in RETRYABLE_1008_HINTS):
         return {"code": code, "retryable": True}
     if 400 <= code < 500 or code in NON_RETRYABLE_WS:
         return {"code": code, "retryable": False}

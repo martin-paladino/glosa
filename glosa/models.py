@@ -47,7 +47,8 @@ class EngineEvent:
 
     meta conventions:
       - kind == "error": {"code": int, "retryable": bool}, plus
-        {"payment": True} when credit is exhausted (a 402-style stop).
+        {"payment": True} when credit is exhausted (a 402-style stop), and
+        {"cap": True} too when it is the project's spending cap.
       - kind == "go_away": {"time_left_s": float}
       - usage accounting (any kind): {"usd": float}. This is an INCREMENT: the
         cost accrued since the previous event of the same engine, not a

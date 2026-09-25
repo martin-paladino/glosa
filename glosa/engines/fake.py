@@ -15,9 +15,9 @@ object per line:
   keeping ``meta.interim`` (a transcribe-live interim that rewrites the open
   segment, see glosa.engines.transcribe);
   ``go_away`` takes ``meta.time_left_s`` or parses ``meta.time_left_raw``
-  ("50s"); ``error`` takes ``meta.code`` / ``meta.retryable`` (/ ``payment``)
-  and ends the session, as a real error does. Anything else (usage,
-  session_resumption_update, ...) is skipped.
+  ("50s"); ``error`` takes ``meta.code`` / ``meta.retryable`` (/ ``payment``
+  / ``cap``) and ends the session, as a real error does. Anything else
+  (usage, session_resumption_update, ...) is skipped.
 - The stream always ends with exactly one ``closed`` event (end of file, a
   ``closed`` record, an ``error`` record, or close()). A recording whose
   first record is an error at t=0 simulates a failed connect.
@@ -112,6 +112,8 @@ class FakeEngine:
             err = {"code": int(meta.get("code") or 0), "retryable": bool(meta.get("retryable", True))}
             if meta.get("payment"):
                 err["payment"] = True
+            if meta.get("cap"):
+                err["cap"] = True
             return EngineEvent(kind="error", text=rec.get("text", ""), t_recv=now, meta=err)
         if kind == "closed":
             return EngineEvent(kind="closed", t_recv=now)

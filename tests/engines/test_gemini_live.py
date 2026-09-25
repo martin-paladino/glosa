@@ -11,6 +11,15 @@ from websockets.frames import Close
 
 from glosa.engines._gemini_live import classify_error, duration_s, error_code, vocabulary
 
+SPEND_CAP = (
+    "Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend"
+    " to manage your project."  # the rest was cut in the log
+)
+FREE_TIER_RPM = (
+    "You exceeded your current quota, please check your plan and billing details. For more information on"
+    " this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits."
+)
+
 
 @pytest.mark.parametrize(
     ("exc", "expected_meta"),
@@ -23,6 +32,18 @@ from glosa.engines._gemini_live import classify_error, duration_s, error_code, v
         (
             errors.ClientError(429, {"error": {"code": 429, "message": "Your prepayment credits are depleted."}}),
             {"code": 402, "retryable": False, "payment": True},
+        ),
+        # A spending cap is a payment stop too, whatever its code: the Live API closes with 1011
+        # (seen on every room when the project hit its monthly cap); generate_content says 429.
+        (errors.APIError(1011, SPEND_CAP, None), {"code": 402, "retryable": False, "payment": True, "cap": True}),
+        (
+            errors.ClientError(429, {"error": {"code": 429, "message": SPEND_CAP, "status": "RESOURCE_EXHAUSTED"}}),
+            {"code": 402, "retryable": False, "payment": True, "cap": True},
+        ),
+        # ...but the free tier's per-minute quota ("check your plan and billing details") is a rate limit.
+        (
+            errors.ClientError(429, {"error": {"code": 429, "message": FREE_TIER_RPM, "status": "RESOURCE_EXHAUSTED"}}),
+            {"code": 429, "retryable": True},
         ),
         # The Live API surfaces websocket close frames as APIError(<close code>, <reason>).
         (errors.APIError(1011, "Internal error encountered.", None), {"code": 1011, "retryable": True}),
@@ -38,6 +59,9 @@ from glosa.engines._gemini_live import classify_error, duration_s, error_code, v
             ),
             {"code": 1008, "retryable": True},
         ),
+        # The server's own close, seen 5 times on sala-estacion (transcribe-live), each time while no
+        # audio was being sent (station gone or silence gate closed): a fresh session worked at once.
+        (errors.APIError(1008, "The operation was aborted.", None), {"code": 1008, "retryable": True}),
         # Any other 1008 (model not found / not supported for bidiGenerateContent, config rejected)
         # is a hard failure: retrying would just loop.
         (
@@ -51,7 +75,7 @@ from glosa.engines._gemini_live import classify_error, duration_s, error_code, v
         ),
         (ConnectionResetError("reset by peer"), {"code": 0, "retryable": True}),
     ],
-    ids=["429", "503", "402", "400", "prepaid-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-other", "network"],
+    ids=["429", "503", "402", "400", "prepaid-429", "cap-1011", "cap-429", "free-tier-429", "ws-1011", "ws-1007", "ws-1008-goaway", "ws-1008-aborted", "ws-1008-other", "network"],
 )
 def test_classify_error(exc: Exception, expected_meta: dict) -> None:
     ev = classify_error(exc, t_recv=3.0)

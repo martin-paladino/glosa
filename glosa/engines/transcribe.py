@@ -82,9 +82,9 @@ Same contract as LiveTranslateEngine for the relay: ``connect()`` never
 raises (a failure comes out of ``events()`` as ``error`` then ``closed``);
 ``events()`` always ends with exactly one ``closed``; errors are classified
 by the same shared policy (``glosa.engines._gemini_live.classify_error``:
-402/payment stop, 1007/1008 hard unless the 1008 reason mentions GoAway,
-429/5xx/network retryable) and nothing is an error after our own
-``close()`` or on a normal close (1000). ``close()`` is idempotent
+402/payment stop, 1007/1008 hard unless the 1008 is a GoAway kill or an
+aborted operation, 429/5xx/network retryable) and nothing is an error after
+our own ``close()`` or on a normal close (1000). ``close()`` is idempotent
 and safe during the handshake; call it after ``closed``.
 
 Cost: priced at ``price_per_min`` per minute of audio actually sent (the

@@ -28,6 +28,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from google.genai.errors import ClientError
 
 from glosa.audio.ingest import STATION_TIMEOUT_S, AudioIngest, EmitterIngest, StationHub
 from glosa.captions.bus import CaptionBus
@@ -223,6 +224,7 @@ class FakeTranslate:
     def __init__(self, usd: float = 0.0, empty: tuple[str, ...] = ()) -> None:
         self.usd = usd
         self.empty = empty
+        self.error: Exception | None = None  # raised by every call while set
         self.calls: list[tuple[str, str, list[GlossaryTerm], list[str]]] = []
 
     async def __call__(
@@ -230,6 +232,8 @@ class FakeTranslate:
     ) -> Translation:
         self.calls.append((segment, target, list(glossary), list(context)))
         await asyncio.sleep(0)
+        if self.error is not None:
+            raise self.error
         text = "" if segment in self.empty else f"[{target}] {segment}"
         return Translation(text=text, latency_s=0.0, usd=self.usd)
 
@@ -2239,6 +2243,51 @@ async def test_no_credit_never_falls_back(tmp_path: Path, db) -> None:
     assert [c.kind for c in factory.configs] == ["fast"]
     assert worker.status().state == "red"  # payment blocked
     assert "fallback" not in [t for _, t, _ in await _events(db)]
+    await worker.stop()
+
+
+SPEND_CAP = "Your project has exceeded its monthly spending cap. Please go to AI Studio at https://ai.studio/spend"
+
+
+async def test_a_spending_cap_turns_the_room_red_with_its_own_detail(tmp_path: Path, db) -> None:
+    """The Gemini project's monthly spending cap (the Live API closes with
+    1011) is a payment stop: red, saying so -- not green while the relay
+    keeps retrying."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    cap = {"t": 0.0, "kind": "error", "text": f"APIError: 1011 None. {SPEND_CAP}",
+           "meta": {"code": 402, "retryable": False, "payment": True, "cap": True}}
+    factory = Factory(clock, _recording(tmp_path / "lt.jsonl", [cap]))
+    worker = _worker(_room(), _settings(), bus, db, clock, factory, IngestFactory())
+
+    await worker.start(_talk("f1", language="en", targets=("es",), engine="fast"))
+    await run_for(clock, 3.0)
+
+    status = worker.status()
+    assert status.state == "red" and status.detail.startswith("payment blocked: spending cap")
+    await worker.stop()
+
+
+async def test_a_spending_cap_on_the_translation_lane_turns_the_room_red_until_a_translation_works(db) -> None:
+    """The Flash-Lite lane's own payment stop (generate_content says 429)
+    turns the room red too, and the first translation that works again
+    lifts it."""
+    clock = DrivenClock()
+    bus = CaptionBus(clock=clock)
+    translate = FakeTranslate()
+    translate.error = ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": SPEND_CAP}})
+    worker = _worker(_room(targets=["en"]), _settings(("r1", "es")), bus, db, clock, Factory(clock, TR_ES),
+                     IngestFactory(), translate=translate)
+
+    await worker.start(_talk("g1"))
+    await run_for(clock, 25.0)
+    assert translate.calls
+    status = worker.status()
+    assert status.state == "red" and status.detail.startswith("payment blocked: spending cap")
+
+    translate.error = None
+    await run_for(clock, 25.0)
+    assert not worker.status().detail.startswith("payment blocked")
     await worker.stop()
 
 

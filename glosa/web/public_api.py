@@ -96,7 +96,11 @@ async def summary(slug: str, lang: str, request: Request) -> dict:
     if worker is None or lang not in worker.stream_langs():
         raise HTTPException(status_code=404)
     result = request.app.state.summaries.get(worker.room.id, lang)
-    if result is None:
+    # Only the current talk's summary: the scheduler notices a talk change
+    # on its next tick (up to SUMMARY_EVERY_S later), so a stored summary of
+    # the previous talk must never be served under the new one.
+    talk = worker.talk
+    if result is None or talk is None or result.talk_id != talk.id:
         raise HTTPException(status_code=404)
     return {"talk_id": result.talk_id, "generated_at": result.generated_at, "bullets": result.bullets}
 

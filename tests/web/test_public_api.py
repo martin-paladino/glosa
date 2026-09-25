@@ -16,6 +16,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -243,13 +244,23 @@ async def test_summary_endpoint_returns_the_latest_summary_or_404(tmp_path: Path
             assert (await client.get("/api/summary/nope/es")).status_code == 404
 
             worker = app.state.workers["r1"]
+            current = "t1"
+            worker.talk = SimpleNamespace(id=current, language="en", targets=["es"])  # a talk in progress (no source runs in this test)
             app.state.summaries.set(
-                worker.room.id, "es", Summary(talk_id="t1", generated_at=123.0, bullets=["Uno", "Dos"])
+                worker.room.id, "es", Summary(talk_id=current, generated_at=123.0, bullets=["Uno", "Dos"])
             )
             ok = await client.get("/api/summary/r1/es")
+            # A summary of another (previous) talk, not yet replaced by the
+            # scheduler's next tick, is never served under the current talk.
+            app.state.summaries.set(
+                worker.room.id, "es", Summary(talk_id="previous-talk", generated_at=100.0, bullets=["Viejo"])
+            )
+            stale = await client.get("/api/summary/r1/es")
+            worker.talk = None  # the stub is not a real talk: nothing to end at shutdown
 
     assert ok.status_code == 200
-    assert ok.json() == {"talk_id": "t1", "generated_at": 123.0, "bullets": ["Uno", "Dos"]}
+    assert ok.json() == {"talk_id": current, "generated_at": 123.0, "bullets": ["Uno", "Dos"]}
+    assert stale.status_code == 404
 
 
 async def test_summary_endpoint_follows_the_qr_only_token_rule(tmp_path: Path) -> None:
@@ -263,6 +274,7 @@ async def test_summary_endpoint_follows_the_qr_only_token_rule(tmp_path: Path) -
     async with app.router.lifespan_context(app):
         worker = app.state.workers["r1"]
         token = worker.room.public_token
+        worker.talk = SimpleNamespace(id="t1", language="en", targets=["es"])  # a talk in progress (no source runs in this test)
         app.state.summaries.set(worker.room.id, "es", Summary(talk_id="t1", generated_at=1.0, bullets=["a"]))
 
         transport = httpx.ASGITransport(app=app)

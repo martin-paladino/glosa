@@ -93,7 +93,15 @@
         </button>
         <span class="visually-hidden" id="hint-shortcuts">{{ at("shortcuts_help") }}</span>
         {#- a popover lives in the top layer: the top bar can't clip it #}
-        <div class="shortcuts-pop" id="shortcuts-pop" popover>{{ at("shortcuts_help") }}</div>
+        <div class="shortcuts-pop" id="shortcuts-pop" popover role="dialog" aria-labelledby="shortcuts-title">
+          <h2 class="shortcuts-pop__title" id="shortcuts-title">{{ at("shortcuts_title") }}</h2>
+          <dl class="shortcuts-pop__list">
+            <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>{{ at("shortcut_rooms") }}</dd>
+            <dt><kbd>Esc</kbd></dt><dd>{{ at("shortcut_esc") }}</dd>
+            <dt><kbd>Tab</kbd></dt><dd>{{ at("shortcut_tab") }}</dd>
+          </dl>
+          <button class="btn" type="button" popovertarget="shortcuts-pop" popovertargetaction="hide">{{ at("close") }}</button>
+        </div>
       </span>
       <button class="btn btn--link masthead__theme" type="button" data-action="theme"
         data-theme-label="{{ tr('theme') }}"

@@ -1,9 +1,13 @@
-"""Admin: password login and room start/stop.
+"""Admin: the production panel, its login, and the room and agenda API.
 
-  - ``GET /admin``: the room console (the login form if there is no valid
-    session cookie; otherwise the room list with Start/Stop).
-  - ``GET /admin/login``: the login form on its own (redirects to
-    ``/admin`` if already authenticated).
+  - ``GET /admin``: the "Sala de control" panel (Task 12; redirects to
+    ``/admin/login`` without a valid session cookie). The first paint comes
+    from the same snapshot as the live feed (glosa/web/admin_stream.py,
+    ``GET /api/admin/stream``); static/js/admin.js keeps it live and drives
+    every control through the routes below. Interface language: ``?lang=``,
+    then Accept-Language (glosa/i18n.py ``ADMIN_STRINGS``).
+  - ``GET /admin/login``: the login page (redirects to ``/admin`` if already
+    authenticated).
   - ``POST /admin/login``: checks ``password`` against
     ``Settings.admin_password`` (constant time) and sets the signed session
     cookie (``glosa.web.auth``), or raises 401 for a wrong password (after
@@ -31,6 +35,8 @@ RoomStatus}``:
     a free session or no source;
   - ``POST .../rooms/{id}/end-talk``: the room goes idle (manual);
   - ``POST .../rooms/{id}/reconnect``: a new engine session, mode unchanged;
+  - ``POST .../rooms/{id}/restart`` (Task 12): the room's source opened again
+    for the talk it runs (after "source is down"), mode unchanged;
   - ``GET /api/admin/rooms``: every room's id, name, mode, status, current
     talk (``now``) and next agenda talk (``next``, free sessions aside).
 
@@ -85,14 +91,13 @@ key, ``glosa.web.auth.new_admin_secret()``) and ``app.state.session_epoch``
 (an int, 0 until the first logout increments it), and mounts both
 ``router`` and ``api_router``.
 
-The room list's visual state reuses the four-state vocabulary
-(live/degraded/down/idle) already defined in glosa.css for the "Sala de
-control" console (docs/design/admin.html), mapped from RoomStatus's
-green/yellow/red/idle. It also shows RoomStatus.detail, the raw
-possibly-technical status text (ffmpeg/API errors): fine behind admin auth
-(Ruling 29), even though the audience-facing bus only ever gets the state
-name. Task 12 replaces this page with that full console; this one is the
-MVP's bare minimum: name, state, detail, current talk, Start/Stop.
+The panel uses the four-state vocabulary of glosa.css (live/degraded/down/
+idle, from RoomStatus's green/yellow/red/idle) and shows RoomStatus.detail,
+the raw, possibly technical status text (ffmpeg/API errors): fine behind
+admin auth (Ruling 29), even though the audience only ever gets the state
+name. The live feed (``admin_stream.stream_router``) is mounted apart from
+``api_router``: it needs the session cookie but not the CSRF header, which
+an EventSource cannot send.
 """
 
 from __future__ import annotations
@@ -106,7 +111,7 @@ import urllib.request
 from dataclasses import asdict
 from datetime import date, datetime, timezone, tzinfo
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -117,8 +122,10 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from glosa.agenda import AgendaError, stable_talk_id
 from glosa.agenda.csv_import import VALID_ENGINES, VALID_LANGUAGES, parse_csv
 from glosa.agenda.nerdearla_import import SkippedSession, parse_nerdearla_report
+from glosa.i18n import ADMIN_STRINGS, SUPPORTED, Lang, admin_t, detect_lang
 from glosa.models import GlossaryTerm, Talk
 from glosa.room import RoomWorker, is_free_talk
+from glosa.web import admin_stream
 from glosa.web.auth import (
     COOKIE_MAX_AGE_S,
     COOKIE_NAME,
@@ -142,12 +149,10 @@ api_router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-# RoomStatus.state (green/yellow/red/idle) -> the live/degraded/down/idle
-# vocabulary glosa.css's .strip--*/.status--* classes use.
-_STATE_CSS = {"green": "live", "yellow": "degraded", "red": "down", "idle": "idle"}
-
 # A cheap brute-force brake: a wrong password always takes at least this long.
 _FAILED_LOGIN_DELAY_S = 1.0
+
+_VARY = {"Vary": "Accept-Language"}
 
 
 # ---- pages ------------------------------------------------------------------
@@ -155,17 +160,58 @@ _FAILED_LOGIN_DELAY_S = 1.0
 
 @router.get("/admin", include_in_schema=False)
 async def admin_page(request: Request):
+    ui, forced = _ui_lang(request)
     if not is_authenticated(request):
-        return RedirectResponse("/admin/login", status_code=303)
-    rooms = [_room_summary(w) for w in _workers(request)]
-    return templates.TemplateResponse(request, "admin.html", {"authenticated": True, "rooms": rooms})
+        return RedirectResponse("/admin/login" + _lang_suffix(forced), status_code=303)
+    view = admin_stream.localize(await admin_stream.monitor_for(request.app).snapshot(), ui)
+    config = {
+        "page": "panel",
+        "ui": ui,
+        "tz": view["tz"],
+        "streamUrl": f"/api/admin/stream?lang={ui}",
+        "i18n": ADMIN_STRINGS[ui],
+        "limits": {
+            "latency": admin_stream.LATENCY_LIMIT_S,
+            "quality": admin_stream.QUALITY_MIN,
+            "level": admin_stream.LEVEL_MIN_DB,
+        },
+        "state": view,
+    }
+    context = _page_context(request, ui) | {"view": view, "config": config}
+    return templates.TemplateResponse(request, "admin.html", context, headers=_VARY)
 
 
 @router.get("/admin/login", include_in_schema=False)
 def login_page(request: Request):
+    ui, forced = _ui_lang(request)
     if is_authenticated(request):
-        return RedirectResponse("/admin", status_code=303)
-    return templates.TemplateResponse(request, "admin.html", {"authenticated": False, "rooms": []})
+        return RedirectResponse("/admin" + _lang_suffix(forced), status_code=303)
+    config = {"page": "login", "ui": ui, "tz": request.app.state.settings.timezone, "i18n": ADMIN_STRINGS[ui]}
+    context = _page_context(request, ui) | {"config": config}
+    return templates.TemplateResponse(request, "admin_login.html", context, headers=_VARY)
+
+
+def _ui_lang(request: Request) -> tuple[Lang, Lang | None]:
+    """(the panel's language, the one forced by ?lang= or None)."""
+    requested = request.query_params.get("lang")
+    forced = cast(Lang, requested) if requested in SUPPORTED else None
+    return forced or detect_lang(request.headers.get("accept-language")), forced
+
+
+def _lang_suffix(forced: Lang | None) -> str:
+    return f"?lang={forced}" if forced else ""
+
+
+def _page_context(request: Request, ui: Lang) -> dict[str, Any]:
+    branding = getattr(request.app.state, "branding", None) or {}
+    settings = request.app.state.settings
+    return {
+        "ui": ui,
+        "at": lambda key: admin_t(key, ui),
+        "event_name": branding.get("event_name") or settings.event_name or "Glosa",
+        "logo_url": branding.get("logo_url"),
+        "langs": [{"code": code, "current": code == ui} for code in SUPPORTED],
+    }
 
 
 @router.post("/admin/login", include_in_schema=False)
@@ -300,6 +346,26 @@ async def reconnect_room(room_id: str, request: Request) -> dict:
     """A new engine session for the running talk; the mode stays."""
     worker = _worker(request, room_id)
     await request.app.state.autopilot.reconnect(room_id)
+    return _control_reply(request, worker)
+
+
+@api_router.post("/rooms/{room_id}/restart")
+async def restart_room(room_id: str, request: Request) -> dict:
+    """The panel's "Reconectar" for a room whose source is down: open the
+    source again for the talk it was running, the same talk (no talk end, no
+    free session; its actual_start stays). The mode stays. ``reconnect``
+    cannot do this (the pipeline is gone) and ``start`` would end the talk.
+    409 without a talk or without a source."""
+    worker = _worker(request, room_id)
+    talk = worker.talk
+    if talk is None:
+        raise HTTPException(status_code=409, detail="the room has no talk to restart")
+    try:
+        await worker.start(talk)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await request.app.state.db.log_event(room_id, "info", "restart", f"{talk.id}: source reopened by the operator")
+    request.app.state.admin_events.publish("room_restart", {"room_id": room_id, "talk_id": talk.id})
     return _control_reply(request, worker)
 
 
@@ -732,11 +798,3 @@ def _worker(request: Request, room_id: str) -> RoomWorker:
         raise HTTPException(status_code=404)
     return worker
 
-
-def _room_summary(worker: RoomWorker) -> dict:
-    status = asdict(worker.status())
-    return worker.view() | {
-        "id": worker.room.id,
-        "status": status,
-        "css_state": _STATE_CSS.get(status["state"], "idle"),
-    }

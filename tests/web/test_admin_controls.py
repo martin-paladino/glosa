@@ -458,3 +458,62 @@ async def test_the_control_endpoints_need_the_admin_cookie_and_the_csrf_header(t
         for method, path, body in requests:
             assert (await client.request(method, path, json=body)).status_code == 401, path
         assert app.state.autopilot.mode("r1") == "auto"
+
+
+# ---------------------------------------------------------------------------- restart (Task 12)
+
+
+class DyingIngest(SilentIngest):
+    """A source that dies for good after a few chunks (what AudioIngest does
+    after its restarts: the chunks end with restarts > before)."""
+
+    async def chunks(self):
+        for n in range(3):
+            await self._clock.sleep(0.1)
+            yield AudioChunk(pcm=bytes(3200), t=round(n * 0.1, 1))
+        self.restarts += 1
+        self.last_error = "ffmpeg exited 5 times"
+
+
+async def test_restart_reopens_the_source_for_the_same_talk(tmp_path: Path) -> None:
+    # The panel's "Reconectar" on a room whose source is down: reconnect is a
+    # no-op there (the pipeline is gone) and start would end the talk for a
+    # free session; restart opens the source again for the same talk.
+    deaths = {"r1": 1}
+
+    def ingest(source_type, source_url, realtime, clock):
+        room = source_url.removeprefix("fake://")
+        if deaths.get(room):
+            deaths[room] -= 1
+            return DyingIngest(source_type, source_url, realtime, clock)
+        return SilentIngest(source_type, source_url, realtime, clock)
+
+    settings = _settings(tmp_path)
+    await _seed(settings, _talk("t", "r1", -5, 40))
+    app = create_app(settings, clock=EventClock(), engine_factory=QuietEngine, ingest_factory=ingest,
+                     autopilot_interval_s=3600)
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test", headers=CSRF) as client:
+            client.cookies.set(COOKIE_NAME, sign_session(app.state.admin_secret, ADMIN_PASSWORD))
+            db, worker = app.state.db, app.state.workers["r1"]
+            assert worker.talk is not None and worker.talk.id == "t"  # the boot tick opened it
+            for _ in range(100):
+                if worker.status().state == "red":
+                    break
+                await asyncio.sleep(0.05)
+            assert worker.status().detail == "source is down: ffmpeg exited 5 times"
+
+            response = await client.post("/api/admin/rooms/r1/restart")
+
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["mode"] == "auto" and body["room"]["talk_id"] == "t" and body["room"]["state"] != "red"
+            assert worker.talk.id == "t" and (await db.get_talk("t")).status == "live"
+            assert not [e for e in await db.recent_events(50) if e.type == "talk_end" and e.message == "t"]
+
+            await client.post("/api/admin/rooms/r2/end-talk")
+            idle = await client.post("/api/admin/rooms/r2/restart")
+            assert idle.status_code == 409
+            assert (await client.post("/api/admin/rooms/nope/restart")).status_code == 404
+            assert (await client.post("/api/admin/rooms/r1/restart", headers={"X-Glosa-Admin": ""})).status_code == 403

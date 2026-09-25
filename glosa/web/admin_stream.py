@@ -92,7 +92,8 @@ stream_router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_adm
 class Issue:
     """Why a room is not green, and the action the panel suggests:
     ``reconnect`` (a new engine session), ``restart`` (open the source
-    again: POST .../start), ``open`` (look at it: the drawer) or None."""
+    again for the same talk: POST .../restart), ``open`` (look at it: the
+    drawer) or None."""
 
     kind: str
     severity: str  # "down" | "degraded"
@@ -115,7 +116,7 @@ def classify(status: RoomStatus) -> Issue | None:
     detail = status.detail or ""
     if detail.startswith("source is down"):
         _, _, error = detail.partition(": ")
-        return Issue("source_down", severity, "restart", {"error": error or "ffmpeg"})
+        return Issue("source_down", severity, "restart", {"error": _first_line(error) or "ffmpeg"})
     if detail.startswith("engine halted"):
         return Issue("halted", severity, "reconnect")
     if detail.startswith("stalled"):
@@ -131,6 +132,19 @@ def classify(status: RoomStatus) -> Issue | None:
     if "recent reconnect" in detail:
         return Issue("reconnected", severity, "open")
     return Issue("other", severity, "reconnect" if severity == "down" else "open", {"detail": detail})
+
+
+_FFMPEG_PREFIX = re.compile(r"^(?:\[[^\]]*\]\s*)+")
+_ERROR_CHARS = 120
+
+
+def _first_line(error: str) -> str:
+    """ffmpeg's error, as the Atención row and the monitor show it: its first
+    line without the "[in#0 @ 0x...]" tags, at most _ERROR_CHARS long. The
+    drawer shows the whole detail."""
+    line = next((line.strip() for line in error.splitlines() if line.strip()), "")
+    line = _FFMPEG_PREFIX.sub("", line)
+    return line if len(line) <= _ERROR_CHARS else line[: _ERROR_CHARS - 1].rstrip() + "…"
 
 
 def _value(known: float | None, pattern: re.Pattern[str], detail: str) -> float | None:
@@ -306,9 +320,13 @@ class AdminMonitor:
             if mode == "auto":
                 if nxt is not None and nxt.start > wall and nxt.start.astimezone(zone).date() == wall.date():
                     changes.append((nxt.start, 0, "open", room, nxt))
-                if talk is not None and not is_free_talk(talk.id) and talk.end > wall:
-                    if talk.end.astimezone(zone).date() == wall.date():
-                        changes.append((talk.end, 1, "close", room, talk))
+                if (
+                    talk is not None
+                    and not is_free_talk(talk.id)
+                    and wall < talk.end
+                    and talk.end.astimezone(zone).date() == wall.date()
+                ):
+                    changes.append((talk.end, 1, "close", room, talk))
         spent = sum(costs.values())
         tracker = CostTracker(settings.prices, settings.budget_usd)
         tracker.add("all", "all", spent)
@@ -478,7 +496,8 @@ def _room_texts(room: dict[str, Any], lang: Lang, zone: tzinfo, today: Any) -> d
     if issue is not None:
         texts |= issue_texts(issue, lang)
         texts["state_word"] = admin_t(f"state_{room['state']}", lang)
-        texts["state_line"] = f"{texts['state_word']}. {texts['what']}"
+        said = texts["state_word"].lower() in texts["what"].lower()  # "Fuente caída: ..." already says it
+        texts["state_line"] = texts["what"] if said else f"{texts['state_word']}. {texts['what']}"
     elif room["state"] == "idle":
         next_today = nxt is not None and datetime.fromisoformat(nxt["start"]).astimezone(zone).date() == today
         if next_today:
@@ -508,7 +527,7 @@ _ENGINE_ERROR = re.compile(r"^session \d+: error (?P<code>-?\d+): (?P<text>.*)$"
 _IMPORT = re.compile(r"^(?P<format>\w+): (?P<imported>\d+) imported, (?P<skipped>\d+) skipped, (?P<removed>\d+) removed$")
 _ID_PREFIX = re.compile(r"^(?P<id>[^:\s]+): (?P<rest>.*)$", re.S)
 _SECONDS = re.compile(r"(\d+) s")
-_TITLED = ("talk_end", "talk_updated", "resumed", "stale_live")
+_TITLED = ("talk_end", "talk_updated", "resumed", "stale_live", "restart")
 
 
 def referenced_talk(ev: Any) -> str | None:
@@ -545,19 +564,19 @@ def describe_event(ev: Any, lang: Lang, titles: dict[str, str]) -> str:
         if msg.startswith("idle:"):
             return say("ev_autopilot_idle")
     if kind == "autopilot_error":
-        return say("ev_autopilot_error", error=msg.removeprefix("could not open "))
+        return say("ev_autopilot_error", error=_first_line(msg.removeprefix("could not open ")))
     if kind == "mode" and msg.endswith(("auto", "manual")):
         return say("ev_mode_auto" if msg.endswith("auto") else "ev_mode_manual")
     if kind == "source_down":
-        return say("ev_source_down", error=msg)
+        return say("ev_source_down", error=_first_line(msg))
     if kind == "source_restart" and (m := _SOURCE_RESTART.match(msg)):
-        return say("ev_source_restart", n=m["n"], error=m["error"])
+        return say("ev_source_restart", n=m["n"], error=_first_line(m["error"]))
     if kind in ("reconnect", "rotation") and (m := _NUMBERED.search(msg)):
         return say(f"ev_{kind}", n=m["n"])
     if kind == "go_away" and (m := _GO_AWAY.match(msg)):
         return say("ev_go_away", s=m["s"])
     if kind == "engine_error" and (m := _ENGINE_ERROR.match(msg)):
-        return say("ev_engine_error", code=m["code"], text=m["text"])
+        return say("ev_engine_error", code=m["code"], text=_first_line(m["text"]))
     if kind == "agenda_import" and (m := _IMPORT.match(msg)):
         name = "CSV" if m["format"] == "csv" else m["format"].capitalize()
         return say("ev_agenda_import", format=name, imported=m["imported"], skipped=m["skipped"], removed=m["removed"])
@@ -569,7 +588,7 @@ def describe_event(ev: Any, lang: Lang, titles: dict[str, str]) -> str:
             return say("ev_talk_updated", title=title(m["id"]), fields=fields)
         return say(f"ev_{kind}", title=title(m["id"]))
     if kind in ("start_failed", "resume_failed"):
-        return say("ev_start_failed", error=msg)
+        return say("ev_start_failed", error=_first_line(msg))
     if kind == "silence" and (m := _SECONDS.search(msg)):
         return say("ev_silence", seconds=m.group(1))
     if kind == "source_change":
@@ -660,7 +679,8 @@ async def _stream(request: Request, lang: Lang, last_id: int | None) -> AsyncIte
         yield sse_frame("state", localize(snap, lang))
         _sync_feeds(feeds, snap, state.bus, changed)
         cursor, backlog = await _backlog(db, last_id)
-        for frame, cursor in await _log_frames(backlog, lang, monitor, state, cursor):
+        frames, cursor = await _log_frames(backlog, lang, monitor, state, cursor)
+        for frame in frames:
             yield frame
         next_tick = loop.time() + TICK_S
         next_cc = 0.0
@@ -676,8 +696,10 @@ async def _stream(request: Request, lang: Lang, last_id: int | None) -> AsyncIte
                 snap = await monitor.snapshot()
                 yield sse_frame("state", localize(snap, lang))
                 _sync_feeds(feeds, snap, state.bus, changed)
-                new = await db.events_after(cursor, EVENTS_PER_TICK)
-                for frame, cursor in await _log_frames(new, lang, monitor, state, cursor):
+                frames, cursor = await _log_frames(
+                    await db.events_after(cursor, EVENTS_PER_TICK), lang, monitor, state, cursor
+                )
+                for frame in frames:
                     yield frame
                 next_tick = max(next_tick + TICK_S, now + TICK_S / 2)
             if dirty and now >= next_cc:
@@ -725,7 +747,8 @@ async def _backlog(db: Any, last_id: int | None) -> tuple[int, list[Any]]:
 
 async def _log_frames(
     events: Iterable[Any], lang: Lang, monitor: AdminMonitor, state: Any, cursor: int
-) -> list[tuple[str, int]]:
+) -> tuple[list[str], int]:
+    """The ``log`` frames of ``events``, and the id to go on from."""
     events = list(events)
     for ev in events:
         talk_id = referenced_talk(ev)
@@ -744,5 +767,5 @@ async def _log_frames(
             "text": describe_event(ev, lang, monitor.titles),
         }
         cursor = max(cursor, ev.id)
-        frames.append((sse_frame("log", data, id=ev.id), cursor))
-    return frames
+        frames.append(sse_frame("log", data, id=ev.id))
+    return frames, cursor

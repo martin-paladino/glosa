@@ -427,6 +427,9 @@ async def test_attention_lists_down_rooms_first_and_says_all_clear_when_nothing_
     assert [row["room_id"] for row in view["attention"]] == ["r2", "r1"]
     assert view["attention"][0]["action"] == "restart" and view["attention"][1]["action"] == "reconnect"
     assert view["attention"][0]["what"] == "Fuente caída: ffmpeg exited 5 times."
+    rooms = {room["id"]: room for room in view["rooms"]}
+    assert rooms["r2"]["text"]["state_line"] == "Fuente caída: ffmpeg exited 5 times."  # not "Caída. Fuente caída"
+    assert rooms["r1"]["text"]["state_line"] == "Degradada. Retraso de 6,1 s; el tope es 5 s."
     assert [(t["state"], t["count"]) for t in view["tally"]] == [("live", 1), ("degraded", 1), ("down", 1)]
 
     degraded.state = down.state = fine.state
@@ -556,10 +559,36 @@ def test_event_descriptions_in_both_languages() -> None:
     assert describe_event(ev, "en", {}) == "Started “Rust in the kernel” (EN ▸ ES)."
     ended = Ev(2, ev.ts, "r1", "info", "talk_end", "abc123")
     assert describe_event(ended, "es", {"abc123": "Rust in the kernel"}) == "Terminó «Rust in the kernel»."
-    odd = Ev(3, ev.ts, "r1", "info", "something_new", "raw text")
+    restarted = Ev(3, ev.ts, "r1", "info", "restart", "abc123: source reopened by the operator")
+    assert describe_event(restarted, "es", {"abc123": "Rust"}) == "Se volvió a abrir la fuente de «Rust»."
+    odd = Ev(4, ev.ts, "r1", "info", "something_new", "raw text")
     assert describe_event(odd, "es", {}) == "raw text"
 
 
 def test_the_glossary_count_of_a_talk() -> None:
     talk = _talk("t", "r1", 0, 30, glossary=[GlossaryTerm("Kubernetes", True), GlossaryTerm("pod", False, "vaina")])
     assert admin_stream.talk_brief(talk, ART)["glossary"] == 2
+
+
+def test_a_source_error_is_shown_as_its_first_line_without_ffmpeg_prefixes() -> None:
+    detail = ("source is down: [in#0 @ 0xbc501c000] Error opening input: No such file or directory\n"
+              "Error opening input file /srv/feeds/sala-5.opus.\nError opening input files: No such file or directory")
+    issue = classify(_status(state="red", talk_id="t", detail=detail))
+    assert issue.values["error"] == "Error opening input: No such file or directory"
+    long = classify(_status(state="red", talk_id="t", detail="source is down: " + "x" * 300))
+    assert len(long.values["error"]) <= 120 and long.values["error"].endswith("…")
+
+
+def test_the_log_shows_the_first_line_of_an_ffmpeg_error() -> None:
+    @dataclass
+    class Ev:
+        id: int
+        ts: str
+        room_id: str | None
+        level: str
+        type: str
+        message: str
+
+    down = Ev(1, "2030-09-24T18:00:00+00:00", "r1", "error", "source_down",
+              "[in#0 @ 0x1] Error opening input: No such file or directory\nError opening input file /srv/x.opus.")
+    assert describe_event(down, "es", {}) == "Fuente caída: Error opening input: No such file or directory"

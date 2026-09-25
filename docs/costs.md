@@ -23,7 +23,7 @@ target languages" below.
 | Engine | US$/min of audio | US$/hour, one room | Source |
 |---|---|---|---|
 | **fast** (Gemini Live Translate) | 0.0368 | **≈ US$2.21** | `Prices.lt_per_min` (`glosa/config.py`); confirmed against the Live API's own usage metadata in the pre-event spike (2026-09-23, `spike-latencia/REPORT.md`: "$2.2/h por idioma"). |
-| **glossary** (Transcribe Live + Flash-Lite) | ≈0.012 (transcribe 0.009 + Flash-Lite ≈0.003) | **≈ US$0.72** | Measured live during this vibeathon (2026-09-24): 6 runs of 60 s of Spanish audio, e.g. run "corrida live 6" cost US$0.0126/min (`.superpowers/sdd/2026-09-24-glosa/progress.md`). `Prices.transcribe_per_min` = 0.009 in `glosa/config.py`; Flash-Lite itself bills per token (`flash_lite_in_per_m`=0.30, `flash_lite_out_per_m`=2.50 USD/million tokens), so the per-minute total scales a little with how much is said, not just with audio duration. |
+| **glossary** (Transcribe Live + Flash-Lite) | ≈0.012 (transcribe 0.009 + Flash-Lite ≈0.003) | **≈ US$0.72** | Measured live during this vibeathon (2026-09-24): 6 runs of 60 s of Spanish audio, e.g. run "corrida live 6" cost US$0.0126/min (the build's working notes (not in this repo)). `Prices.transcribe_per_min` = 0.009 in `glosa/config.py`; Flash-Lite itself bills per token (`flash_lite_in_per_m`=0.30, `flash_lite_out_per_m`=2.50 USD/million tokens), so the per-minute total scales a little with how much is said, not just with audio duration. |
 
 The glossary engine is roughly **3x cheaper per room-hour** than Live
 Translate for one target language, on top of being the only one of the two

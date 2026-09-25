@@ -14,8 +14,8 @@ Two separate benchmarks feed this table:
   choice). One ~3-4 min clip per language, real-tier-limited (see caveats
   below each number).
 - **Vibeathon build** (2026-09-24, this repo): the glossary engine's own
-  wiring, 6 runs of 60 s of Spanish audio, logged in
-  `.superpowers/sdd/2026-09-24-glosa/progress.md`.
+  wiring, 6 runs of 60 s of Spanish audio, logged in the build's working
+  notes (not in this repo).
 
 ## The two engines Glosa ships with
 

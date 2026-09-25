@@ -338,7 +338,7 @@ Real Gemini APIs, real-time pace, ~93 s clips of real Nerdearla talks, one run e
 
 
 The glossary engine's own latency, measured live during this build (6 runs
-of 60 s of Spanish audio, `.superpowers/sdd/2026-09-24-glosa/progress.md`):
+of 60 s of Spanish audio, logged in the build's working notes, not in this repo):
 source (transcription) **p50 ≈ 0.9 s** after end of speech, translation
 **p50 ≈ 0.7 s** after the cut. Full latency/cost table for both engines,
 with sources: [`docs/alternatives.md`](docs/alternatives.md).
@@ -408,8 +408,8 @@ CPU/RSS are this process's own (`ps`, sampled every 0.5 s); "MLX peak
 memory" is `mlx.core.get_peak_memory()`, the models' own unified-memory
 high-water mark, not the same figure as process RSS (Metal/unified memory
 isn't fully reflected in RSS on Apple silicon). Ten translated segments per
-clip, and the full run output, are in this build's task report
-(`.superpowers/sdd/2026-09-24-glosa/task-16-report.md`).
+clip, and the full run output, were recorded in the build's working notes
+(not in this repo); `make demo-local` reproduces the run.
 
 **Limits, honestly:**
 - **1–2 rooms per machine** — see the numbers above; a third concurrent

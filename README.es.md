@@ -355,8 +355,8 @@ APIs reales de Gemini, a velocidad real, clips de ~93 s de charlas reales de Ner
 
 
 La propia latencia del motor `glossary`, medida en vivo durante esta
-build (6 corridas de 60 s de audio en español,
-`.superpowers/sdd/2026-09-24-glosa/progress.md`): fuente (transcripción)
+build (6 corridas de 60 s de audio en español, registradas en las notas de
+trabajo de la build, no en este repo): fuente (transcripción)
 **p50 ≈ 0,9 s** desde el fin del habla, traducción **p50 ≈ 0,7 s** desde el
 corte. Tabla completa de latencia/costo para ambos motores, con fuentes:
 [`docs/alternatives.md`](docs/alternatives.md) (en inglés).
@@ -434,8 +434,8 @@ por llamada bajo carga, no el throughput. CPU/RSS son de este proceso
 los modelos — no es la misma cifra que el RSS del proceso (la memoria
 Metal/unificada no se refleja del todo en el RSS en Apple Silicon). Diez
 segmentos traducidos por clip, y la salida completa de la corrida, están
-en el reporte de esta tarea
-(`.superpowers/sdd/2026-09-24-glosa/task-16-report.md`).
+en las notas de trabajo de la build (no en este repo); `make demo-local`
+reproduce la corrida.
 
 **Límites, con honestidad:**
 - **1–2 salas por máquina** — ver los números arriba; una tercera sala

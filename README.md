@@ -1,5 +1,7 @@
 # Glosa
 
+> 🥈 **2nd place — [Nerdearla Vibeathon 2026](https://nerdearla26.devpost.com/)** · [Devpost project](https://devpost.com/software/glosa-980dzt)
+
 *[Leer en español](README.es.md)*
 
 Open-source, event-centric live captioning and translation for conference

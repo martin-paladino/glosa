@@ -1,5 +1,7 @@
 # Glosa
 
+> 🥈 **2.º puesto — [Nerdearla Vibeathon 2026](https://nerdearla26.devpost.com/)** · [Proyecto en Devpost](https://devpost.com/software/glosa-980dzt)
+
 *[Read in English](README.md)*
 
 Subtitulado y traducción en vivo, de código abierto y pensado para eventos,

@@ -73,6 +73,7 @@ from glosa.web.app import make_engine_factory  # noqa: E402
 ENGINES = ("fast", "glossary")
 DEFAULT_ENGINE = "glossary"
 FORMATS = ("vtt", "srt")
+SOURCE_DOWN_LIMIT_S = 15.0  # a file source down this long: the file can't be read, stop instead of waiting forever
 _ADMIN_PASSWORD_PLACEHOLDER = "subtitle-file-tool-not-a-server"  # never used: no web server runs
 
 
@@ -90,6 +91,13 @@ class Result:
 def _require_input_file(path: Path) -> None:
     if not path.is_file():
         raise SubtitleFileError(f"input file not found: {path}")
+
+
+def _require_ffmpeg() -> None:
+    # Without it the room's file source never reads a byte and the run would
+    # wait for the talk to end forever.
+    if shutil.which("ffmpeg") is None:
+        raise SubtitleFileError("ffmpeg not found on PATH: install it to read audio/video files")
 
 
 def parse_glossary(spec: str | None) -> list[GlossaryTerm]:
@@ -173,6 +181,7 @@ async def run_subtitle_file(
     replaying a recording, no network -- see tests/test_subtitle_file.py);
     the CLI (``main()`` below) always uses the default "live"."""
     _require_input_file(input_path)
+    _require_ffmpeg()
     out_dir = Path(out_dir) if out_dir is not None else input_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     targets = list(targets)
@@ -210,8 +219,16 @@ async def run_subtitle_file(
     try:
         await worker.start(talk)
         last_reported = -5.0
+        down_since: float | None = None
         while worker.talk is not None:
             await asyncio.sleep(0.5)
+            status = worker.status()
+            if status.state == "red" and status.detail.startswith("source is down"):
+                down_since = down_since if down_since is not None else clock.now()
+                if clock.now() - down_since > SOURCE_DOWN_LIMIT_S:
+                    raise SubtitleFileError(f"could not read {input_path.name}: {status.detail}")
+            else:
+                down_since = None
             live_p50 = worker.latency_p50()  # sampled while the run is live: gone once the talk ends
             if live_p50 is not None:
                 measured_shift = live_p50

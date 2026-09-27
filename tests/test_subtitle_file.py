@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -189,8 +190,16 @@ async def test_write_exports_empty_track_is_still_well_formed(tmp_path):
 # --------------------------------------------------------------------- full pipeline, engine_mode fake
 
 
+def test_run_subtitle_file_without_ffmpeg_is_a_clear_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(subtitle_file.shutil, "which", lambda name: None)
+    with pytest.raises(subtitle_file.SubtitleFileError, match="ffmpeg"):
+        asyncio.run(run_subtitle_file(SHORT_CLIP, source_lang="es", targets=["en"], out_dir=tmp_path,
+                                      api_key="fake-key-never-real", engine_mode="fake",
+                                      fake_fixture=str(FAKE_FIXTURE), quiet=True))
+
+
 async def test_run_subtitle_file_fake_engine_end_to_end(tmp_path):
-    result = await run_subtitle_file(
+    result = await asyncio.wait_for(run_subtitle_file(
         SHORT_CLIP,
         source_lang="es",
         targets=["en"],
@@ -200,7 +209,7 @@ async def test_run_subtitle_file_fake_engine_end_to_end(tmp_path):
         engine_mode="fake",
         fake_fixture=str(FAKE_FIXTURE),
         quiet=True,
-    )
+    ), timeout=60)
 
     assert isinstance(result, Result)
     assert result.cost_usd == 0.0  # engine_mode fake: no network, no spend
